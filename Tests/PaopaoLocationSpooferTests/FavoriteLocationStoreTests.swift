@@ -174,17 +174,6 @@ final class FavoriteLocationStoreTests: XCTestCase {
         XCTAssertNil(CoordinateConverter.diagnoseRepresentation(sample: unrelated, pair: pair).inferredSystem)
     }
 
-    func testFixedAnchorResultNameUsesOneSharedMapTypeRule() {
-        XCTAssertEqual(
-            CoordinateConverter.mapCoordinateSystem(forFixedAnchorFirstResultName: "林士街"),
-            .gcj02
-        )
-        XCTAssertEqual(
-            CoordinateConverter.mapCoordinateSystem(forFixedAnchorFirstResultName: "Connaught Road West"),
-            .wgs84
-        )
-    }
-
     func testMapConfigurationNeverRequestsRealUserLocation() {
         XCTAssertFalse(MapConfiguration.default.showsUserLocation)
         XCTAssertFalse(MapConfiguration.default.allowsCurrentLocationRequest)

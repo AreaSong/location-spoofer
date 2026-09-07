@@ -20,9 +20,10 @@ SETTINGS_NAVIGATOR="$ROOT/App/SystemSettingsNavigator.swift"
 DIAGNOSTICS="$ROOT/App/DiagnosticsView.swift"
 CONTENT="$ROOT/App/ContentView.swift"
 CONVERTER="$ROOT/Shared/CoordinateConverter.swift"
+PROBE="$ROOT/Shared/MapCoordinateSystemProbe.swift"
 NETWORK_MONITOR="$ROOT/Shared/NetworkMonitor.swift"
 
-for file in "$MAP_HOME" "$MAP_STATE" "$MAP_BRIDGE" "$REALTIME" "$SETUP" "$PROXY" "$SETTINGS_NAVIGATOR" "$DIAGNOSTICS" "$CONTENT" "$CONVERTER" "$NETWORK_MONITOR"; do
+for file in "$MAP_HOME" "$MAP_STATE" "$MAP_BRIDGE" "$REALTIME" "$SETUP" "$PROXY" "$SETTINGS_NAVIGATOR" "$DIAGNOSTICS" "$CONTENT" "$CONVERTER" "$PROBE" "$NETWORK_MONITOR"; do
   test -f "$file" || fail "missing required refactor file: $file"
 done
 
@@ -71,14 +72,16 @@ if grep -q 'logEvent("CONNECT " + host + " -> passthrough")' "$ROOT/Core/proxy.g
 fi
 grep -q 'enum SystemSettingsNavigator' "$SETTINGS_NAVIGATOR" || fail "shared settings navigator is missing"
 grep -q 'await CoordinateConverter.resolveInitialMapCoordinateSystem()' "$CONTENT" || fail "map type must resolve before MapHomeView construction"
-grep -q 'refreshRuntimeMapCoordinateSystem(reason:' "$CONVERTER" || fail "fixed-anchor map type must support runtime refresh"
+grep -q 'refreshRuntimeMapCoordinateSystem(reason:' "$PROBE" || fail "fixed-anchor map type must support runtime refresh"
+grep -q '固定锚点名称未列入白名单' "$PROBE" || fail "unknown fixed-anchor names must not be classified as WGS-84"
+grep -q 'forFixedAnchorFirstResultName name: String) -> MapCoordinateSystem?' "$PROBE" || fail "fixed-anchor name mapping must return nil for unknown names"
 grep -q 'scheduleBluePointMapCoordinateSystemRefresh()' "$MAP_HOME" || fail "native blue-point samples must trigger runtime map-type refresh while spoofing"
 ! grep -A3 'private func scheduleBluePointMapCoordinateSystemRefresh' "$MAP_HOME" | grep -q 'spoofState == .active' || fail "blue-point map-type refresh must also detect the return to physical location"
 grep -q 'awaitCoordinatedMapCoordinateSystemRefresh(reason: "点击实时定位")' "$MAP_HOME" || fail "realtime button must await the coordinated map-type refresh"
 grep -q 'favorites.selectMatching(coordinatePair: pair)' "$MAP_HOME" || fail "realtime selection must restore a matching favorite selection"
 grep -q 'awaitCoordinatedMapCoordinateSystemRefresh(reason: "保存收藏")' "$MAP_HOME" || fail "favorite save must await the coordinated map-type refresh"
 grep -q 'awaitCoordinatedMapCoordinateSystemRefresh(reason: "App回到前台")' "$MAP_HOME" || fail "foreground recovery must reuse the coordinated map-type refresh"
-grep -q '地图坐标标准运行期检测结果已过期，取消写入' "$CONVERTER" || fail "cancelled runtime probes must not mutate the global map type"
+grep -q '地图坐标标准运行期检测结果已过期，取消写入' "$PROBE" || fail "cancelled runtime probes must not mutate the global map type"
 ! grep -q 'source == .coreLocation.*correctMapCoordinateSystemUsingRealtime' "$MAP_HOME" || fail "runtime Core Location samples must not infer MapKit type"
 grep -q 'clearRealtimeLocationForMapCoordinateSystemChange' "$MAP_HOME" || fail "map-type changes must discard superseded blue-point samples"
 grep -q '地图坐标类型已变化' "$MAP_HOME" || fail "map-type changes must emit an explicit searchable business log"
@@ -91,9 +94,9 @@ grep -q 'phase = .map' "$CONTENT" || fail "ContentView must explicitly gate MapH
 ! grep -q 'startTileProbe' "$MAP_HOME" || fail "MapHomeView must not start a second fixed-anchor coordinate-system probe"
 ! grep -q 'initializeMap()' "$MAP_HOME" || fail "MapHomeView must not replay a second map initialization from onAppear"
 grep -q '地图创建前请求实时定位' "$CONTENT" || fail "fresh realtime position must resolve before map construction"
-! grep -q 'lastTileCheck' "$CONVERTER" || fail "map coordinate-system detection must not use a time cache"
-! grep -q '跳过(缓存' "$CONVERTER" || fail "map coordinate-system detection must not skip using a cached result"
-! grep -q '瓦片检测' "$CONVERTER" || fail "coordinate-system probe logs must not claim to inspect map tiles"
+! grep -q 'lastTileCheck' "$CONVERTER" "$PROBE" || fail "map coordinate-system detection must not use a time cache"
+! grep -q '跳过(缓存' "$CONVERTER" "$PROBE" || fail "map coordinate-system detection must not skip using a cached result"
+! grep -q '瓦片检测' "$CONVERTER" "$PROBE" || fail "coordinate-system probe logs must not claim to inspect map tiles"
 grep -q 'minimumCountForSuppression = 3' Shared/AppGroup.swift || fail "automatic tip suppression must require three successful operations"
 grep -q 'activeTip = .deactivation' "$MAP_HOME" || fail "manual deactivation help must use the non-suppressible generic tip sheet"
 grep -q 'stabilizationNanoseconds: UInt64 = 3_000_000_000' "$MAP_HOME" || fail "Wi-Fi changes must wait three seconds before environment verification"
