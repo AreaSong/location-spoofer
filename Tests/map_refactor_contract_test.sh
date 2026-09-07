@@ -124,5 +124,12 @@ grep -q '定位精度' "$ROOT/App/SettingsView.swift" || fail "settings must exp
 grep -q 'LocationAccuracyStore.shared.meters' "$MAP_HOME" || fail "map apply must stamp the accuracy store onto the current selection"
 ! grep -q 'accuracy: 25' "$MAP_HOME" || fail "map apply must not hardcode accuracy 25"
 grep -q 'effectiveRadiusMeters' "$ROOT/Shared/AppGroup.swift" || fail "disabled random radius must write a zero offset"
+grep -q '地图坐标标准' "$ROOT/App/SettingsView.swift" || fail "settings must show the current map coordinate system"
+grep -q '检测未命中白名单，当前按国内标准显示' "$ROOT/App/SettingsView.swift" || fail "settings must explain the GCJ-02 fallback"
+test -f "$ROOT/Shared/CoordinateTextParser.swift" || fail "coordinate search must parse typed latitude/longitude"
+test -f "$ROOT/Shared/FavoriteTransfer.swift" || fail "favorite backup must use a dedicated transfer format"
+grep -q 'paopao-favorites' "$ROOT/Shared/FavoriteTransfer.swift" || fail "favorite backup JSON must use the paopao-favorites format"
+grep -q 'SettingsView(setup: setup, actions: actions, favorites: favorites)' "$MAP_HOME" || fail "settings must share the map favorite store"
+grep -q '按国内标准(GCJ-02)选点' "$MAP_HOME" || fail "typed coordinates must offer an explicit GCJ-02 choice"
 
 echo "PASS: map location state refactor contract"

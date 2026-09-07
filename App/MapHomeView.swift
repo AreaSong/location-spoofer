@@ -8,6 +8,7 @@ private struct SearchLocationResult: Identifiable {
     let name: String
     let subtitle: String
     let coordinate: CLLocationCoordinate2D
+    let mapCoordinateSystem: CoordinateConverter.MapCoordinateSystem
 }
 
 private enum HomeSheet: String, Identifiable {
@@ -260,7 +261,7 @@ struct MapHomeView: View {
         .sheet(item: $activeSheet) { sheet in
             NavigationView {
                 switch sheet {
-                case .settings: SettingsView(setup: setup, actions: actions)
+                case .settings: SettingsView(setup: setup, actions: actions, favorites: favorites)
                 case .logs: RuntimeLogsView(setup: setup, actions: actions, testFavorite: testFavorite)
                 }
             }
@@ -1505,6 +1506,9 @@ struct MapHomeView: View {
         guard !query.isEmpty, !isSearching else { return }
         searchRequestID &+= 1
         let requestID = searchRequestID
+        if presentCoordinateSearchResults(query) {
+            return
+        }
         isSearching = true
         searchError = ""
         let request = MKLocalSearch.Request()
@@ -1525,7 +1529,8 @@ struct MapHomeView: View {
                             .compactMap { $0 }
                             .filter { !$0.isEmpty }
                             .joined(separator: " · "),
-                        coordinate: item.placemark.coordinate
+                        coordinate: item.placemark.coordinate,
+                        mapCoordinateSystem: CoordinateConverter.currentMapCoordinateSystem
                     )
                     RuntimeLogger.info("APP", "搜索", "获得搜索结果", details: [
                         "名称": r.name
@@ -1537,14 +1542,47 @@ struct MapHomeView: View {
         }
     }
 
+    private func presentCoordinateSearchResults(_ query: String) -> Bool {
+        guard let parsed = CoordinateTextParser.parse(query) else { return false }
+        isSearching = false
+        searchError = ""
+        let coordinate = CLLocationCoordinate2D(latitude: parsed.latitude, longitude: parsed.longitude)
+        let name = String(format: "%.6f, %.6f", parsed.latitude, parsed.longitude)
+        searchResults = [
+            SearchLocationResult(
+                name: name,
+                subtitle: "按国内标准(GCJ-02)选点",
+                coordinate: coordinate,
+                mapCoordinateSystem: .gcj02
+            ),
+            SearchLocationResult(
+                name: name,
+                subtitle: "按国际标准(WGS-84)选点",
+                coordinate: coordinate,
+                mapCoordinateSystem: .wgs84
+            )
+        ]
+        RuntimeLogger.info("APP", "搜索", "识别为坐标输入", details: [
+            "latitude": String(parsed.latitude),
+            "longitude": String(parsed.longitude)
+        ])
+        return true
+    }
+
     private func selectSearchResult(_ result: SearchLocationResult) {
         geocodeDebounceTask?.cancel()
         reverseGeocodeTask?.cancel()
         favorites.select(nil)
-        mapState.selectSearchResult(result.coordinate, name: result.name)
-        LastCoordinateStore.save(
+        let pair = CoordinatePair(
             mapCoordinate: result.coordinate,
-            mapCoordinateSystem: CoordinateConverter.currentMapCoordinateSystem,
+            mapCoordinateSystem: result.mapCoordinateSystem
+        )
+        mapState.selectSearchResult(
+            pair.coordinate(for: CoordinateConverter.currentMapCoordinateSystem),
+            name: result.name
+        )
+        LastCoordinateStore.save(
+            coordinatePair: pair,
             zoomMeters: mapState.viewportMeters
         )
         searchText = result.name

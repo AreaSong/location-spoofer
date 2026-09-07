@@ -179,6 +179,69 @@ final class FavoriteLocationStoreTests: XCTestCase {
         XCTAssertFalse(MapConfiguration.default.allowsCurrentLocationRequest)
     }
 
+    func testExportThenImportMergesByWGS84AndPreservesTypedPair() throws {
+        let sourceSuite = "FavoriteTransferSource.\(UUID().uuidString)"
+        let destinationSuite = "FavoriteTransferDestination.\(UUID().uuidString)"
+        let sourceDefaults = UserDefaults(suiteName: sourceSuite)!
+        let destinationDefaults = UserDefaults(suiteName: destinationSuite)!
+        defer {
+            sourceDefaults.removePersistentDomain(forName: sourceSuite)
+            destinationDefaults.removePersistentDomain(forName: destinationSuite)
+        }
+
+        let pair = CoordinateConverter.coordinatePair(
+            lat: 22.544_577,
+            lon: 113.941_14,
+            mapCoordinateSystem: .gcj02
+        )
+        let source = FavoriteLocationStore(defaults: sourceDefaults)
+        _ = source.save(name: "旧名称", coordinatePair: pair, accuracy: 25)
+        let exported = try source.exportTransferred()
+        let decoded = try FavoriteTransfer.decode(exported)
+        XCTAssertEqual(decoded[0].coordinatePair, pair)
+
+        let destination = FavoriteLocationStore(defaults: destinationDefaults)
+        _ = destination.save(name: "旧名称", coordinatePair: pair, accuracy: 25)
+        let extra = FavoriteLocation(
+            name: "埃菲尔铁塔",
+            coordinatePair: CoordinateConverter.coordinatePair(
+                lat: 48.858_37,
+                lon: 2.294_481,
+                mapCoordinateSystem: .wgs84
+            ),
+            accuracy: 30
+        )
+        let renamed = FavoriteLocation(name: "深圳湾公园", coordinatePair: pair, accuracy: 15)
+        let result = destination.importTransferred([renamed, extra])
+
+        XCTAssertEqual(result.updated, 1)
+        XCTAssertEqual(result.added, 1)
+        XCTAssertEqual(destination.favorites.count, 2)
+        XCTAssertEqual(destination.favorites.first { $0.coordinatePair == pair }?.name, "深圳湾公园")
+        XCTAssertEqual(destination.favorites.first { $0.coordinatePair == pair }?.accuracy, 15)
+        XCTAssertEqual(destination.favorites.first { $0.name == "埃菲尔铁塔" }?.coordinatePair.wgs84.latitude ?? 0, 48.858_37, accuracy: 0.000_000_1)
+    }
+
+    func testTransferRejectsInvalidJSONAndMissingCoordinates() {
+        XCTAssertThrowsError(try FavoriteTransfer.decode(Data("not-json".utf8))) { error in
+            XCTAssertEqual(error as? FavoriteTransfer.TransferError, .invalidJSON)
+        }
+
+        let missingCoordinates = """
+        {"format":"paopao-favorites","version":1,"favorites":[{"name":"残缺","accuracy":25,"createdAt":"2026-01-01T00:00:00Z","wgs84":{"latitude":22.54,"longitude":113.94}}]}
+        """.data(using: .utf8)!
+        XCTAssertThrowsError(try FavoriteTransfer.decode(missingCoordinates)) { error in
+            XCTAssertEqual(error as? FavoriteTransfer.TransferError, .missingCoordinates)
+        }
+
+        let empty = """
+        {"format":"paopao-favorites","version":1,"favorites":[]}
+        """.data(using: .utf8)!
+        XCTAssertThrowsError(try FavoriteTransfer.decode(empty)) { error in
+            XCTAssertEqual(error as? FavoriteTransfer.TransferError, .empty)
+        }
+    }
+
 }
 
 private struct LegacyFavoritePayload: Encodable {

@@ -186,6 +186,38 @@ final class FavoriteLocationStore: ObservableObject {
         persistIgnoringFailure()
     }
 
+    func exportTransferred() throws -> Data {
+        try FavoriteTransfer.encode(favorites)
+    }
+
+    @discardableResult
+    func importTransferred(_ incoming: [FavoriteLocation]) -> FavoriteTransfer.MergeResult {
+        var added = 0
+        var updated = 0
+        var newItems: [FavoriteLocation] = []
+        for item in incoming {
+            if let index = favorites.firstIndex(where: { isSameWGS84($0, item) }) {
+                favorites[index].name = item.name
+                favorites[index].coordinatePair = item.coordinatePair
+                favorites[index].accuracy = item.accuracy
+                updated += 1
+            } else {
+                newItems.append(item)
+                added += 1
+            }
+        }
+        if !newItems.isEmpty {
+            favorites.insert(contentsOf: newItems, at: 0)
+        }
+        persistIgnoringFailure()
+        return FavoriteTransfer.MergeResult(added: added, updated: updated)
+    }
+
+    private func isSameWGS84(_ lhs: FavoriteLocation, _ rhs: FavoriteLocation) -> Bool {
+        abs(lhs.coordinatePair.wgs84.latitude - rhs.coordinatePair.wgs84.latitude) < 0.000001
+            && abs(lhs.coordinatePair.wgs84.longitude - rhs.coordinatePair.wgs84.longitude) < 0.000001
+    }
+
     func migrateLegacyCoordinates() throws {
         guard favorites.contains(where: \.isLegacyCoordinateRecord) else { return }
         try persist()

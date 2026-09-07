@@ -1,4 +1,6 @@
 import SwiftUI
+import UniformTypeIdentifiers
+import UIKit
 
 private enum UpdateCheckResult: Identifiable {
     case current(currentVersion: String, latestVersion: String)
@@ -20,6 +22,7 @@ private enum UpdateCheckResult: Identifiable {
 struct SettingsView: View {
     @ObservedObject var setup: SetupCoordinator
     @ObservedObject var actions: LocationActionCoordinator
+    @ObservedObject var favorites: FavoriteLocationStore
     @ObservedObject private var proxy = ProxyManager.shared
     @ObservedObject private var runtimeMode = ProxyRuntimeModeStore.shared
     @ObservedObject private var thirdPartyProxy = ThirdPartyProxyManager.shared
@@ -39,6 +42,12 @@ struct SettingsView: View {
     @State private var githubDestination: SafariDestination?
     @State private var isCheckingForUpdates = false
     @State private var updateCheckResult: UpdateCheckResult?
+    @State private var mapCoordinateSystemName = CoordinateConverter.MapCoordinateSystem.gcj02.diagnosticName
+    @State private var mapCoordinateSystemUsedFallback = false
+    @State private var copiedFavorites = false
+    @State private var showFavoriteImporter = false
+    @State private var favoriteTransferTitle = "收藏"
+    @State private var favoriteTransferMessage = ""
 
     var body: some View {
         Form {
@@ -84,9 +93,20 @@ struct SettingsView: View {
                     Spacer()
                     Text(virtualLocationStatusText).foregroundStyle(.secondary)
                 }
+                HStack {
+                    Label("地图坐标标准", systemImage: "globe")
+                    Spacer()
+                    Text(mapCoordinateSystemName).foregroundStyle(.secondary)
+                }
+                if mapCoordinateSystemUsedFallback {
+                    Text("检测未命中白名单，当前按国内标准显示")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
             }
 
             locationSimulationSection
+            favoriteBackupSection
 
             if runtimeMode.mode == .thirdParty {
                 thirdPartyConfigurationSection
@@ -216,6 +236,7 @@ struct SettingsView: View {
         }
         .navigationTitle("设置")
         .navigationBarTitleDisplayMode(.inline)
+        .onAppear(perform: refreshMapCoordinateSystemDisplay)
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) { Button("完成") { dismiss() } }
         }
@@ -248,6 +269,17 @@ struct SettingsView: View {
             Button("取消", role: .cancel) {}
         } message: {
             Text("当前虚拟定位和本地代理将停止。App 会删除钥匙串中的设备 CA、立即生成新证书，并打开安装与信任引导。你还需要前往 iOS「设置 → 通用 → VPN 与设备管理」手动删除旧证书，然后重新下载安装并完全信任新证书。")
+        }
+        .fileImporter(isPresented: $showFavoriteImporter, allowedContentTypes: [.json]) { result in
+            importFavorites(from: result)
+        }
+        .alert(favoriteTransferTitle, isPresented: Binding(
+            get: { !favoriteTransferMessage.isEmpty },
+            set: { if !$0 { favoriteTransferMessage = "" } }
+        )) {
+            Button("知道了", role: .cancel) {}
+        } message: {
+            Text(favoriteTransferMessage)
         }
     }
 
@@ -436,6 +468,111 @@ struct SettingsView: View {
             get: { Double(locationAccuracy.meters) },
             set: { locationAccuracy.setMeters(Int($0.rounded())) }
         )
+    }
+
+    @ViewBuilder
+    private var favoriteBackupSection: some View {
+        Section("收藏") {
+            Text("共 \(favorites.favorites.count) 个地点。导入时相同国际坐标会更新名称，新地点会追加。")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+            Button(action: exportFavoritesToClipboard) {
+                Label(copiedFavorites ? "已复制收藏备份" : "导出到剪贴板", systemImage: "doc.on.doc")
+            }
+            .disabled(favorites.favorites.isEmpty)
+            Button(action: shareFavoritesFile) {
+                Label("分享备份文件", systemImage: "square.and.arrow.up")
+            }
+            .disabled(favorites.favorites.isEmpty)
+            Button(action: importFavoritesFromClipboard) {
+                Label("从剪贴板导入", systemImage: "clipboard")
+            }
+            Button {
+                showFavoriteImporter = true
+            } label: {
+                Label("从文件导入", systemImage: "folder")
+            }
+        }
+    }
+
+    private func refreshMapCoordinateSystemDisplay() {
+        mapCoordinateSystemName = CoordinateConverter.currentMapCoordinateSystem.diagnosticName
+        mapCoordinateSystemUsedFallback = CoordinateConverter.initialMapCoordinateSystemUsedFallback
+    }
+
+    private func exportFavoritesToClipboard() {
+        do {
+            let data = try favorites.exportTransferred()
+            guard let text = String(data: data, encoding: .utf8) else {
+                presentFavoriteTransferError("无法编码收藏备份")
+                return
+            }
+            UIPasteboard.general.string = text
+            copiedFavorites = true
+            RuntimeLogger.info("APP", "收藏", "已导出收藏到剪贴板", details: [
+                "数量": String(favorites.favorites.count)
+            ])
+        } catch {
+            presentFavoriteTransferError(error.localizedDescription)
+        }
+    }
+
+    private func shareFavoritesFile() {
+        do {
+            let data = try favorites.exportTransferred()
+            let url = FileManager.default.temporaryDirectory.appendingPathComponent("location-spoofer-favorites.json")
+            try data.write(to: url, options: .atomic)
+            ShareSheetPresenter.presentFile(at: url)
+        } catch {
+            presentFavoriteTransferError(error.localizedDescription)
+        }
+    }
+
+    private func importFavoritesFromClipboard() {
+        guard let text = UIPasteboard.general.string, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            presentFavoriteTransferError("剪贴板里没有收藏备份")
+            return
+        }
+        importFavorites(from: Data(text.utf8))
+    }
+
+    private func importFavorites(from result: Result<URL, Error>) {
+        switch result {
+        case .success(let url):
+            let accessing = url.startAccessingSecurityScopedResource()
+            defer {
+                if accessing {
+                    url.stopAccessingSecurityScopedResource()
+                }
+            }
+            do {
+                importFavorites(from: try Data(contentsOf: url))
+            } catch {
+                presentFavoriteTransferError(error.localizedDescription)
+            }
+        case .failure(let error):
+            presentFavoriteTransferError(error.localizedDescription)
+        }
+    }
+
+    private func importFavorites(from data: Data) {
+        do {
+            let incoming = try FavoriteTransfer.decode(data)
+            let result = favorites.importTransferred(incoming)
+            favoriteTransferTitle = "收藏已导入"
+            favoriteTransferMessage = "新增 \(result.added) 个，更新 \(result.updated) 个"
+            RuntimeLogger.info("APP", "收藏", "已合并导入收藏", details: [
+                "新增": String(result.added),
+                "更新": String(result.updated)
+            ])
+        } catch {
+            presentFavoriteTransferError(error.localizedDescription)
+        }
+    }
+
+    private func presentFavoriteTransferError(_ message: String) {
+        favoriteTransferTitle = "收藏导入失败"
+        favoriteTransferMessage = message
     }
 
     @ViewBuilder
@@ -676,5 +813,24 @@ struct SettingsView: View {
             return active
         }
         return false
+    }
+}
+
+private enum ShareSheetPresenter {
+    static func presentFile(at url: URL) {
+        guard let presenter = topViewController() else { return }
+        presenter.present(UIActivityViewController(activityItems: [url], applicationActivities: nil), animated: true)
+    }
+
+    private static func topViewController() -> UIViewController? {
+        let windows = UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .flatMap(\.windows)
+        let window = windows.first(where: \.isKeyWindow) ?? windows.first
+        var controller = window?.rootViewController
+        while let presented = controller?.presentedViewController {
+            controller = presented
+        }
+        return controller
     }
 }
