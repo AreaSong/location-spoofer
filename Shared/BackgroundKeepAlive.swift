@@ -1,12 +1,16 @@
 import AVFoundation
+import Combine
 import UIKit
 
-final class BackgroundKeepAlive {
+final class BackgroundKeepAlive: ObservableObject {
     static let shared = BackgroundKeepAlive()
+    @Published private(set) var isEnabled = false
+    @Published private(set) var isHealthy = false
     private var engine: AVAudioEngine?
     private var playerNode: AVAudioPlayerNode?
     private var shouldRun = false
     private var isRecovering = false
+    private var interruptionActive = false
     private var watchdog: DispatchSourceTimer?
 
     private init() {
@@ -39,7 +43,10 @@ final class BackgroundKeepAlive {
 
     func start() {
         shouldRun = true
-        if isPlaybackHealthy { return }
+        if isPlaybackHealthy {
+            publishStatus()
+            return
+        }
         recover(reason: "启动")
     }
 
@@ -49,6 +56,7 @@ final class BackgroundKeepAlive {
         teardownEngine()
         UIApplication.shared.isIdleTimerDisabled = false
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        publishStatus()
         RuntimeLogger.info("APP", "KeepAlive", "后台保活已停止")
     }
 
@@ -73,8 +81,11 @@ final class BackgroundKeepAlive {
               let type = AVAudioSession.InterruptionType(rawValue: raw) else { return }
         switch type {
         case .began:
+            interruptionActive = true
             RuntimeLogger.warning("APP", "KeepAlive", "音频被中断")
+            publishStatus()
         case .ended:
+            interruptionActive = false
             recover(reason: "音频中断恢复")
         @unknown default:
             break
@@ -87,7 +98,10 @@ final class BackgroundKeepAlive {
 
     private func recover(reason: String) {
         guard shouldRun, !isRecovering else { return }
-        if isPlaybackHealthy { return }
+        if isPlaybackHealthy {
+            publishStatus()
+            return
+        }
         isRecovering = true
         defer { isRecovering = false }
         teardownEngine()
@@ -97,10 +111,13 @@ final class BackgroundKeepAlive {
         } catch {
             RuntimeLogger.error("APP", "KeepAlive", "保活恢复失败", error: error)
             teardownEngine()
+            publishStatus()
             return
         }
         UIApplication.shared.isIdleTimerDisabled = true
         startWatchdog()
+        interruptionActive = false
+        publishStatus()
         RuntimeLogger.info("APP", "KeepAlive", "后台保活已启动（近不可闻音频）", details: [
             "原因": reason
         ])
@@ -152,6 +169,7 @@ final class BackgroundKeepAlive {
         timer.schedule(deadline: .now() + 15, repeating: 15)
         timer.setEventHandler { [weak self] in
             guard let self, self.shouldRun, !self.isPlaybackHealthy else { return }
+            self.publishStatus()
             self.recover(reason: "看门狗")
         }
         timer.resume()
@@ -168,6 +186,21 @@ final class BackgroundKeepAlive {
         engine?.stop()
         playerNode = nil
         engine = nil
+    }
+
+    private func publishStatus() {
+        let enabled = shouldRun
+        let healthy = shouldRun && isPlaybackHealthy && !interruptionActive
+        let apply = { [weak self] in
+            guard let self else { return }
+            self.isEnabled = enabled
+            self.isHealthy = healthy
+        }
+        if Thread.isMainThread {
+            apply()
+        } else {
+            DispatchQueue.main.async(execute: apply)
+        }
     }
 }
 

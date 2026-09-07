@@ -53,6 +53,8 @@ struct MapHomeView: View {
     @StateObject private var favorites: FavoriteLocationStore
     @StateObject private var actions = LocationActionCoordinator()
     @ObservedObject private var proxy = ProxyManager.shared
+    @ObservedObject private var keepAlive = BackgroundKeepAlive.shared
+    @ObservedObject private var recentSelections = RecentSelectionStore.shared
     @ObservedObject private var runtimeMode = ProxyRuntimeModeStore.shared
     @ObservedObject private var thirdPartyProxy = ThirdPartyProxyManager.shared
     @ObservedObject private var thirdPartyClient = ThirdPartyProxyClientStore.shared
@@ -202,6 +204,7 @@ struct MapHomeView: View {
                         coordinatePair: pair,
                         zoomMeters: mapState.viewportMeters
                     )
+                    rememberDiscreteSelection(name: formattedSelectionName(for: pair), coordinatePair: pair)
                     scheduleGeocode(pair: pair, revision: revision)
                 },
                 onUserZoomChanged: { distance in
@@ -543,6 +546,21 @@ struct MapHomeView: View {
                 .disabled(favoriteSaveTask != nil)
                 .accessibilityLabel(favorites.selectedFavoriteID != nil ? "已收藏，点击取消收藏" : "收藏当前选点")
             }
+            if !recentSelections.items.isEmpty {
+                HStack(spacing: 8) {
+                    Text("最近")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 8) {
+                            ForEach(recentSelections.items) { item in
+                                recentChip(item)
+                            }
+                        }
+                        .padding(.vertical, 2)
+                    }
+                }
+            }
             // 收藏
             if favorites.favorites.isEmpty {
                 HStack {
@@ -553,11 +571,22 @@ struct MapHomeView: View {
             } else {
                 HStack(spacing: 8) {
                     ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 8) { ForEach(favorites.favorites) { f in favoriteChip(f) } }.padding(.vertical, 2)
+                        HStack(spacing: 8) { ForEach(favorites.displayedFavorites) { f in favoriteChip(f) } }.padding(.vertical, 2)
                     }
                     allFavoritesButton
                 }
             }
+            Button {
+                activeSheet = .settings
+            } label: {
+                Text(homeRuntimeStatusText)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(homeRuntimeStatusText)
             // 主控按钮（带动画）
             HStack(spacing: 10) {
                 Button(action: handleMainButtonTap) {
@@ -846,6 +875,68 @@ struct MapHomeView: View {
         }
         .background((favorites.selectedFavoriteID == f.id ? Color.red.opacity(0.14) : Color.secondary.opacity(0.12)), in: Capsule())
         .overlay(Capsule().stroke(favorites.selectedFavoriteID == f.id ? Color.red.opacity(0.7) : Color.clear))
+    }
+
+    private func recentChip(_ item: RecentSelection) -> some View {
+        HStack(spacing: 0) {
+            Button { selectRecent(item) } label: {
+                Label(item.name, systemImage: "clock")
+                    .lineLimit(1).padding(.leading, 10).padding(.vertical, 8).padding(.trailing, 7).contentShape(Rectangle())
+            }.buttonStyle(.plain)
+            Divider().frame(height: 22)
+            Button {
+                recentSelections.remove(item)
+            } label: {
+                Image(systemName: "xmark").font(.caption2).frame(width: 32, height: 36).contentShape(Rectangle())
+            }.buttonStyle(.plain).foregroundStyle(.primary.opacity(0.55))
+        }
+        .background(Color.secondary.opacity(0.12), in: Capsule())
+    }
+
+    private var homeRuntimeStatusText: String {
+        if runtimeMode.mode == .thirdParty {
+            switch thirdPartyProxy.connectionState {
+            case .unknown: return "未检测"
+            case .connected: return "模块已连接"
+            case .failed: return "连接失败"
+            }
+        }
+        if !proxy.isRunning {
+            return "代理未运行"
+        }
+        return keepAlive.isHealthy ? "代理运行中 · 保活正常" : "代理运行中 · 保活中断"
+    }
+
+    private func rememberDiscreteSelection(name: String, coordinatePair: CoordinatePair) {
+        recentSelections.record(name: name, coordinatePair: coordinatePair)
+    }
+
+    private func formattedSelectionName(for pair: CoordinatePair) -> String {
+        String(format: "%.4f, %.4f", pair.wgs84.latitude, pair.wgs84.longitude)
+    }
+
+    private func selectRecent(_ item: RecentSelection) {
+        if let favorite = favorites.favorites.first(where: {
+            $0.coordinatePair.matchesWGS84(
+                latitude: item.coordinatePair.wgs84.latitude,
+                longitude: item.coordinatePair.wgs84.longitude
+            )
+        }) {
+            select(favorite)
+            return
+        }
+        geocodeDebounceTask?.cancel()
+        reverseGeocodeTask?.cancel()
+        favorites.select(nil)
+        mapState.selectSearchResult(
+            item.coordinatePair.coordinate(for: CoordinateConverter.currentMapCoordinateSystem),
+            name: item.name
+        )
+        LastCoordinateStore.save(
+            coordinatePair: item.coordinatePair,
+            zoomMeters: mapState.viewportMeters
+        )
+        rememberDiscreteSelection(name: item.name, coordinatePair: item.coordinatePair)
     }
 
     @MainActor
@@ -1453,6 +1544,10 @@ struct MapHomeView: View {
         // Persist both forms once from the explicitly typed input boundary.
         LastCoordinateStore.save(coordinatePair: pair, zoomMeters: currentViewport)
         favorites.selectMatching(coordinatePair: pair)
+        rememberDiscreteSelection(
+            name: mapState.displayName ?? "实时定位",
+            coordinatePair: pair
+        )
         scheduleGeocode(pair: pair, revision: mapState.selection.revision)
     }
 
@@ -1525,6 +1620,9 @@ struct MapHomeView: View {
                         country: placemark.country
                     )
                     _ = mapState.acceptPlaceDescriptor(descriptor, selectionRevision: revision)
+                    if let name = mapState.displayName {
+                        recentSelections.updateNameIfPresent(for: pair, name: name)
+                    }
                     return
                 } catch {
                     guard !Task.isCancelled, mapState.selection.revision == revision else { return }
@@ -1673,6 +1771,7 @@ struct MapHomeView: View {
             coordinatePair: pair,
             zoomMeters: mapState.viewportMeters
         )
+        rememberDiscreteSelection(name: result.name, coordinatePair: pair)
         searchText = result.name
         searchResults = []
         searchError = ""
@@ -1700,6 +1799,7 @@ struct MapHomeView: View {
             coordinatePair: favorite.coordinatePair,
             zoomMeters: mapState.viewportMeters
         )
+        rememberDiscreteSelection(name: favorite.name, coordinatePair: favorite.coordinatePair)
     }
 
     private var enableTipSheet: some View {

@@ -51,6 +51,23 @@ struct FavoriteListView: View {
         .navigationBarTitleDisplayMode(.inline)
         .searchable(text: $query, prompt: "搜索名称")
         .toolbar {
+            ToolbarItem(placement: .navigationBarLeading) {
+                Menu {
+                    ForEach(FavoriteLocationStore.SortOrder.allCases, id: \.self) { order in
+                        Button {
+                            favorites.setSortOrder(order)
+                        } label: {
+                            if favorites.sortOrder == order {
+                                Label(order.title, systemImage: "checkmark")
+                            } else {
+                                Text(order.title)
+                            }
+                        }
+                    }
+                } label: {
+                    Label("排序", systemImage: "arrow.up.arrow.down")
+                }
+            }
             ToolbarItem(placement: .navigationBarTrailing) {
                 Button("完成") { dismiss() }
             }
@@ -75,8 +92,8 @@ struct FavoriteListView: View {
 
     private var filteredFavorites: [FavoriteLocation] {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return favorites.favorites }
-        return favorites.favorites.filter { $0.name.localizedCaseInsensitiveContains(trimmed) }
+        guard !trimmed.isEmpty else { return favorites.displayedFavorites }
+        return favorites.displayedFavorites.filter { $0.name.localizedCaseInsensitiveContains(trimmed) }
     }
 
     private var emptyText: String {

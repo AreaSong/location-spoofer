@@ -242,6 +242,44 @@ final class FavoriteLocationStoreTests: XCTestCase {
         }
     }
 
+    func testDisplayedFavoritesFollowsPersistedSortOrder() {
+        let suite = "FavoriteLocationStoreTests.sort.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let store = FavoriteLocationStore(defaults: defaults)
+        _ = store.save(
+            name: "Beijing",
+            coordinatePair: CoordinateConverter.coordinatePair(
+                lat: 39.904,
+                lon: 116.407,
+                mapCoordinateSystem: .gcj02
+            ),
+            accuracy: 20
+        )
+        _ = store.save(
+            name: "Shanghai",
+            coordinatePair: CoordinateConverter.coordinatePair(
+                lat: 31.230,
+                lon: 121.473,
+                mapCoordinateSystem: .gcj02
+            ),
+            accuracy: 20
+        )
+
+        XCTAssertEqual(store.sortOrder, .recent)
+        XCTAssertEqual(store.displayedFavorites.map(\.name), ["Shanghai", "Beijing"])
+
+        store.setSortOrder(.name)
+        XCTAssertEqual(store.displayedFavorites.map(\.name), ["Beijing", "Shanghai"])
+
+        let reloaded = FavoriteLocationStore(defaults: defaults)
+        XCTAssertEqual(reloaded.sortOrder, .name)
+        XCTAssertEqual(reloaded.displayedFavorites.map(\.name), ["Beijing", "Shanghai"])
+
+        reloaded.setSortOrder(.recent)
+        XCTAssertEqual(reloaded.displayedFavorites.map(\.name), ["Shanghai", "Beijing"])
+    }
+
 }
 
 private struct LegacyFavoritePayload: Encodable {

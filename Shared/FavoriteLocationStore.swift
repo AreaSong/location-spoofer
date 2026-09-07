@@ -1,3 +1,4 @@
+import Combine
 import CoreLocation
 import Foundation
 
@@ -87,10 +88,24 @@ final class FavoriteLocationStore: ObservableObject {
     private enum Keys {
         static let favorites = "favorite_locations"
         static let selectedID = "favorite_locations_selected_id"
+        static let sortOrder = "favorite_locations_sort_order"
+    }
+
+    enum SortOrder: String, CaseIterable {
+        case recent
+        case name
+
+        var title: String {
+            switch self {
+            case .recent: return "按时间"
+            case .name: return "按名称"
+            }
+        }
     }
 
     @Published private(set) var favorites: [FavoriteLocation]
     @Published private(set) var selectedFavoriteID: UUID?
+    @Published private(set) var sortOrder: SortOrder
     private let defaults: UserDefaults
 
     init(defaults: UserDefaults = AppGroup.defaults) {
@@ -102,6 +117,16 @@ final class FavoriteLocationStore: ObservableObject {
             self.favorites = []
         }
         self.selectedFavoriteID = defaults.string(forKey: Keys.selectedID).flatMap(UUID.init(uuidString:))
+        self.sortOrder = SortOrder(rawValue: defaults.string(forKey: Keys.sortOrder) ?? "") ?? .recent
+    }
+
+    var displayedFavorites: [FavoriteLocation] {
+        switch sortOrder {
+        case .recent:
+            return favorites.sorted { $0.createdAt > $1.createdAt }
+        case .name:
+            return favorites.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+        }
     }
 
     var selectedFavorite: FavoriteLocation? {
@@ -179,11 +204,16 @@ final class FavoriteLocationStore: ObservableObject {
     }
 
     func delete(_ favorite: FavoriteLocation) {
-        favorites.removeAll { $0.id == favorite.id }
+        favorites = favorites.filter { $0.id != favorite.id }
         if selectedFavoriteID == favorite.id {
-            select(favorites.first?.id)
+            select(displayedFavorites.first?.id)
         }
         persistIgnoringFailure()
+    }
+
+    func setSortOrder(_ order: SortOrder) {
+        sortOrder = order
+        defaults.set(order.rawValue, forKey: Keys.sortOrder)
     }
 
     func exportTransferred() throws -> Data {
