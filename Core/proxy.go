@@ -73,6 +73,14 @@ func isWlocHost(host string) bool {
 	return false
 }
 
+func isWlocPatchRequest(req *http.Request) bool {
+	if req == nil || req.URL == nil || req.Method != http.MethodPost {
+		return false
+	}
+	path := strings.TrimSuffix(req.URL.Path, "/")
+	return strings.HasSuffix(path, "/clls/wloc")
+}
+
 func newProxy(cert *tls.Certificate) *goproxy.ProxyHttpServer {
 	proxy := goproxy.NewProxyHttpServer()
 	proxy.Verbose = false
@@ -223,7 +231,13 @@ func patchWlocResponse(resp *http.Response, ctx *goproxy.ProxyCtx) *http.Respons
 	if resp == nil || resp.Request == nil {
 		return resp
 	}
-	if !isWlocHost(resp.Request.Host) || resp.Request.URL.Path != "/clls/wloc" || resp.Request.Method != http.MethodPost {
+	if !isWlocHost(resp.Request.Host) {
+		return resp
+	}
+	if !isWlocPatchRequest(resp.Request) {
+		if resp.Request.Method == http.MethodPost || resp.Request.Method == http.MethodPut {
+			logEvent("wloc pass-through " + resp.Request.Method + " " + resp.Request.URL.Path)
+		}
 		return resp
 	}
 
@@ -262,7 +276,7 @@ func patchWlocResponse(resp *http.Response, ctx *goproxy.ProxyCtx) *http.Respons
 	})
 	if err != nil || bytes.Equal(patched, body) {
 		if err != nil {
-			logEvent("wloc patch skipped: " + err.Error())
+			logEvent("wloc patch skipped: " + err.Error() + " path=" + resp.Request.URL.Path)
 		}
 		resp.Body = io.NopCloser(bytes.NewReader(body))
 		return resp

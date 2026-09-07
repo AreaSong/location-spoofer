@@ -69,6 +69,9 @@ final class MotionSimulationStore: ObservableObject {
 @MainActor
 final class RandomRadiusStore: ObservableObject {
     static let shared = RandomRadiusStore()
+    static let minimumMeters = 10.0
+    static let maximumMeters = 200.0
+    static let defaultMeters = 50.0
 
     private enum Key {
         static let isEnabled = "randomRadius.isEnabled"
@@ -79,10 +82,14 @@ final class RandomRadiusStore: ObservableObject {
     @Published private(set) var radius: Double
     private let defaults: UserDefaults
 
+    var effectiveRadiusMeters: Double {
+        isEnabled ? radius : 0
+    }
+
     init(defaults: UserDefaults = AppGroup.defaults) {
         self.defaults = defaults
         isEnabled = defaults.bool(forKey: Key.isEnabled)
-        radius = defaults.object(forKey: Key.radius) as? Double ?? 50
+        radius = Self.clamped(defaults.object(forKey: Key.radius) as? Double ?? Self.defaultMeters)
     }
 
     func setEnabled(_ enabled: Bool) {
@@ -91,8 +98,47 @@ final class RandomRadiusStore: ObservableObject {
     }
 
     func setRadius(_ radius: Double) {
-        self.radius = radius
-        defaults.set(radius, forKey: Key.radius)
+        let value = Self.clamped(radius)
+        self.radius = value
+        defaults.set(value, forKey: Key.radius)
+    }
+
+    static func clamped(_ radius: Double) -> Double {
+        min(maximumMeters, max(minimumMeters, radius))
+    }
+}
+
+@MainActor
+final class LocationAccuracyStore: ObservableObject {
+    static let shared = LocationAccuracyStore()
+    static let minimumMeters = 5
+    static let maximumMeters = 100
+    static let defaultMeters = 25
+
+    private enum Key {
+        static let meters = "locationAccuracy.meters"
+    }
+
+    @Published private(set) var meters: Int
+    private let defaults: UserDefaults
+
+    init(defaults: UserDefaults = AppGroup.defaults) {
+        self.defaults = defaults
+        if defaults.object(forKey: Key.meters) == nil {
+            meters = Self.defaultMeters
+        } else {
+            meters = Self.clamped(defaults.integer(forKey: Key.meters))
+        }
+    }
+
+    func setMeters(_ meters: Int) {
+        let value = Self.clamped(meters)
+        self.meters = value
+        defaults.set(value, forKey: Key.meters)
+    }
+
+    static func clamped(_ meters: Int) -> Int {
+        min(maximumMeters, max(minimumMeters, meters))
     }
 }
 

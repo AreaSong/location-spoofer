@@ -70,8 +70,15 @@ final class ThirdPartyProxyManager: ObservableObject {
     @Published private(set) var activeSettings: ThirdPartyProxySettingsResponse?
     @Published private(set) var isRequesting = false
     private let requester: any ThirdPartyProxyRequesting
+    private let randomRadiusMeters: () -> Double
 
-    init(requester: (any ThirdPartyProxyRequesting)? = nil) {
+    init(
+        requester: (any ThirdPartyProxyRequesting)? = nil,
+        randomRadiusMeters: (() -> Double)? = nil
+    ) {
+        self.randomRadiusMeters = randomRadiusMeters ?? {
+            RandomRadiusStore.shared.effectiveRadiusMeters
+        }
         if let requester {
             self.requester = requester
         } else {
@@ -99,11 +106,12 @@ final class ThirdPartyProxyManager: ObservableObject {
 
     func save(_ favorite: FavoriteLocation) async throws -> ThirdPartyProxySettingsResponse {
         let wgs84 = favorite.coordinatePair.wgs84
+        let radius = randomRadiusMeters()
         let response = try await perform(action: .save(
             latitude: wgs84.latitude,
             longitude: wgs84.longitude,
             accuracy: favorite.accuracy,
-            randomRadius: RandomRadiusStore.shared.isEnabled ? RandomRadiusStore.shared.radius : 0
+            randomRadius: radius
         ))
         guard response.success else {
             throw ThirdPartyProxyError.rejected(response.error ?? "第三方代理拒绝保存坐标")
@@ -119,7 +127,8 @@ final class ThirdPartyProxyManager: ObservableObject {
         RuntimeLogger.info("APP", "ThirdPartyProxy", "第三方代理已保存 WGS-84 坐标", details: [
             "坐标标准": "WGS-84",
             "取值字段": "coordinatePair.wgs84",
-            "accuracy": String(favorite.accuracy)
+            "accuracy": String(favorite.accuracy),
+            "randomRadius": String(radius)
         ])
         return response
     }
@@ -170,7 +179,7 @@ final class ThirdPartyProxyManager: ObservableObject {
                 URLQueryItem(name: "lon", value: String(format: "%.8f", locale: Locale(identifier: "en_US_POSIX"), longitude)),
                 URLQueryItem(name: "lat", value: String(format: "%.8f", locale: Locale(identifier: "en_US_POSIX"), latitude)),
                 URLQueryItem(name: "acc", value: String(accuracy)),
-                URLQueryItem(name: "randomRadius", value: String(randomRadius))
+                URLQueryItem(name: "randomRadius", value: String(format: "%g", locale: Locale(identifier: "en_US_POSIX"), randomRadius))
             ]
         }
         guard let url = components.url else { throw ThirdPartyProxyError.invalidResponse }

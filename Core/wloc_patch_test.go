@@ -308,6 +308,27 @@ func TestTransparentBodyUnchanged(t *testing.T) {
 	}
 }
 
+func TestIsWlocPatchRequestAcceptsClLsWlocPost(t *testing.T) {
+	cases := []struct {
+		method string
+		url    string
+		want   bool
+	}{
+		{http.MethodPost, "https://gs-loc.apple.com/clls/wloc", true},
+		{http.MethodPost, "https://gsp-ssl.ls.apple.com/clls/wloc/", true},
+		{http.MethodPost, "https://gs-loc-cn.apple.com/foo/clls/wloc", true},
+		{http.MethodGet, "https://gs-loc.apple.com/clls/wloc", false},
+		{http.MethodPost, "https://gs-loc.apple.com/wloc-settings/save", false},
+		{http.MethodPost, "https://gs-loc.apple.com/clls/wloc-extra", false},
+	}
+	for _, tc := range cases {
+		req := httptest.NewRequest(tc.method, tc.url, nil)
+		if got := isWlocPatchRequest(req); got != tc.want {
+			t.Fatalf("%s %s: got %v want %v", tc.method, tc.url, got, tc.want)
+		}
+	}
+}
+
 func TestPatchWlocResponsePassesThroughOversizedBody(t *testing.T) {
 	payload := bytes.Repeat([]byte("x"), (1<<20)+1)
 	req := httptest.NewRequest(http.MethodPost, "https://gs-loc.apple.com/clls/wloc", nil)

@@ -22,6 +22,8 @@ final class LocationActionCoordinatorTests: XCTestCase {
         XCTAssertEqual(proxy.lastCoordinates?.longitude, favorite.coordinatePair.wgs84.longitude)
         XCTAssertEqual(settings.saved?.latitude, favorite.coordinatePair.wgs84.latitude)
         XCTAssertEqual(settings.saved?.longitude, favorite.coordinatePair.wgs84.longitude)
+        XCTAssertEqual(proxy.lastCoordinates?.accuracy, 20)
+        XCTAssertEqual(settings.saved?.accuracy, 20)
         XCTAssertTrue(settings.saved?.enabled == true)
     }
 
@@ -48,6 +50,35 @@ final class LocationActionCoordinatorTests: XCTestCase {
         XCTAssertFalse(coordinator.applyVerified(favorite))
         XCTAssertNil(proxy.lastCoordinates)
         XCTAssertNil(settings.saved)
+    }
+
+    func testApplyOffsetsWGS84WhenRadiusIsEnabled() async {
+        let proxy = FakeLocationActionProxy()
+        let settings = FakeLocationActionSettingsStore()
+        let coordinator = LocationActionCoordinator(
+            proxy: proxy,
+            settings: settings,
+            randomRadiusMeters: { 50 },
+            offsetWGS84: { latitude, longitude, radius in
+                XCTAssertEqual(radius, 50)
+                return (latitude + 0.01, longitude - 0.02)
+            }
+        )
+        let favorite = FavoriteLocation(
+            name: "深圳湾",
+            latitude: 22.494,
+            longitude: 113.951,
+            accuracy: 20,
+            mapCoordinateSystem: .gcj02
+        )
+
+        let applied = await coordinator.apply(favorite)
+
+        XCTAssertTrue(applied)
+        XCTAssertEqual(proxy.lastCoordinates?.latitude, favorite.coordinatePair.wgs84.latitude + 0.01)
+        XCTAssertEqual(proxy.lastCoordinates?.longitude, favorite.coordinatePair.wgs84.longitude - 0.02)
+        XCTAssertEqual(settings.saved?.latitude, favorite.coordinatePair.wgs84.latitude + 0.01)
+        XCTAssertEqual(settings.saved?.longitude, favorite.coordinatePair.wgs84.longitude - 0.02)
     }
 }
 

@@ -16,7 +16,10 @@ final class ProxyManager: ObservableObject {
     private init() { RuntimeLogger.info("APP", "Proxy", "初始化") }
 
     func start() async throws {
-        guard !isRunning else { return }
+        if isRunning {
+            BackgroundKeepAlive.shared.start()
+            return
+        }
         RuntimeLogger.info("APP", "Proxy.start", "启动代理 127.0.0.1:8888")
         do {
             let authority = try certificateStore.ensure()

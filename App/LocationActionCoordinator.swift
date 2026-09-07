@@ -31,16 +31,29 @@ final class LocationActionCoordinator: ObservableObject {
 
     private let proxy: any LocationActionProxying
     private let settings: any LocationActionSettingsStoring
+    private let randomRadiusMeters: () -> Double
+    private let offsetWGS84: (Double, Double, Double) -> (latitude: Double, longitude: Double)
 
-    init() {
-        self.proxy = ProxyManager.shared
-        self.settings = DeviceWlocSettingsStorage()
-        self.virtualLocationEnabled = settings.load()?.enabled == true
+    convenience init() {
+        self.init(
+            proxy: ProxyManager.shared,
+            settings: DeviceWlocSettingsStorage(),
+            randomRadiusMeters: { RandomRadiusStore.shared.effectiveRadiusMeters }
+        )
     }
 
-    init(proxy: any LocationActionProxying, settings: any LocationActionSettingsStoring) {
+    init(
+        proxy: any LocationActionProxying,
+        settings: any LocationActionSettingsStoring,
+        randomRadiusMeters: @escaping () -> Double = { 0 },
+        offsetWGS84: @escaping (Double, Double, Double) -> (latitude: Double, longitude: Double) = {
+            LocationCoordinateOffset.offsetWGS84(latitude: $0, longitude: $1, radiusMeters: $2)
+        }
+    ) {
         self.proxy = proxy
         self.settings = settings
+        self.randomRadiusMeters = randomRadiusMeters
+        self.offsetWGS84 = offsetWGS84
         self.virtualLocationEnabled = settings.load()?.enabled == true
     }
 
@@ -89,7 +102,9 @@ final class LocationActionCoordinator: ObservableObject {
 
     private func commit(_ favorite: FavoriteLocation) -> Bool {
         // WLOC 合约固定使用持久化的 WGS-84 值，不依赖当前地图地图坐标标准。
-        let wgs = favorite.coordinatePair.wgs84
+        let original = favorite.coordinatePair.wgs84
+        let radius = randomRadiusMeters()
+        let wgs = offsetWGS84(original.latitude, original.longitude, radius)
         let value = WlocSettings(
             longitude: wgs.longitude,
             latitude: wgs.latitude,
@@ -103,13 +118,26 @@ final class LocationActionCoordinator: ObservableObject {
             enabled: true,
             accuracy: favorite.accuracy
         )
-        RuntimeLogger.info("APP", "坐标转换", "设置虚拟定位坐标", details: [
+        var details = [
             "WLOC写入标准": CoordinateConverter.MapCoordinateSystem.wgs84.diagnosticName,
             "当前地图标准": CoordinateConverter.currentMapCoordinateSystem.diagnosticName,
             "目标所在区域": CoordinateConverter.usesGCJ02ServiceArea(lat: wgs.latitude, lon: wgs.longitude) ? "国内转换区域" : "国外非转换区域",
             "取值字段": "coordinatePair.wgs84",
-            "accuracy": String(favorite.accuracy)
-        ])
+            "accuracy": String(favorite.accuracy),
+            "randomRadius": String(radius)
+        ]
+        if radius > 0 {
+            details["offsetMeters"] = String(
+                format: "%.1f",
+                CoordinateConverter.distance(
+                    lat1: original.latitude,
+                    lon1: original.longitude,
+                    lat2: wgs.latitude,
+                    lon2: wgs.longitude
+                )
+            )
+        }
+        RuntimeLogger.info("APP", "坐标转换", "设置虚拟定位坐标", details: details)
         state = .idle
         virtualLocationEnabled = true
         message = "虚拟定位已开启"

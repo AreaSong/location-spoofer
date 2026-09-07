@@ -341,6 +341,9 @@ struct MapHomeView: View {
         }
         .onChange(of: scenePhase) { phase in
             guard phase == .active else { return }
+            if runtimeMode.mode == .localWiFi, proxy.isRunning {
+                BackgroundKeepAlive.shared.start()
+            }
             Task { @MainActor in
                 await awaitCoordinatedMapCoordinateSystemRefresh(reason: "App回到前台")
             }
@@ -839,7 +842,7 @@ struct MapHomeView: View {
                 mapCoordinate: mapState.selection.coordinate,
                 mapCoordinateSystem: CoordinateConverter.currentMapCoordinateSystem
             ),
-            accuracy: 25
+            accuracy: LocationAccuracyStore.shared.meters
         )
     }
 

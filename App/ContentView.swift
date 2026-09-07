@@ -39,6 +39,9 @@ struct ContentView: View {
         .task { await bootstrap() }
         .task { await checkForUpdates() }
         .onChange(of: scenePhase) { newPhase in
+            if newPhase == .active, ProxyManager.shared.isRunning {
+                BackgroundKeepAlive.shared.start()
+            }
             guard newPhase == .active, let requiredUpdatePrompt else { return }
             updatePrompt = requiredUpdatePrompt
         }

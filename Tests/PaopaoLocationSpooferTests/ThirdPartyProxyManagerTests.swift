@@ -26,7 +26,7 @@ final class ThirdPartyProxyManagerTests: XCTestCase {
         let body = String(format: #"{"success":true,"longitude":%.8f,"latitude":%.8f,"accuracy":20}"#,
                           locale: Locale(identifier: "en_US_POSIX"), wgs84.longitude, wgs84.latitude)
         let requester = FakeThirdPartyRequester(body: body)
-        let manager = ThirdPartyProxyManager(requester: requester)
+        let manager = ThirdPartyProxyManager(requester: requester, randomRadiusMeters: { 0 })
 
         _ = try await manager.save(favorite)
 
@@ -37,7 +37,30 @@ final class ThirdPartyProxyManagerTests: XCTestCase {
         XCTAssertEqual(latitude, wgs84.latitude, accuracy: 0.000_000_01)
         XCTAssertEqual(longitude, wgs84.longitude, accuracy: 0.000_000_01)
         XCTAssertEqual(values["acc"], "20")
+        XCTAssertEqual(values["randomRadius"], "0")
         XCTAssertEqual(manager.connectionState, .connected(active: true))
+    }
+
+    func testSaveForwardsConfiguredRandomRadius() async throws {
+        let favorite = FavoriteLocation(
+            name: "深圳湾",
+            latitude: 22.494,
+            longitude: 113.951,
+            accuracy: 15,
+            mapCoordinateSystem: .gcj02
+        )
+        let wgs84 = favorite.coordinatePair.wgs84
+        let body = String(format: #"{"success":true,"longitude":%.8f,"latitude":%.8f,"accuracy":15}"#,
+                          locale: Locale(identifier: "en_US_POSIX"), wgs84.longitude, wgs84.latitude)
+        let requester = FakeThirdPartyRequester(body: body)
+        let manager = ThirdPartyProxyManager(requester: requester, randomRadiusMeters: { 50 })
+
+        _ = try await manager.save(favorite)
+
+        let components = URLComponents(url: try XCTUnwrap(requester.lastURL), resolvingAgainstBaseURL: false)
+        let values = Dictionary(uniqueKeysWithValues: (components?.queryItems ?? []).map { ($0.name, $0.value ?? "") })
+        XCTAssertEqual(values["randomRadius"], "50")
+        XCTAssertEqual(values["acc"], "15")
     }
 
     func testConnectionUsesLegacySaveQueryEndpoint() async throws {
@@ -67,7 +90,7 @@ final class ThirdPartyProxyManagerTests: XCTestCase {
             wgs84.latitude
         )
         let requester = FakeThirdPartyRequester(body: body)
-        let manager = ThirdPartyProxyManager(requester: requester)
+        let manager = ThirdPartyProxyManager(requester: requester, randomRadiusMeters: { 0 })
 
         let response = try await manager.save(favorite)
 
