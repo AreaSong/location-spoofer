@@ -143,6 +143,33 @@ final class LocationAccuracyStore: ObservableObject {
 }
 
 @MainActor
+final class CoordinateInputPreferenceStore: ObservableObject {
+    static let shared = CoordinateInputPreferenceStore()
+
+    private enum Key {
+        static let lastSystem = "coordinateInput.lastSystem"
+    }
+
+    @Published private(set) var lastSystem: CoordinateConverter.MapCoordinateSystem
+    private let defaults: UserDefaults
+
+    init(defaults: UserDefaults = AppGroup.defaults) {
+        self.defaults = defaults
+        if let raw = defaults.string(forKey: Key.lastSystem),
+           let stored = CoordinateConverter.MapCoordinateSystem(rawValue: raw) {
+            lastSystem = stored
+        } else {
+            lastSystem = .gcj02
+        }
+    }
+
+    func setLastSystem(_ system: CoordinateConverter.MapCoordinateSystem) {
+        lastSystem = system
+        defaults.set(system.rawValue, forKey: Key.lastSystem)
+    }
+}
+
+@MainActor
 final class ThirdPartyModuleSourceStore: ObservableObject {
     static let shared = ThirdPartyModuleSourceStore()
 

@@ -9,10 +9,11 @@ private struct SearchLocationResult: Identifiable {
     let subtitle: String
     let coordinate: CLLocationCoordinate2D
     let mapCoordinateSystem: CoordinateConverter.MapCoordinateSystem
+    var remembersPreference = false
 }
 
 private enum HomeSheet: String, Identifiable {
-    case settings, logs
+    case settings, logs, favorites
     var id: String { rawValue }
 }
 
@@ -96,6 +97,7 @@ struct MapHomeView: View {
     @State private var bluePointRefreshPending = false
     @State private var realtimeButtonTask: Task<Void, Never>?
     @State private var favoriteSaveTask: Task<Void, Never>?
+    @State private var displayedMapCoordinateSystem = CoordinateConverter.currentMapCoordinateSystem
     // 激活时的坐标（本地存，绕过 C 桥接层精度丢失）
     @State private var activeSpoofLat: Double?
     @State private var activeSpoofLon: Double?
@@ -263,6 +265,17 @@ struct MapHomeView: View {
                 switch sheet {
                 case .settings: SettingsView(setup: setup, actions: actions, favorites: favorites)
                 case .logs: RuntimeLogsView(setup: setup, actions: actions, testFavorite: testFavorite)
+                case .favorites:
+                    FavoriteListView(
+                        favorites: favorites,
+                        onSelect: { favorite in
+                            select(favorite)
+                        },
+                        onRename: { favorite, name in
+                            favorites.rename(favorite.id, to: name)
+                            mapState.updateExplicitName(name, forFavoriteID: favorite.id)
+                        }
+                    )
                 }
             }
         }
@@ -317,6 +330,7 @@ struct MapHomeView: View {
             Button("知道了", role: .cancel) {}
         } message: { Text(manualHint) }
         .onAppear {
+            displayedMapCoordinateSystem = CoordinateConverter.currentMapCoordinateSystem
             startMapRuntimeOnce()
             if runtimeMode.mode == .localWiFi {
                 registerWiFiChangeObserver()
@@ -414,7 +428,7 @@ struct MapHomeView: View {
         HStack(spacing: 10) {
             HStack(spacing: 10) {
                 Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
-                TextField("搜索地点或坐标", text: $searchText)
+                TextField("搜索地点、坐标或地图链接", text: $searchText)
                     .textInputAutocapitalization(.never).autocorrectionDisabled().submitLabel(.search).onSubmit(doSearch)
                 if isSearching { ProgressView().controlSize(.small) }
                 else if !searchText.isEmpty {
@@ -488,6 +502,9 @@ struct MapHomeView: View {
             HStack {
                 VStack(alignment: .leading, spacing: 3) {
                     Text(mapState.displayName ?? "当前选点").font(.subheadline.weight(.semibold)).lineLimit(1)
+                    Text("当前地图：\(displayedMapCoordinateSystem.diagnosticName)")
+                        .font(.caption2.weight(.medium))
+                        .foregroundStyle(.secondary)
                     coordinateRow(label: "GCJ-02(国内)", system: .gcj02)
                     coordinateRow(label: "WGS-84(国际)", system: .wgs84)
                 }
@@ -528,10 +545,17 @@ struct MapHomeView: View {
             }
             // 收藏
             if favorites.favorites.isEmpty {
-                Text("搜索或点击地图选点后，保存为收藏。").font(.footnote).foregroundStyle(.secondary)
+                HStack {
+                    Text("搜索或点击地图选点后，保存为收藏。").font(.footnote).foregroundStyle(.secondary)
+                    Spacer()
+                    allFavoritesButton
+                }
             } else {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 8) { ForEach(favorites.favorites) { f in favoriteChip(f) } }.padding(.vertical, 2)
+                HStack(spacing: 8) {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 8) { ForEach(favorites.favorites) { f in favoriteChip(f) } }.padding(.vertical, 2)
+                    }
+                    allFavoritesButton
                 }
             }
             // 主控按钮（带动画）
@@ -865,19 +889,29 @@ struct MapHomeView: View {
     ) -> some View {
         let coordinate = currentSelectionPair.coordinate(for: system)
         let text = String(format: "%.6f, %.6f", coordinate.latitude, coordinate.longitude)
+        let isCurrent = displayedMapCoordinateSystem == system
+        let valueColor: Color = copiedCoordinateSystem == system ? .green : (isCurrent ? .primary : .secondary)
         return HStack(spacing: 6) {
             Text(label)
                 .font(.caption2.weight(.medium))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(isCurrent ? .primary : .secondary)
                 .lineLimit(1)
                 .fixedSize(horizontal: true, vertical: false)
             Text(text)
                 .font(.caption.monospaced())
-                .foregroundStyle(copiedCoordinateSystem == system ? .green : .secondary)
+                .foregroundStyle(valueColor)
                 .lineLimit(1)
                 .minimumScaleFactor(0.72)
                 .allowsTightening(true)
                 .layoutPriority(1)
+            if isCurrent {
+                Text("当前")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 1)
+                    .background(Color.accentColor, in: Capsule())
+            }
         }
         .contentShape(Rectangle())
         .onTapGesture {
@@ -901,6 +935,20 @@ struct MapHomeView: View {
                     .offset(y: -24)
             }
         }
+    }
+
+    private var allFavoritesButton: some View {
+        Button {
+            activeSheet = .favorites
+        } label: {
+            Text("全部")
+                .font(.caption.weight(.semibold))
+                .padding(.horizontal, 10)
+                .padding(.vertical, 8)
+        }
+        .buttonStyle(.plain)
+        .background(Color.secondary.opacity(0.12), in: Capsule())
+        .accessibilityLabel("打开收藏列表")
     }
 
     private var testFavorite: FavoriteLocation { currentSelectionFavorite }
@@ -947,6 +995,7 @@ struct MapHomeView: View {
         realtimeRequestTask = nil
         realtimeRequestContext = nil
         mapState.clearRealtimeLocationForMapCoordinateSystemChange()
+        displayedMapCoordinateSystem = change.current
         let pinWasReprojected = reprojectMapSelection(for: change)
         if let stored = LastCoordinateStore.load() {
             scheduleGeocode(pair: stored.coordinatePair, revision: mapState.selection.revision)
@@ -1506,7 +1555,7 @@ struct MapHomeView: View {
         guard !query.isEmpty, !isSearching else { return }
         searchRequestID &+= 1
         let requestID = searchRequestID
-        if presentCoordinateSearchResults(query) {
+        if presentMapLinkSearchResults(query) || presentCoordinateSearchResults(query) {
             return
         }
         isSearching = true
@@ -1544,24 +1593,15 @@ struct MapHomeView: View {
 
     private func presentCoordinateSearchResults(_ query: String) -> Bool {
         guard let parsed = CoordinateTextParser.parse(query) else { return false }
-        isSearching = false
-        searchError = ""
         let coordinate = CLLocationCoordinate2D(latitude: parsed.latitude, longitude: parsed.longitude)
         let name = String(format: "%.6f, %.6f", parsed.latitude, parsed.longitude)
-        searchResults = [
-            SearchLocationResult(
-                name: name,
-                subtitle: "按国内标准(GCJ-02)选点",
-                coordinate: coordinate,
-                mapCoordinateSystem: .gcj02
-            ),
-            SearchLocationResult(
-                name: name,
-                subtitle: "按国际标准(WGS-84)选点",
-                coordinate: coordinate,
-                mapCoordinateSystem: .wgs84
-            )
-        ]
+        presentCoordinateChoices(
+            name: name,
+            coordinate: coordinate,
+            preferred: CoordinateInputPreferenceStore.shared.lastSystem,
+            sourceLabel: nil,
+            remembersPreference: true
+        )
         RuntimeLogger.info("APP", "搜索", "识别为坐标输入", details: [
             "latitude": String(parsed.latitude),
             "longitude": String(parsed.longitude)
@@ -1569,10 +1609,58 @@ struct MapHomeView: View {
         return true
     }
 
+    private func presentMapLinkSearchResults(_ query: String) -> Bool {
+        guard let parsed = MapLinkParser.parse(query) else { return false }
+        let coordinate = CLLocationCoordinate2D(latitude: parsed.latitude, longitude: parsed.longitude)
+        let name = parsed.name ?? String(format: "%.6f, %.6f", parsed.latitude, parsed.longitude)
+        presentCoordinateChoices(
+            name: name,
+            coordinate: coordinate,
+            preferred: parsed.inferredSystem,
+            sourceLabel: "\(parsed.sourceName)链接",
+            remembersPreference: false
+        )
+        RuntimeLogger.info("APP", "搜索", "识别为地图链接", details: [
+            "来源": parsed.sourceName,
+            "推断标准": parsed.inferredSystem.diagnosticName,
+            "latitude": String(parsed.latitude),
+            "longitude": String(parsed.longitude)
+        ])
+        return true
+    }
+
+    private func presentCoordinateChoices(
+        name: String,
+        coordinate: CLLocationCoordinate2D,
+        preferred: CoordinateConverter.MapCoordinateSystem,
+        sourceLabel: String?,
+        remembersPreference: Bool
+    ) {
+        isSearching = false
+        searchError = ""
+        func result(_ system: CoordinateConverter.MapCoordinateSystem) -> SearchLocationResult {
+            let choice = system == .gcj02 ? "按国内标准(GCJ-02)选点" : "按国际标准(WGS-84)选点"
+            let subtitle = sourceLabel.map { "\($0) · \(choice)" } ?? choice
+            return SearchLocationResult(
+                name: name,
+                subtitle: subtitle,
+                coordinate: coordinate,
+                mapCoordinateSystem: system,
+                remembersPreference: remembersPreference
+            )
+        }
+        let gcj = result(.gcj02)
+        let wgs = result(.wgs84)
+        searchResults = preferred == .wgs84 ? [wgs, gcj] : [gcj, wgs]
+    }
+
     private func selectSearchResult(_ result: SearchLocationResult) {
         geocodeDebounceTask?.cancel()
         reverseGeocodeTask?.cancel()
         favorites.select(nil)
+        if result.remembersPreference {
+            CoordinateInputPreferenceStore.shared.setLastSystem(result.mapCoordinateSystem)
+        }
         let pair = CoordinatePair(
             mapCoordinate: result.coordinate,
             mapCoordinateSystem: result.mapCoordinateSystem
