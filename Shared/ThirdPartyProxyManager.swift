@@ -152,9 +152,9 @@ final class ThirdPartyProxyManager: ObservableObject {
         return response
     }
 
-    func save(_ favorite: FavoriteLocation) async throws -> ThirdPartyProxySettingsResponse {
+    func save(_ favorite: FavoriteLocation, randomRadius: Double? = nil) async throws -> ThirdPartyProxySettingsResponse {
         let wgs84 = favorite.coordinatePair.wgs84
-        let radius = randomRadiusMeters()
+        let radius = randomRadius ?? randomRadiusMeters()
         let response = try await perform(action: .save(
             latitude: wgs84.latitude,
             longitude: wgs84.longitude,

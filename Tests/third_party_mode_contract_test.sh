@@ -29,6 +29,8 @@ grep -q 'DisclosureGroup("高级")' "$SETUP" \
   || fail "setup module source switching must live under Advanced"
 grep -q 'static let configurationEndpoint' "$MANAGER" \
   || fail "the third-party configuration endpoint must have one shared owner"
+grep -q 'randomRadius: Double? = nil' "$MANAGER" \
+  || fail "third-party save must allow route playback to force randomRadius 0"
 grep -q 'DisclosureGroup("第三方客户端适配说明")' "$SETUP" \
   || fail "client selection must expose the third-party integration contract"
 grep -Fq '查询：GET ?action=query' "$SETUP" \

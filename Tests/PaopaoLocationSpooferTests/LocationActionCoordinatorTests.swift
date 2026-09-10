@@ -80,6 +80,41 @@ final class LocationActionCoordinatorTests: XCTestCase {
         XCTAssertEqual(settings.saved?.latitude, favorite.coordinatePair.wgs84.latitude + 0.01)
         XCTAssertEqual(settings.saved?.longitude, favorite.coordinatePair.wgs84.longitude - 0.02)
     }
+
+    func testUpdateSpoofedWGS84WritesExactCoordinatesWithoutRadius() {
+        let proxy = FakeLocationActionProxy(isRunning: true)
+        let settings = FakeLocationActionSettingsStore()
+        let coordinator = LocationActionCoordinator(
+            proxy: proxy,
+            settings: settings,
+            randomRadiusMeters: { 50 },
+            offsetWGS84: { _, _, _ in
+                XCTFail("route writes must not apply a random offset")
+                return (0, 0)
+            }
+        )
+
+        XCTAssertTrue(coordinator.updateSpoofedWGS84(latitude: 22.5, longitude: 113.9, accuracy: 15))
+        XCTAssertEqual(proxy.lastCoordinates?.latitude, 22.5)
+        XCTAssertEqual(proxy.lastCoordinates?.longitude, 113.9)
+        XCTAssertEqual(proxy.lastCoordinates?.accuracy, 15)
+        XCTAssertEqual(settings.saved?.latitude, 22.5)
+        XCTAssertEqual(settings.saved?.longitude, 113.9)
+        XCTAssertEqual(settings.saved?.accuracy, 15)
+        XCTAssertEqual(settings.saved?.enabled, true)
+        XCTAssertTrue(coordinator.virtualLocationEnabled)
+    }
+
+    func testUpdateSpoofedWGS84RejectsStoppedProxyWithoutWriting() {
+        let proxy = FakeLocationActionProxy()
+        let settings = FakeLocationActionSettingsStore()
+        let coordinator = LocationActionCoordinator(proxy: proxy, settings: settings)
+
+        XCTAssertFalse(coordinator.updateSpoofedWGS84(latitude: 22.5, longitude: 113.9, accuracy: 15))
+        XCTAssertNil(proxy.lastCoordinates)
+        XCTAssertNil(settings.saved)
+        XCTAssertFalse(coordinator.virtualLocationEnabled)
+    }
 }
 
 @MainActor

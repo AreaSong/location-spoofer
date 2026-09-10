@@ -63,6 +63,28 @@ final class ThirdPartyProxyManagerTests: XCTestCase {
         XCTAssertEqual(values["acc"], "15")
     }
 
+    func testSaveExplicitRandomRadiusOverridesStore() async throws {
+        let favorite = FavoriteLocation(
+            name: "深圳湾",
+            latitude: 22.494,
+            longitude: 113.951,
+            accuracy: 15,
+            mapCoordinateSystem: .gcj02
+        )
+        let wgs84 = favorite.coordinatePair.wgs84
+        let body = String(format: #"{"success":true,"longitude":%.8f,"latitude":%.8f,"accuracy":15}"#,
+                          locale: Locale(identifier: "en_US_POSIX"), wgs84.longitude, wgs84.latitude)
+        let requester = FakeThirdPartyRequester(body: body)
+        let manager = ThirdPartyProxyManager(requester: requester, randomRadiusMeters: { 50 })
+
+        _ = try await manager.save(favorite, randomRadius: 0)
+
+        let components = URLComponents(url: try XCTUnwrap(requester.lastURL), resolvingAgainstBaseURL: false)
+        let values = Dictionary(uniqueKeysWithValues: (components?.queryItems ?? []).map { ($0.name, $0.value ?? "") })
+        XCTAssertEqual(values["randomRadius"], "0")
+        XCTAssertEqual(values["acc"], "15")
+    }
+
     func testConnectionUsesLegacySaveQueryEndpoint() async throws {
         let requester = FakeThirdPartyRequester(body: #"{"success":false,"error":"无已保存的坐标"}"#)
         let manager = ThirdPartyProxyManager(requester: requester)

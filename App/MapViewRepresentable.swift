@@ -41,6 +41,7 @@ struct MapViewRepresentable: UIViewRepresentable {
     let onUserZoomChanged: ((CLLocationDistance) -> Void)?
     var onZoomIn: (() -> Void)?
     var onZoomOut: (() -> Void)?
+    var routeCoordinates: [CLLocationCoordinate2D] = []
 
     func makeCoordinator() -> Coordinator { Coordinator(parent: self) }
 
@@ -146,6 +147,7 @@ struct MapViewRepresentable: UIViewRepresentable {
     func updateUIView(_ map: MKMapView, context: Context) {
         context.coordinator.parent = self
         context.coordinator.consume(cameraCommand, on: map)
+        context.coordinator.updateRouteOverlay(routeCoordinates, on: map)
     }
 
     final class Coordinator: NSObject, MKMapViewDelegate {
@@ -164,6 +166,7 @@ struct MapViewRepresentable: UIViewRepresentable {
         private var userDotDiameter: CGFloat = 20
         private var keyboardObserverTokens: [NSObjectProtocol] = []
         private var lastForwardedRealtimeTimestamp: Date?
+        private var lastRouteCoordinates: [CLLocationCoordinate2D] = []
 
         deinit {
             keyboardObserverTokens.forEach(NotificationCenter.default.removeObserver)
@@ -226,6 +229,31 @@ struct MapViewRepresentable: UIViewRepresentable {
             guard gesture.state == .ended, let map else { return }
             let point = gesture.location(in: map)
             parent.onMapTap(map.convert(point, toCoordinateFrom: map))
+        }
+
+        func updateRouteOverlay(_ coordinates: [CLLocationCoordinate2D], on map: MKMapView) {
+            if coordinates.count == lastRouteCoordinates.count,
+               zip(coordinates, lastRouteCoordinates).allSatisfy({
+                   $0.latitude == $1.latitude && $0.longitude == $1.longitude
+               }) {
+                return
+            }
+            lastRouteCoordinates = coordinates
+            map.removeOverlays(map.overlays.filter { $0 is MKPolyline })
+            guard coordinates.count >= 2 else { return }
+            var points = coordinates
+            let polyline = MKPolyline(coordinates: &points, count: points.count)
+            map.addOverlay(polyline)
+        }
+
+        func mapView(_ mapView: MKMapView, rendererFor overlay: MKOverlay) -> MKOverlayRenderer {
+            guard let polyline = overlay as? MKPolyline else {
+                return MKOverlayRenderer(overlay: overlay)
+            }
+            let renderer = MKPolylineRenderer(polyline: polyline)
+            renderer.strokeColor = UIColor.systemBlue.withAlphaComponent(0.85)
+            renderer.lineWidth = 4
+            return renderer
         }
 
         func mapView(_ mapView: MKMapView, didAdd views: [MKAnnotationView]) {

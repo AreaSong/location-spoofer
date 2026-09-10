@@ -52,6 +52,7 @@ struct MapHomeView: View {
     @ObservedObject var setup: SetupCoordinator
     @StateObject private var favorites: FavoriteLocationStore
     @StateObject private var actions = LocationActionCoordinator()
+    @StateObject private var route = RoutePlaybackController()
     @ObservedObject private var proxy = ProxyManager.shared
     @ObservedObject private var keepAlive = BackgroundKeepAlive.shared
     @ObservedObject private var recentSelections = RecentSelectionStore.shared
@@ -215,7 +216,8 @@ struct MapHomeView: View {
                     LastCoordinateStore.updateZoom(distance)
                 },
                 onZoomIn: { mapState.zoom(by: 0.5) },
-                onZoomOut: { mapState.zoom(by: 2) }
+                onZoomOut: { mapState.zoom(by: 2) },
+                routeCoordinates: route.overlayCoordinates
             )
             .ignoresSafeArea(.container)
 
@@ -223,6 +225,7 @@ struct MapHomeView: View {
                 topControls
                 if let block = locationUseBlock {
                     locationUnavailableOverlay(block)
+                        .onAppear { pauseRouteIfLocationBlocked() }
                 }
                 if locationUseBlock == nil, let message = signingExpiryMapMessage {
                     signingExpiryBannerView(message)
@@ -265,6 +268,14 @@ struct MapHomeView: View {
                 }
                 .padding(.trailing, 16)
                 .padding(.bottom, 8)
+                if route.phase != .inactive {
+                    RoutePlaybackPanel(
+                        route: route,
+                        currentPair: currentSelectionPair,
+                        onPlay: playRoute,
+                        onExit: exitRoute
+                    )
+                }
                 bottomControls
             }
             .padding(.horizontal, 16)
@@ -347,6 +358,7 @@ struct MapHomeView: View {
         .onAppear {
             displayedMapCoordinateSystem = CoordinateConverter.currentMapCoordinateSystem
             startMapRuntimeOnce()
+            bindRoutePlayback()
             if runtimeMode.mode == .localWiFi {
                 registerWiFiChangeObserver()
             } else {
@@ -370,13 +382,34 @@ struct MapHomeView: View {
             favoriteSaveTask = nil
         }
         .onChange(of: scenePhase) { phase in
-            guard phase == .active else { return }
+            if phase != .active {
+                route.pause()
+                return
+            }
             if runtimeMode.mode == .localWiFi, proxy.isRunning {
                 BackgroundKeepAlive.shared.start()
             }
             Task { @MainActor in
                 await awaitCoordinatedMapCoordinateSystemRefresh(reason: "App回到前台")
             }
+        }
+        .onChange(of: spoofState) { state in
+            handleRouteSpoofStateChange(state)
+        }
+        .onChange(of: route.progress) { _ in
+            syncRouteSpoofCoordinate()
+        }
+        .onChange(of: route.phase) { _ in
+            syncRouteSpoofCoordinate()
+        }
+        .onChange(of: net.isWiFiEnabled) { _ in
+            pauseRouteIfLocationBlocked()
+        }
+        .onChange(of: net.usesCellular) { _ in
+            pauseRouteIfLocationBlocked()
+        }
+        .onChange(of: runtimeFailure.failure) { _ in
+            pauseRouteIfLocationBlocked()
         }
         .onChange(of: proxy.isRunning) { running in
             if runtimeMode.mode == .localWiFi, !running && spoofState == .active {
@@ -409,6 +442,10 @@ struct MapHomeView: View {
             } else {
                 spoofState = .idle
                 refreshThirdPartyState()
+            }
+            route.pause()
+            if route.waitingForActivation {
+                route.cancelWaiting()
             }
         }
         .sheet(isPresented: $showEnableTip) { enableTipSheet }
@@ -464,6 +501,11 @@ struct MapHomeView: View {
             .background(.regularMaterial, in: Capsule())
             .shadow(color: .black.opacity(0.13), radius: 9, y: 4)
             Menu {
+                Button {
+                    enterRoute()
+                } label: {
+                    Label("直线路线", systemImage: "figure.walk")
+                }
                 Button { activeSheet = .logs } label: { Label("日志", systemImage: "list.bullet.rectangle") }
                 Button { activeSheet = .settings } label: { Label("设置", systemImage: "gearshape") }
             } label: {
@@ -763,22 +805,28 @@ struct MapHomeView: View {
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
     }
 
-    private func beginLocationOperation() {
+    private func beginLocationOperation(target overrideTarget: FavoriteLocation? = nil) {
         if locationUseBlock != nil {
             return
+        }
+        if route.phase == .playing {
+            route.pause()
         }
         guard spoofState != .verifying, locationOperationTask == nil else { return }
         let wasActive = spoofState == .active
         locationOperationID &+= 1
         let operationID = locationOperationID
         let selectionRevision = mapState.selection.revision
-        let target = currentSelectionFavorite
+        let target = overrideTarget ?? currentSelectionFavorite
         spoofState = .verifying
 
         locationOperationTask = Task { @MainActor in
             if runtimeMode.mode == .thirdParty {
                 do {
-                    let response = try await thirdPartyProxy.save(target)
+                    let response = try await thirdPartyProxy.save(
+                        target,
+                        randomRadius: route.waitingForActivation ? 0 : nil
+                    )
                     guard !Task.isCancelled,
                           operationID == locationOperationID,
                           runtimeMode.mode == .thirdParty else {
@@ -873,6 +921,7 @@ struct MapHomeView: View {
     }
 
     private func stopSpoofing() {
+        route.pause()
         locationOperationTask?.cancel()
         locationOperationTask = nil
         locationOperationID &+= 1
@@ -1036,6 +1085,122 @@ struct MapHomeView: View {
     }
 
     @MainActor
+    private func bindRoutePlayback() {
+        route.applyCoordinate = { pair in
+            await applyRouteCoordinate(pair)
+        }
+    }
+
+    private func enterRoute() {
+        if locationUseBlock != nil { return }
+        if route.phase == .inactive {
+            route.enter(start: currentSelectionPair)
+        }
+    }
+
+    private func exitRoute() {
+        syncRouteSpoofCoordinate()
+        route.exit()
+    }
+
+    private func playRoute() {
+        bindRoutePlayback()
+        if locationUseBlock != nil { return }
+        if spoofState == .verifying { return }
+        if route.phase == .paused {
+            route.resume()
+            return
+        }
+        guard let start = route.start, route.canPlay else { return }
+        route.requestPlay()
+        if spoofState == .active {
+            Task { @MainActor in
+                let applied = await applyRouteCoordinate(start)
+                if applied {
+                    route.noteActivated()
+                } else {
+                    route.cancelWaiting()
+                }
+            }
+            return
+        }
+        let startFavorite = FavoriteLocation(
+            name: "直线路线",
+            coordinatePair: start,
+            accuracy: LocationAccuracyStore.shared.meters
+        )
+        beginLocationOperation(target: startFavorite)
+    }
+
+    private func applyRouteCoordinate(_ pair: CoordinatePair) async -> Bool {
+        if locationUseBlock != nil { return false }
+        let accuracy = LocationAccuracyStore.shared.meters
+        if runtimeMode.mode == .thirdParty {
+            let favorite = FavoriteLocation(
+                name: "直线路线",
+                coordinatePair: pair,
+                accuracy: accuracy
+            )
+            do {
+                _ = try await thirdPartyProxy.save(favorite, randomRadius: 0)
+                runtimeFailure.clearThirdParty()
+                return true
+            } catch {
+                if case ThirdPartyProxyError.rejected(let message) = error,
+                   message.contains("正在执行") {
+                    return true
+                }
+                RuntimeLogger.error(
+                    "APP",
+                    "ThirdPartyProxy",
+                    "路线写入第三方坐标失败",
+                    error: error,
+                    details: [
+                        "当前客户端": thirdPartyClient.selectedClient.name,
+                        "原因": ThirdPartyProxyError.diagnosis(for: error).title
+                    ]
+                )
+                return false
+            }
+        }
+        let wgs = pair.wgs84
+        return actions.updateSpoofedWGS84(
+            latitude: wgs.latitude,
+            longitude: wgs.longitude,
+            accuracy: accuracy
+        )
+    }
+
+    private func syncRouteSpoofCoordinate() {
+        guard route.phase != .inactive, let current = route.current else { return }
+        activeSpoofLat = current.wgs84.latitude
+        activeSpoofLon = current.wgs84.longitude
+    }
+
+    private func handleRouteSpoofStateChange(_ state: SpoofState) {
+        switch state {
+        case .active:
+            if route.waitingForActivation {
+                route.noteActivated()
+            }
+        case .idle:
+            if route.waitingForActivation {
+                route.cancelWaiting()
+            }
+            route.pause()
+        case .verifying:
+            break
+        }
+    }
+
+    private func pauseRouteIfLocationBlocked() {
+        guard locationUseBlock != nil else { return }
+        route.pause()
+        if route.waitingForActivation {
+            route.cancelWaiting()
+        }
+    }
+
     private func openSettings(_ destination: SystemSettingsDestination) {
         SystemSettingsNavigator.open(destination) { fallbackHint in
             if let fallbackHint { manualHint = fallbackHint }

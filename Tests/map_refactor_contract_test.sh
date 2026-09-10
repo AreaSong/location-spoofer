@@ -166,5 +166,20 @@ grep -q 'Label("排序"' "$ROOT/App/FavoriteListView.swift" || fail "favorite li
 grep -q 'displayedFavorites' "$MAP_HOME" || fail "home favorite chips must share the sorted favorite order"
 grep -q 'displayedFavorites' "$ROOT/App/FavoriteListView.swift" || fail "favorite list must share the sorted favorite order"
 grep -q 'setSortOrder' "$ROOT/Shared/FavoriteLocationStore.swift" || fail "favorite sort preference must be persistable"
+grep -q '直线路线' "$MAP_HOME" || fail "map home must expose straight-line route playback"
+grep -q 'MKPolyline' "$MAP_BRIDGE" || fail "the map bridge must draw the route as MKPolyline"
+grep -q 'func updateSpoofedWGS84' "$ROOT/App/LocationActionCoordinator.swift" \
+  || fail "APP-mode route ticks must write exact WGS-84 without going through applyVerified"
+grep -q 'randomRadius: 0' "$MAP_HOME" || fail "route ticks must force third-party randomRadius to 0"
+grep -q 'figure.walk' "$ROOT/App/RoutePlaybackPanel.swift" \
+  || fail "route panel must use an iOS 15 SF Symbol"
+! grep -q 'curvepath' "$MAP_HOME" "$ROOT/App/RoutePlaybackPanel.swift" \
+  || fail "route UI must not use iOS 16-only curvepath symbols"
+test -f "$ROOT/Shared/RoutePlayback.swift" || fail "route interpolation helper is missing"
+test -f "$ROOT/Shared/RoutePlaybackController.swift" || fail "route playback controller is missing"
+test -f "$ROOT/App/RoutePlaybackPanel.swift" || fail "route playback panel is missing"
+if grep -Rq 'RoutePlayback' "$ROOT/ThirdParty/WlocScripts"; then
+  fail "straight-line route playback must not modify vendored WLOC scripts"
+fi
 
 echo "PASS: map location state refactor contract"

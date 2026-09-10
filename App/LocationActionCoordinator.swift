@@ -84,6 +84,25 @@ final class LocationActionCoordinator: ObservableObject {
         return commit(favorite)
     }
 
+    func updateSpoofedWGS84(latitude: Double, longitude: Double, accuracy: Int) -> Bool {
+        guard proxy.isRunning, !state.isBusy else { return false }
+        let value = WlocSettings(
+            longitude: longitude,
+            latitude: latitude,
+            accuracy: accuracy,
+            enabled: true
+        )
+        settings.save(value)
+        _ = proxy.setCoords(
+            lat: latitude,
+            lon: longitude,
+            enabled: true,
+            accuracy: accuracy
+        )
+        virtualLocationEnabled = true
+        return true
+    }
+
     func clear() {
         guard !state.isBusy else { return }
         _ = proxy.setCoords(lat: 0, lon: 0, enabled: false, accuracy: 25)
