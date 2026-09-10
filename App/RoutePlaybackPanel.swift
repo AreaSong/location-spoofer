@@ -9,20 +9,36 @@ struct RoutePlaybackPanel: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
-                Label("路线", systemImage: "figure.walk")
+                Label("走路", systemImage: "figure.walk")
                     .font(.subheadline.weight(.semibold))
-                Picker("速度", selection: $route.travelMode) {
+                Picker("方式", selection: travelModeBinding) {
                     ForEach(RouteTravelMode.allCases) { mode in
                         Text(mode.displayName).tag(mode)
                     }
                 }
                 .pickerStyle(.segmented)
                 .disabled(route.phase == .playing || route.isRouting)
-                .onChange(of: route.travelMode) { _ in
-                    Task { await route.rebuildPath() }
-                }
                 Button("退出") { onExit() }
                     .font(.footnote.weight(.semibold))
+            }
+            VStack(alignment: .leading, spacing: 4) {
+                Text("速度 \(RoutePlayback.formattedSpeed(kilometersPerHour: route.speedKilometersPerHour))")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                Slider(
+                    value: speedBinding,
+                    in: 1...40,
+                    step: 0.5
+                )
+                .disabled(route.phase == .playing)
+                Text(offsetLabel)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                Slider(
+                    value: offsetBinding,
+                    in: 0...80,
+                    step: 5
+                )
             }
             switch route.phase {
             case .playing:
@@ -59,8 +75,36 @@ struct RoutePlaybackPanel: View {
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
     }
 
+    private var offsetLabel: String {
+        if route.offsetMeters <= 0 {
+            return "偏移 0 米，贴着路走"
+        }
+        return "偏移 \(Int(route.offsetMeters.rounded())) 米"
+    }
+
+    private var travelModeBinding: Binding<RouteTravelMode> {
+        Binding(
+            get: { route.travelMode },
+            set: { route.applyTravelMode($0) }
+        )
+    }
+
+    private var speedBinding: Binding<Double> {
+        Binding(
+            get: { route.speedKilometersPerHour },
+            set: { route.setSpeedKilometersPerHour($0) }
+        )
+    }
+
+    private var offsetBinding: Binding<Double> {
+        Binding(
+            get: { route.offsetMeters },
+            set: { route.setOffsetMeters($0) }
+        )
+    }
+
     private var playButton: some View {
-        Button(route.phase == .paused ? "继续" : "播放") { onPlay() }
+        Button(route.phase == .paused ? "继续走" : "开始走") { onPlay() }
             .buttonStyle(.borderedProminent)
             .controlSize(.small)
             .disabled(!route.canPlay || route.waitingForActivation || route.isRouting)

@@ -7,12 +7,14 @@ enum RouteTravelMode: String, CaseIterable, Identifiable {
 
     var id: String { rawValue }
 
-    var metersPerSecond: Double {
+    var kilometersPerHour: Double {
         switch self {
-        case .walk: return 1.4
-        case .bike: return 4.2
+        case .walk: return 5
+        case .bike: return 15
         }
     }
+
+    var metersPerSecond: Double { kilometersPerHour / 3.6 }
 
     var displayName: String {
         switch self {
@@ -109,9 +111,9 @@ enum RoutePlayback {
         return interpolate(from: path.points[index], to: path.points[index + 1], progress: local)
     }
 
-    static func tick(path: RoutePath, mode: RouteTravelMode, elapsed: TimeInterval) -> RouteTick {
+    static func tick(path: RoutePath, speedMetersPerSecond: Double, elapsed: TimeInterval) -> RouteTick {
         let distance = path.totalMeters
-        let speed = max(mode.metersPerSecond, 0.1)
+        let speed = max(speedMetersPerSecond, 0.1)
         let duration = max(distance / speed, 0.1)
         let progress = min(1, max(0, elapsed / duration))
         return RouteTick(
@@ -122,13 +124,32 @@ enum RoutePlayback {
         )
     }
 
+    static func tick(path: RoutePath, mode: RouteTravelMode, elapsed: TimeInterval) -> RouteTick {
+        tick(path: path, speedMetersPerSecond: mode.metersPerSecond, elapsed: elapsed)
+    }
+
     static func tick(
         from start: CoordinatePair,
         to end: CoordinatePair,
         mode: RouteTravelMode,
         elapsed: TimeInterval
     ) -> RouteTick {
-        tick(path: .make([start, end]), mode: mode, elapsed: elapsed)
+        tick(path: .make([start, end]), speedMetersPerSecond: mode.metersPerSecond, elapsed: elapsed)
+    }
+
+    static func offset(_ pair: CoordinatePair, radiusMeters: Double) -> CoordinatePair {
+        let radius = max(0, radiusMeters)
+        guard radius > 0 else { return pair }
+        let shifted = LocationCoordinateOffset.offsetWGS84(
+            latitude: pair.wgs84.latitude,
+            longitude: pair.wgs84.longitude,
+            radiusMeters: radius
+        )
+        return CoordinateConverter.coordinatePair(
+            lat: shifted.latitude,
+            lon: shifted.longitude,
+            mapCoordinateSystem: .wgs84
+        )
     }
 
     static func formattedDistance(_ meters: Double) -> String {
@@ -138,12 +159,20 @@ enum RoutePlayback {
         return String(format: "%.1f 公里", meters / 1_000)
     }
 
-    static func formattedDuration(meters: Double, mode: RouteTravelMode) -> String {
-        let seconds = max(meters / max(mode.metersPerSecond, 0.1), 0)
+    static func formattedDuration(meters: Double, speedMetersPerSecond: Double) -> String {
+        let seconds = max(meters / max(speedMetersPerSecond, 0.1), 0)
         let minutes = Int((seconds / 60).rounded(.up))
         if minutes <= 1 {
             return "约 1 分钟"
         }
         return "约 \(minutes) 分钟"
+    }
+
+    static func formattedDuration(meters: Double, mode: RouteTravelMode) -> String {
+        formattedDuration(meters: meters, speedMetersPerSecond: mode.metersPerSecond)
+    }
+
+    static func formattedSpeed(kilometersPerHour: Double) -> String {
+        String(format: "%.1f 公里/小时", kilometersPerHour)
     }
 }

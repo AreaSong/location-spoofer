@@ -13,6 +13,8 @@ enum RoutePhase: Equatable {
 final class RoutePlaybackController: ObservableObject {
     @Published private(set) var phase: RoutePhase = .inactive
     @Published var travelMode: RouteTravelMode = .walk
+    @Published var speedKilometersPerHour: Double = RouteTravelMode.walk.kilometersPerHour
+    @Published var offsetMeters: Double = 0
     @Published private(set) var start: CoordinatePair?
     @Published private(set) var end: CoordinatePair?
     @Published private(set) var path: RoutePath?
@@ -28,6 +30,10 @@ final class RoutePlaybackController: ObservableObject {
     private var elapsed: TimeInterval = 0
     private var playbackTask: Task<Void, Never>?
     private var pathGeneration: UInt64 = 0
+
+    var speedMetersPerSecond: Double {
+        max(speedKilometersPerHour / 3.6, 0.1)
+    }
 
     var canPlay: Bool {
         (path?.totalMeters ?? distanceMeters) >= RoutePlayback.minimumDistanceMeters
@@ -54,7 +60,7 @@ final class RoutePlaybackController: ObservableObject {
         return (current ?? start)?.coordinate(for: system)
     }
 
-    func enter(start pair: CoordinatePair) {
+    func enter(start pair: CoordinatePair? = nil) {
         stopPlaybackTask()
         pathGeneration &+= 1
         start = pair
@@ -65,13 +71,13 @@ final class RoutePlaybackController: ObservableObject {
         elapsed = 0
         waitingForActivation = false
         isRouting = false
-        statusMessage = "移动地图到终点，然后点「终点」。"
+        refreshReadyMessage()
         phase = .preparing
     }
 
     func setStart(_ pair: CoordinatePair) {
         start = pair
-        if current == nil { current = pair }
+        current = pair
         Task { await rebuildPath() }
     }
 
@@ -135,8 +141,12 @@ final class RoutePlaybackController: ObservableObject {
     }
 
     func refreshReadyMessage() {
-        guard start != nil, end != nil else {
-            statusMessage = "移动地图到终点，然后点「终点」。"
+        guard start != nil else {
+            statusMessage = "把图钉移到起点，点「起点」；再移到终点，点「终点」。开始后会直接出现在起点，不会从你现在的定位走过来。"
+            return
+        }
+        guard end != nil else {
+            statusMessage = "再把图钉移到终点，点「终点」。开始后会直接出现在起点。"
             return
         }
         if isRouting {
@@ -148,7 +158,22 @@ final class RoutePlaybackController: ObservableObject {
             statusMessage = "起点和终点太近，请再拉开一些。"
             return
         }
-        statusMessage = "\(RoutePlayback.formattedDistance(meters))，\(RoutePlayback.formattedDuration(meters: meters, mode: travelMode))"
+        statusMessage = "\(RoutePlayback.formattedDistance(meters))，\(RoutePlayback.formattedDuration(meters: meters, speedMetersPerSecond: speedMetersPerSecond))"
+    }
+
+    func setSpeedKilometersPerHour(_ value: Double) {
+        speedKilometersPerHour = min(40, max(1, value))
+        refreshReadyMessage()
+    }
+
+    func setOffsetMeters(_ value: Double) {
+        offsetMeters = min(80, max(0, value))
+    }
+
+    func applyTravelMode(_ mode: RouteTravelMode) {
+        travelMode = mode
+        speedKilometersPerHour = mode.kilometersPerHour
+        Task { await rebuildPath() }
     }
 
     func rebuildPath() async {
@@ -173,7 +198,7 @@ final class RoutePlaybackController: ObservableObject {
         stopPlaybackTask()
         BackgroundKeepAlive.shared.start()
         phase = .playing
-        statusMessage = "正在沿路移动，可切到地图查看。"
+        statusMessage = "正在从起点沿路走到终点。"
         playbackTask = Task { [weak self] in
             await self?.runLoop()
         }
@@ -183,7 +208,11 @@ final class RoutePlaybackController: ObservableObject {
         let origin = Date().addingTimeInterval(-elapsed)
         while !Task.isCancelled, phase == .playing, let path, path.points.count >= 2 {
             elapsed = Date().timeIntervalSince(origin)
-            let tick = RoutePlayback.tick(path: path, mode: travelMode, elapsed: elapsed)
+            let tick = RoutePlayback.tick(
+                path: path,
+                speedMetersPerSecond: speedMetersPerSecond,
+                elapsed: elapsed
+            )
             current = tick.coordinatePair
             progress = tick.progress
             let applied = await applyCoordinate?(tick.coordinatePair) ?? false
@@ -194,7 +223,7 @@ final class RoutePlaybackController: ObservableObject {
             }
             if tick.isFinished {
                 phase = .finished
-                statusMessage = "已到达终点，虚拟定位停在终点。"
+                statusMessage = "已走到终点。你的虚拟定位现在停在这里。"
                 return
             }
             try? await Task.sleep(nanoseconds: tickIntervalNanoseconds)

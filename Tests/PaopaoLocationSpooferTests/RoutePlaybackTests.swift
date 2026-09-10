@@ -106,6 +106,36 @@ final class RoutePlaybackTests: XCTestCase {
             "约 2 分钟"
         )
     }
+
+    func testCustomSpeedChangesDuration() {
+        let start = CoordinateConverter.coordinatePair(
+            lat: 22.494,
+            lon: 113.951,
+            mapCoordinateSystem: .wgs84
+        )
+        let end = CoordinateConverter.coordinatePair(
+            lat: 22.495,
+            lon: 113.951,
+            mapCoordinateSystem: .wgs84
+        )
+        let path = RoutePath.make([start, end])
+        let slow = RoutePlayback.tick(path: path, speedMetersPerSecond: 1, elapsed: 50)
+        let fast = RoutePlayback.tick(path: path, speedMetersPerSecond: 10, elapsed: 50)
+        XCTAssertLessThan(slow.progress, fast.progress)
+        XCTAssertFalse(slow.isFinished)
+        XCTAssertTrue(fast.isFinished)
+    }
+
+    func testOffsetZeroLeavesCoordinateUnchanged() {
+        let pair = CoordinateConverter.coordinatePair(
+            lat: 22.494,
+            lon: 113.951,
+            mapCoordinateSystem: .wgs84
+        )
+        let same = RoutePlayback.offset(pair, radiusMeters: 0)
+        XCTAssertEqual(same.wgs84.latitude, pair.wgs84.latitude)
+        XCTAssertEqual(same.wgs84.longitude, pair.wgs84.longitude)
+    }
 }
 
 @MainActor

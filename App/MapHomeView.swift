@@ -527,7 +527,7 @@ struct MapHomeView: View {
                 Button {
                     enterRoute()
                 } label: {
-                    Label("路线", systemImage: "figure.walk")
+                    Label("走路", systemImage: "figure.walk")
                 }
                 Button { activeSheet = .logs } label: { Label("日志", systemImage: "list.bullet.rectangle") }
                 Button { activeSheet = .settings } label: { Label("设置", systemImage: "gearshape") }
@@ -1117,7 +1117,7 @@ struct MapHomeView: View {
     private func enterRoute() {
         if locationUseBlock != nil { return }
         if route.phase == .inactive {
-            route.enter(start: currentSelectionPair)
+            route.enter()
         }
     }
 
@@ -1158,6 +1158,7 @@ struct MapHomeView: View {
     private func applyRouteCoordinate(_ pair: CoordinatePair) async -> Bool {
         if locationUseBlock != nil { return false }
         let accuracy = LocationAccuracyStore.shared.meters
+        let offsetMeters = route.offsetMeters
         if runtimeMode.mode == .thirdParty {
             let favorite = FavoriteLocation(
                 name: "路线",
@@ -1165,7 +1166,7 @@ struct MapHomeView: View {
                 accuracy: accuracy
             )
             do {
-                _ = try await thirdPartyProxy.save(favorite, randomRadius: 0)
+                _ = try await thirdPartyProxy.save(favorite, randomRadius: offsetMeters)
                 runtimeFailure.clearThirdParty()
                 return true
             } catch {
@@ -1186,7 +1187,8 @@ struct MapHomeView: View {
                 return false
             }
         }
-        let wgs = pair.wgs84
+        let written = RoutePlayback.offset(pair, radiusMeters: offsetMeters)
+        let wgs = written.wgs84
         return actions.updateSpoofedWGS84(
             latitude: wgs.latitude,
             longitude: wgs.longitude,

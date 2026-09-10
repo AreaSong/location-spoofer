@@ -166,18 +166,28 @@ grep -q 'Label("排序"' "$ROOT/App/FavoriteListView.swift" || fail "favorite li
 grep -q 'displayedFavorites' "$MAP_HOME" || fail "home favorite chips must share the sorted favorite order"
 grep -q 'displayedFavorites' "$ROOT/App/FavoriteListView.swift" || fail "favorite list must share the sorted favorite order"
 grep -q 'setSortOrder' "$ROOT/Shared/FavoriteLocationStore.swift" || fail "favorite sort preference must be persistable"
-grep -q 'Label("路线"' "$MAP_HOME" || fail "map home must expose along-road route playback"
+grep -q 'Label("走路"' "$MAP_HOME" || fail "map home must expose route walking"
+grep -q 'route.enter()' "$MAP_HOME" || fail "opening a route must not use the current real or spoofed location as the start"
+! grep -q 'routeDeparturePair' "$MAP_HOME" || fail "route start must not be derived from GPS or the active spoofed point"
+grep -q '直接出现在起点' "$ROOT/Shared/RoutePlaybackController.swift" \
+  || fail "playback must jump to the chosen start instead of walking from the current location"
+grep -q 'Button("起点")' "$ROOT/App/RoutePlaybackPanel.swift" || fail "route panel must let the user set a start pin"
+grep -q 'Button("终点")' "$ROOT/App/RoutePlaybackPanel.swift" || fail "route panel must let the user set an end pin"
 grep -q 'MKDirections' "$ROOT/Shared/RouteDirections.swift" || fail "route playback must request along-road directions"
 grep -q 'routeProgressCoordinate' "$MAP_BRIDGE" || fail "the map must show the moving virtual location"
-grep -q '正在沿路移动' "$ROOT/Shared/RoutePlaybackController.swift" \
-  || fail "route playback must keep moving after leaving the app"
+grep -q '正在从起点沿路走到终点' "$ROOT/Shared/RoutePlaybackController.swift" \
+  || fail "route playback must keep the spoofed location moving along the chosen path"
 if grep -A12 'onChange(of: scenePhase)' "$MAP_HOME" | grep -q 'route.pause()'; then
   fail "leaving the app must not pause route playback"
 fi
 grep -q 'MKPolyline' "$MAP_BRIDGE" || fail "the map bridge must draw the route as MKPolyline"
 grep -q 'func updateSpoofedWGS84' "$ROOT/App/LocationActionCoordinator.swift" \
   || fail "APP-mode route ticks must write exact WGS-84 without going through applyVerified"
-grep -q 'randomRadius: 0' "$MAP_HOME" || fail "route ticks must force third-party randomRadius to 0"
+grep -q 'randomRadius: offsetMeters' "$MAP_HOME" || fail "route ticks must use the user-selected offset as third-party randomRadius"
+grep -q 'speedKilometersPerHour' "$ROOT/Shared/RoutePlaybackController.swift" \
+  || fail "route playback must expose a custom speed"
+grep -q 'offsetMeters' "$ROOT/App/RoutePlaybackPanel.swift" \
+  || fail "route panel must expose an offset slider"
 grep -q 'figure.walk' "$ROOT/App/RoutePlaybackPanel.swift" \
   || fail "route panel must use an iOS 15 SF Symbol"
 ! grep -q 'curvepath' "$MAP_HOME" "$ROOT/App/RoutePlaybackPanel.swift" \
