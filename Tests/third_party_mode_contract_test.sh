@@ -37,8 +37,20 @@ grep -Fq '保存：GET ?lon=<经度>&lat=<纬度>&acc=<精度>' "$SETUP" \
 grep -Fq '清除：GET ?action=clear' "$SETUP" \
   || fail "client integration guidance must document the clear action"
 
-grep -q 'Yu9191/wloc/refs/heads/main/modules' "$MANAGER" \
-  || fail "third-party subscription must point at upstream Yu9191 modules"
+grep -q 'AreaSong/location-spoofer/main/ThirdParty/WlocScripts/modules/' "$MANAGER" \
+  || fail "third-party subscription must point at vendored AreaSong modules"
+SCRIPTS="$ROOT/ThirdParty/WlocScripts"
+test -s "$SCRIPTS/dist/v1/wloc.js" || fail "vendored wloc.js is missing"
+test -s "$SCRIPTS/dist/v1/wloc-settings.js" || fail "vendored wloc-settings.js is missing"
+for module in wloc.module wloc.sgmodule wloc.conf wloc.lpx wloc.stoverride; do
+  test -s "$SCRIPTS/modules/$module" || fail "missing vendored module: $module"
+  grep -q 'AreaSong/location-spoofer/main/ThirdParty/WlocScripts/dist/v1/' "$SCRIPTS/modules/$module" \
+    || fail "$module script-path must point at vendored dist scripts"
+  grep -q 'wloc-settings' "$SCRIPTS/modules/$module" \
+    || fail "$module must intercept /wloc-settings/save"
+  ! grep -q 'Yu9191/wloc' "$SCRIPTS/modules/$module" \
+    || fail "$module must not depend on Yu9191/wloc"
+done
 grep -q 'wloc.sgmodule' "$MANAGER" || fail "Surge/Egern module mapping is missing"
 grep -q 'wloc.stoverride' "$MANAGER" || fail "Stash must use .stoverride directly"
 grep -q 'shadowrocket://' "$MANAGER" || fail "Shadowrocket launch URL is missing"
@@ -75,8 +87,8 @@ grep -q 'components.queryItems = \[URLQueryItem(name: "action", value: "query")\
   || fail "the connection test must preserve the established save?action=query contract"
 grep -B4 'Toggle("运动状态模拟"' "$SETTINGS" | grep -q 'runtimeMode.mode == .localWiFi' \
   || fail "the motion-state toggle must only appear in APP mode"
-grep -B4 'Toggle("随机扰动"' "$SETTINGS" | grep -q 'runtimeMode.mode == .thirdParty' \
-  || fail "the random-perturbation toggle must only appear in third-party mode"
+grep -q 'Toggle("随机扰动"' "$SETTINGS" \
+  || fail "the random-perturbation toggle must remain in Settings"
 ! grep -q 'validateVersion\|refreshAdvancedFeatureAvailability\|moduleUpdateRecommended' \
     "$SETUP" "$SETTINGS" "$MANAGER" \
   || fail "script version detection must be removed from the app"

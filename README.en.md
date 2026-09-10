@@ -245,7 +245,7 @@ the contributor requests anonymous inclusion.
 Module snapshots and provenance:
 
 - [Third-party module documentation](docs/THIRD_PARTY_MODULES.md)
-- [Yu9191/wloc](https://github.com/Yu9191/wloc)
+- [Vendored modules and scripts in this repository](ThirdParty/WlocScripts/)
 
 The selected client owns its certificates, MITM configuration, and proxy switches. Review third-party modules and
 scripts before importing them.

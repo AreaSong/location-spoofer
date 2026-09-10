@@ -248,20 +248,10 @@ enum ThirdPartyProxyClient: String, CaseIterable, Identifiable {
 
     @MainActor
     var subscriptionURL: URL {
-        // Third-party modules are served directly from the upstream Yu9191/wloc
-        // repository (mirror via gh-proxy when enabled). We no longer maintain
-        // project-owned module copies, so the URL tracks upstream releases.
-        let fileName: String
-        switch self {
-        case .surge, .egern: fileName = "wloc.sgmodule"
-        case .quantumultX: fileName = "wloc.conf"
-        case .loon: fileName = "wloc.lpx"
-        case .stash: fileName = "wloc.stoverride"
-        case .shadowrocket: fileName = "wloc.module"
-        }
+        let path = "https://raw.githubusercontent.com/AreaSong/location-spoofer/main/ThirdParty/WlocScripts/modules/\(moduleFileName)"
         let base = ThirdPartyModuleSourceStore.shared.useMirror
-            ? "https://gh-proxy.org/https://raw.githubusercontent.com/Yu9191/wloc/refs/heads/main/modules/\(fileName)"
-            : "https://raw.githubusercontent.com/Yu9191/wloc/refs/heads/main/modules/\(fileName)"
+            ? "https://gh-proxy.org/\(path)"
+            : path
         return URL(string: base)!
     }
 

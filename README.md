@@ -229,7 +229,7 @@ App 只验证配置接口的 HTTP 状态、JSON 格式和坐标回读，不管�
 相关模块快照和来源记录：
 
 - [第三方模块说明](docs/THIRD_PARTY_MODULES.md)
-- [Yu9191/wloc](https://github.com/Yu9191/wloc)
+- [本仓库托管的模块与脚本](ThirdParty/WlocScripts/)
 
 第三方客户端、证书、MITM 和代理开关由客户端自身负责。导入任何第三方模块前，请先审查其配置和脚本内容。
 
