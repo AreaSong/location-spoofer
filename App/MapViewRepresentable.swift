@@ -38,6 +38,7 @@ struct MapViewRepresentable: UIViewRepresentable {
     let onUserCenterChanged: (CLLocationCoordinate2D, CLLocationDistance) -> Void
     let onViewportChanged: (CLLocationDistance) -> Void
     let onMapTap: (CLLocationCoordinate2D) -> Void
+    var onRoutePinTap: ((RouteMapPin) -> Void)?
     let onUserZoomChanged: ((CLLocationDistance) -> Void)?
     var onZoomIn: (() -> Void)?
     var onZoomOut: (() -> Void)?
@@ -140,6 +141,7 @@ struct MapViewRepresentable: UIViewRepresentable {
 
         let tap = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handleTap(_:)))
         tap.cancelsTouchesInView = false
+        tap.delegate = context.coordinator
         map.addGestureRecognizer(tap)
         context.coordinator.map = map
         context.coordinator.setupKeyboardObservers()
@@ -155,7 +157,7 @@ struct MapViewRepresentable: UIViewRepresentable {
         map.showsUserLocation = routeProgressCoordinate == nil
     }
 
-    final class Coordinator: NSObject, MKMapViewDelegate {
+    final class Coordinator: NSObject, MKMapViewDelegate, UIGestureRecognizerDelegate {
         var parent: MapViewRepresentable
         weak var map: MKMapView?
 
@@ -242,8 +244,24 @@ struct MapViewRepresentable: UIViewRepresentable {
             view.canShowCallout = false
             view.displayPriority = .required
             view.image = RouteMapOverlay.pinImage(text: pin.glyph, color: pin.tintColor)
-            view.centerOffset = CGPoint(x: 0, y: -11)
+            view.bounds = CGRect(x: 0, y: 0, width: 44, height: 44)
+            view.centerOffset = CGPoint(x: 0, y: -12)
             return view
+        }
+
+        func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
+            var view = touch.view
+            while let current = view {
+                if current is MKAnnotationView { return false }
+                view = current.superview
+            }
+            return true
+        }
+
+        func mapView(_ mapView: MKMapView, didSelect view: MKAnnotationView) {
+            mapView.deselectAnnotation(view.annotation, animated: false)
+            guard let pin = view.annotation as? RoutePinAnnotation else { return }
+            parent.onRoutePinTap?(RouteMapPin(coordinate: pin.coordinate, role: pin.role))
         }
 
         @objc func handleTap(_ gesture: UITapGestureRecognizer) {
@@ -308,6 +326,7 @@ struct MapViewRepresentable: UIViewRepresentable {
                 ?? MKAnnotationView(annotation: annotation, reuseIdentifier: identifier)
             view.annotation = annotation
             view.canShowCallout = false
+            view.isEnabled = false
             let config = UIImage.SymbolConfiguration(pointSize: 18, weight: .bold)
             view.image = UIImage(systemName: "location.fill", withConfiguration: config)?
                 .withTintColor(.systemBlue, renderingMode: .alwaysOriginal)

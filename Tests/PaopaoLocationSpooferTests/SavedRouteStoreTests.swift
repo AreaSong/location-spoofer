@@ -32,6 +32,20 @@ final class SavedRouteStoreTests: XCTestCase {
         XCTAssertFalse(store.routes.contains(where: { $0.id == first!.id }))
     }
 
+    func testSavingSameIDReplacesExistingRoute() {
+        let suite = "SavedRouteStoreTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let store = SavedRouteStore(defaults: defaults)
+        let saved = store.save(sampleRoute(name: "学校"))
+        var updated = saved
+        updated.name = "操场"
+        store.save(updated)
+        XCTAssertEqual(store.routes.count, 1)
+        XCTAssertEqual(store.routes.first!.id, saved.id)
+        XCTAssertEqual(store.routes.first!.name, "操场")
+    }
+
     func testRenameAndDeletePersist() {
         let suite = "SavedRouteStoreTests.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!

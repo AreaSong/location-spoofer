@@ -56,7 +56,7 @@ struct RoutePlaybackPanel: View {
                         .buttonStyle(.bordered)
                     Button("途经") { route.addVia(currentPair) }
                         .buttonStyle(.bordered)
-                        .disabled(!route.canAddVia)
+                        .disabled(!route.canEditVias)
                     if !route.vias.isEmpty {
                         Button("撤销") { route.removeLastVia() }
                             .font(.footnote.weight(.semibold))

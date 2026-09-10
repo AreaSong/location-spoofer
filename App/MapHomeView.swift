@@ -214,6 +214,7 @@ struct MapHomeView: View {
                     rememberDiscreteSelection(name: formattedSelectionName(for: pair), coordinatePair: pair)
                     scheduleGeocode(pair: pair, revision: revision)
                 },
+                onRoutePinTap: handleRoutePinTap,
                 onUserZoomChanged: { distance in
                     ViewportStore.save(distance)
                     LastCoordinateStore.updateZoom(distance)
@@ -517,10 +518,19 @@ struct MapHomeView: View {
         } message: { Text("修改收藏地点名称") }
         .alert("保存路线", isPresented: $showSaveRouteAlert) {
             TextField("名称", text: $saveRouteName)
-            Button("保存") { commitSaveRoute() }
+            if route.canOverwriteSavedRoute {
+                Button("覆盖") { commitSaveRoute(overwrite: true) }
+                Button("另存为") { commitSaveRoute(overwrite: false) }
+            } else {
+                Button("保存") { commitSaveRoute(overwrite: false) }
+            }
             Button("取消", role: .cancel) {}
         } message: {
-            Text("保存起点、终点和沿路折线，下次可以直接走。")
+            if let name = route.editingSavedRoute?.name {
+                Text("覆盖会更新「\(name)」，另存为会再占一条。最多保存 20 条。")
+            } else {
+                Text("保存起点、终点、途经点和沿路折线，下次可以直接走。")
+            }
         }
     }
 
@@ -1158,15 +1168,26 @@ struct MapHomeView: View {
 
     private func promptSaveRoute() {
         guard route.canPlay, !route.isRouting else { return }
-        saveRouteName = RoutePlayback.formattedDistance(route.distanceMeters)
+        saveRouteName = route.editingSavedRoute?.name
+            ?? RoutePlayback.formattedDistance(route.distanceMeters)
         showSaveRouteAlert = true
     }
 
-    private func commitSaveRoute() {
+    private func commitSaveRoute(overwrite: Bool) {
         let trimmed = saveRouteName.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let snapshot = route.makeSavedRoute(name: trimmed) else { return }
+        guard let snapshot = route.makeSavedRoute(name: trimmed, overwrite: overwrite) else { return }
         savedRoutes.save(snapshot)
-        route.statusMessage = "已保存「\(snapshot.name)」。"
+        route.noteSaved(snapshot)
+        route.statusMessage = overwrite
+            ? "已覆盖「\(snapshot.name)」。"
+            : "已保存「\(snapshot.name)」。"
+    }
+
+    private func handleRoutePinTap(_ pin: RouteMapPin) {
+        guard route.phase == .preparing else { return }
+        if case let .via(number) = pin.role {
+            route.removeVia(at: number - 1)
+        }
     }
 
     private func exitRoute() {

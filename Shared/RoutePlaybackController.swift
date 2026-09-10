@@ -27,6 +27,7 @@ final class RoutePlaybackController: ObservableObject {
     @Published private(set) var waitingForActivation = false
     @Published private(set) var isRouting = false
     @Published private(set) var pathRevision: UInt64 = 0
+    @Published private(set) var editingSavedRoute: SavedRoute?
     @Published var statusMessage = ""
 
     var applyCoordinate: ((CoordinatePair) async -> Bool)?
@@ -59,9 +60,11 @@ final class RoutePlaybackController: ObservableObject {
         start != nil && end != nil && !isRouting && phase != .playing && phase != .paused
     }
 
-    var canAddVia: Bool {
-        start != nil && vias.count < Self.maxViaCount && phase == .preparing
+    var canEditVias: Bool {
+        start != nil && phase == .preparing
     }
+
+    var canOverwriteSavedRoute: Bool { editingSavedRoute != nil }
 
     var anchors: [CoordinatePair] {
         guard let start, let end else { return [] }
@@ -134,6 +137,7 @@ final class RoutePlaybackController: ObservableObject {
         elapsed = 0
         waitingForActivation = false
         isRouting = false
+        editingSavedRoute = nil
         refreshReadyMessage()
         phase = .preparing
     }
@@ -153,6 +157,7 @@ final class RoutePlaybackController: ObservableObject {
         progress = 0
         elapsed = 0
         phase = .preparing
+        editingSavedRoute = saved
         persistPreferences()
         if let points = saved.pathPoints, points.count >= 2 {
             path = RoutePath.make(points)
@@ -168,12 +173,14 @@ final class RoutePlaybackController: ObservableObject {
         Task { await rebuildPath() }
     }
 
-    func makeSavedRoute(name: String) -> SavedRoute? {
+    func makeSavedRoute(name: String, overwrite: Bool = false) -> SavedRoute? {
         guard let start, let end, canPlay, !isRouting else { return nil }
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         let points = path?.points
+        let replacing = overwrite ? editingSavedRoute : nil
         return SavedRoute(
-            name: trimmed.isEmpty ? RoutePlayback.formattedDistance(distanceMeters) : trimmed,
+            id: replacing?.id ?? UUID(),
+            name: trimmed.isEmpty ? (replacing?.name ?? RoutePlayback.formattedDistance(distanceMeters)) : trimmed,
             start: start,
             end: end,
             travelMode: travelMode,
@@ -181,8 +188,13 @@ final class RoutePlaybackController: ObservableObject {
             offsetMeters: offsetMeters,
             repeatMode: repeatMode,
             viaPoints: vias,
-            pathPoints: (points?.count ?? 0) >= 2 ? points : nil
+            pathPoints: (points?.count ?? 0) >= 2 ? points : nil,
+            createdAt: replacing?.createdAt ?? Date()
         )
+    }
+
+    func noteSaved(_ saved: SavedRoute) {
+        editingSavedRoute = saved
     }
 
     func setStart(_ pair: CoordinatePair) {
@@ -197,7 +209,17 @@ final class RoutePlaybackController: ObservableObject {
     }
 
     func addVia(_ pair: CoordinatePair) {
-        guard canAddVia, let start else { return }
+        guard canEditVias, let start else { return }
+        if let index = indexOfVia(near: pair, within: 20) {
+            vias[index] = pair
+            statusMessage = "已更新途经 \(index + 1)。"
+            Task { await rebuildPath() }
+            return
+        }
+        guard vias.count < Self.maxViaCount else {
+            statusMessage = "途经点已满，点橙色数字删除后再加。"
+            return
+        }
         let previous = vias.last ?? start
         guard RoutePlayback.distanceMeters(from: previous, to: pair) >= RoutePlayback.minimumDistanceMeters else {
             statusMessage = "途经点和上一个点太近，请再拉开一些。"
@@ -207,10 +229,22 @@ final class RoutePlaybackController: ObservableObject {
         Task { await rebuildPath() }
     }
 
-    func removeLastVia() {
-        guard phase == .preparing, !vias.isEmpty else { return }
-        vias.removeLast()
+    func removeVia(at index: Int) {
+        guard phase == .preparing, vias.indices.contains(index) else { return }
+        vias.remove(at: index)
+        statusMessage = vias.isEmpty ? "已删除途经点。" : "已删除途经 \(index + 1)。"
         Task { await rebuildPath() }
+    }
+
+    func removeLastVia() {
+        guard !vias.isEmpty else { return }
+        removeVia(at: vias.count - 1)
+    }
+
+    private func indexOfVia(near pair: CoordinatePair, within meters: Double) -> Int? {
+        vias.firstIndex {
+            RoutePlayback.distanceMeters(from: $0, to: pair) <= meters
+        }
     }
 
     func reverseDirection() {
@@ -286,6 +320,7 @@ final class RoutePlaybackController: ObservableObject {
         progress = 0
         elapsed = 0
         statusMessage = ""
+        editingSavedRoute = nil
         phase = .inactive
     }
 
@@ -422,55 +457,11 @@ final class RoutePlaybackController: ObservableObject {
         }
     }
 
-    private func readyStatusMessage(meters: Double) -> String {
-        var prefix = RoutePlayback.formattedDistance(meters)
-        if !vias.isEmpty {
-            prefix += " · \(vias.count) 个途经"
-        }
-        let durationText = RoutePlayback.formattedDuration(
-            meters: meters,
-            speedMetersPerSecond: speedMetersPerSecond
-        )
-        switch repeatMode {
-        case .once:
-            return "\(prefix)，\(durationText)"
-        case .roundTrip:
-            let roundMeters = meters * 2
-            return "往返 \(RoutePlayback.formattedDistance(roundMeters))，\(RoutePlayback.formattedDuration(meters: roundMeters, speedMetersPerSecond: speedMetersPerSecond))"
-        case .loop:
-            return "\(prefix)，循环走，直到暂停"
-        }
-    }
-
-    private func playbackStatusMessage() -> String {
-        let remaining = RoutePlayback.formattedRemaining(
-            meters: remainingMeters,
-            speedMetersPerSecond: speedMetersPerSecond
-        )
-        if !headingForward {
-            return "走回起点 · \(remaining)"
-        }
-        if repeatMode == .loop {
-            return "循环中 · \(remaining)"
-        }
-        if repeatMode == .roundTrip {
-            return "走向终点 · \(remaining)"
-        }
-        return "正在从起点沿路走到终点。\(remaining)"
-    }
-
-    private func finishedStatusMessage() -> String {
-        if headingForward {
-            return "已走到终点。你的虚拟定位现在停在这里。"
-        }
-        return "已走回起点。你的虚拟定位现在停在这里。"
-    }
-
-    private func bumpPathRevision() {
+    func bumpPathRevision() {
         pathRevision &+= 1
     }
 
-    private func persistPreferences() {
+    func persistPreferences() {
         preferenceStore.save(
             RoutePlaybackPreferences(
                 travelMode: travelMode,

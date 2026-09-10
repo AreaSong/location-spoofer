@@ -288,6 +288,36 @@ final class RoutePlaybackControllerTests: XCTestCase {
         XCTAssertEqual(snapshot!.pathPoints!.count, 3)
         XCTAssertEqual(snapshot!.viaPoints.count, 1)
         XCTAssertEqual(snapshot!.start.wgs84.latitude, saved.start.wgs84.latitude)
+        XCTAssertNotEqual(snapshot!.id, saved.id)
+        let overwritten = route.makeSavedRoute(name: "操场", overwrite: true)!
+        XCTAssertEqual(overwritten.id, saved.id)
+        XCTAssertEqual(overwritten.name, "操场")
+        XCTAssertEqual(overwritten.createdAt, saved.createdAt)
+    }
+
+    func testRemoveViaAtIndexAndReplaceNearbyVia() {
+        let route = makeRoute()
+        route.load(sampleSavedRoute(repeatMode: .once))
+        let extra = CoordinateConverter.coordinatePair(
+            lat: 22.4942,
+            lon: 113.9514,
+            mapCoordinateSystem: .wgs84
+        )
+        route.addVia(extra)
+        XCTAssertEqual(route.vias.count, 2)
+
+        route.removeVia(at: 0)
+        XCTAssertEqual(route.vias.count, 1)
+        XCTAssertEqual(route.vias[0].wgs84.latitude, extra.wgs84.latitude, accuracy: 0.000_000_1)
+
+        let nearby = CoordinateConverter.coordinatePair(
+            lat: extra.wgs84.latitude + 0.000_05,
+            lon: extra.wgs84.longitude,
+            mapCoordinateSystem: .wgs84
+        )
+        route.addVia(nearby)
+        XCTAssertEqual(route.vias.count, 1)
+        XCTAssertEqual(route.vias[0].wgs84.latitude, nearby.wgs84.latitude, accuracy: 0.000_000_1)
     }
 
     func testAddViaAndReverseSwapsStops() {

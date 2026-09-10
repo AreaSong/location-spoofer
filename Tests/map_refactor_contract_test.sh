@@ -179,7 +179,7 @@ grep -q 'Button("起点")' "$ROOT/App/RoutePlaybackPanel.swift" || fail "route p
 grep -q 'Button("终点")' "$ROOT/App/RoutePlaybackPanel.swift" || fail "route panel must let the user set an end pin"
 grep -q 'MKDirections' "$ROOT/Shared/RouteDirections.swift" || fail "route playback must request along-road directions"
 grep -q 'routeProgressCoordinate' "$MAP_BRIDGE" || fail "the map must show the moving virtual location"
-grep -q '正在从起点沿路走到终点' "$ROOT/Shared/RoutePlaybackController.swift" \
+grep -q '正在从起点沿路走到终点' "$ROOT/Shared/RoutePlaybackController+Status.swift" \
   || fail "route playback must keep the spoofed location moving along the chosen path"
 if grep -A12 'onChange(of: scenePhase)' "$MAP_HOME" | grep -q 'route.pause()'; then
   fail "leaving the app must not pause route playback"
@@ -231,6 +231,14 @@ grep -q 'overlayPins' "$MAP_HOME" || fail "the map must receive start, via, and 
 grep -q 'return "起"' "$ROOT/App/RouteMapAnnotations.swift" || fail "the start pin must be labeled 起"
 grep -q 'return "终"' "$ROOT/App/RouteMapAnnotations.swift" || fail "the end pin must be labeled 终"
 grep -q 'viaPoints' "$ROOT/Shared/SavedRouteStore.swift" || fail "saved routes must persist via points"
+grep -q 'Button("覆盖")' "$MAP_HOME" || fail "saving an opened route must offer overwrite"
+grep -q 'overwrite: true' "$MAP_HOME" || fail "overwrite must reuse the saved route identity"
+grep -q 'func removeVia' "$ROOT/Shared/RoutePlaybackController.swift" \
+  || fail "via points must be deletable by index"
+grep -q 'onRoutePinTap' "$MAP_HOME" || fail "tapping a via pin must reach the map home"
+grep -q 'didSelect' "$MAP_BRIDGE" || fail "the map must detect taps on route pins"
+grep -q 'indexOfVia' "$ROOT/Shared/RoutePlaybackController.swift" \
+  || fail "dropping a pin on an existing via must replace it"
 test -f "$ROOT/Shared/RoutePlaybackPreferences.swift" || fail "speed and offset must persist across launches"
 grep -q 'RoutePlaybackPreferenceStore' "$ROOT/Shared/RoutePlaybackController.swift" \
   || fail "route playback must remember the last speed and offset"
