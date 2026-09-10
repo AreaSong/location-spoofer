@@ -9,9 +9,14 @@ final class ThirdPartyModuleSourceStoreTests: XCTestCase {
         defer { defaults.removePersistentDomain(forName: suite) }
 
         let store = ThirdPartyModuleSourceStore(defaults: defaults)
-        XCTAssertTrue(store.useMirror)
+        XCTAssertEqual(store.distribution, .onDevice)
+        XCTAssertFalse(store.useMirror)
+
+        store.setDistribution(.remoteMirror)
+        XCTAssertTrue(ThirdPartyModuleSourceStore(defaults: defaults).useMirror)
+        XCTAssertEqual(ThirdPartyModuleSourceStore(defaults: defaults).distribution, .remoteMirror)
 
         store.setUseMirror(false)
-        XCTAssertFalse(ThirdPartyModuleSourceStore(defaults: defaults).useMirror)
+        XCTAssertEqual(ThirdPartyModuleSourceStore(defaults: defaults).distribution, .remoteDirect)
     }
 }

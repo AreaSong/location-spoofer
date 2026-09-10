@@ -37,8 +37,22 @@ grep -Fq '保存：GET ?lon=<经度>&lat=<纬度>&acc=<精度>' "$SETUP" \
 grep -Fq '清除：GET ?action=clear' "$SETUP" \
   || fail "client integration guidance must document the clear action"
 
-grep -q 'AreaSong/location-spoofer/main/ThirdParty/WlocScripts/modules/' "$MANAGER" \
-  || fail "third-party subscription must point at vendored AreaSong modules"
+CATALOG="$ROOT/Shared/ThirdPartyModuleCatalog.swift"
+SERVER="$ROOT/Shared/ThirdPartyModuleServer.swift"
+grep -q 'AreaSong/location-spoofer/main/ThirdParty/WlocScripts' "$CATALOG" \
+  || fail "third-party subscription must still know the vendored AreaSong module path"
+grep -q 'http://127.0.0.1' "$CATALOG" \
+  || fail "on-device subscription must use a loopback module server"
+grep -q 'case onDevice' "$CATALOG" \
+  || fail "module distribution must include on-device source"
+grep -q 'enum ThirdPartyModuleRuntime' "$SERVER" \
+  || fail "third-party import must start the on-device module server"
+grep -q 'WlocScripts' "$ROOT/project.yml" \
+  || fail "app bundle must include vendored WlocScripts"
+grep -q '保持本 App 打开' "$SETUP" \
+  || fail "setup must tell users to keep the app open when importing on-device modules"
+grep -q '导出模块文件' "$SETTINGS" \
+  || fail "Settings must expose on-device module export"
 SCRIPTS="$ROOT/ThirdParty/WlocScripts"
 test -s "$SCRIPTS/dist/v1/wloc.js" || fail "vendored wloc.js is missing"
 test -s "$SCRIPTS/dist/v1/wloc-settings.js" || fail "vendored wloc-settings.js is missing"

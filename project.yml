@@ -22,6 +22,9 @@ targets:
       - path: App
       - path: Shared
       - path: Resources
+      - path: ThirdParty/WlocScripts
+        type: folder
+        buildPhase: resources
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.paopaolabs.location-spoofer

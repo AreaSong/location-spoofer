@@ -39,8 +39,13 @@ struct ContentView: View {
         .task { await bootstrap() }
         .task { await checkForUpdates() }
         .onChange(of: scenePhase) { newPhase in
-            if newPhase == .active, ProxyManager.shared.isRunning {
-                BackgroundKeepAlive.shared.start()
+            if newPhase == .active {
+                if ProxyManager.shared.isRunning {
+                    BackgroundKeepAlive.shared.start()
+                }
+                if runtimeMode.mode == .thirdParty {
+                    ThirdPartyModuleRuntime.syncServerWithDistribution()
+                }
             }
             guard newPhase == .active, let requiredUpdatePrompt else { return }
             updatePrompt = requiredUpdatePrompt
@@ -68,6 +73,7 @@ struct ContentView: View {
             } else {
                 ProxyManager.shared.stop()
                 BackgroundKeepAlive.shared.stop()
+                ThirdPartyModuleRuntime.syncServerWithDistribution()
                 setup.requestThirdPartyOnboarding()
             }
             phase = .setup
@@ -75,10 +81,12 @@ struct ContentView: View {
         }
 
         if launchMode == .localWiFi {
+            ThirdPartyModuleRuntime.shutdown()
             await setup.prepareLocalServices()
         } else {
             ProxyManager.shared.stop()
             BackgroundKeepAlive.shared.stop()
+            ThirdPartyModuleRuntime.syncServerWithDistribution()
             RuntimeLogger.info("APP", "Startup", "第三方代理测试模式：跳过本地 CA、代理和环境检测")
         }
         do {
@@ -137,6 +145,9 @@ struct ContentView: View {
     private func finishInitialSetup() {
         let completedMode = runtimeMode.mode
         runtimeMode.markInitialized(completedMode)
+        if completedMode == .thirdParty {
+            ThirdPartyModuleRuntime.endImportKeepAlive()
+        }
         setup.completeSetup()
         phase = .splash
         Task { await bootstrap() }
@@ -144,6 +155,9 @@ struct ContentView: View {
 
     private func finishPresentedSetup() {
         runtimeMode.markInitialized(runtimeMode.mode)
+        if runtimeMode.mode == .thirdParty {
+            ThirdPartyModuleRuntime.endImportKeepAlive()
+        }
         setup.completeSetup()
     }
 

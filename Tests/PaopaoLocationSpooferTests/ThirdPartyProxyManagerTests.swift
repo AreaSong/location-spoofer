@@ -155,20 +155,24 @@ final class ThirdPartyProxyManagerTests: XCTestCase {
         )
         XCTAssertNil(ThirdPartyProxyClient.shadowrocket.verificationText)
         XCTAssertTrue(ThirdPartyProxyClient.surge.verificationText?.contains("尚未验证") == true)
-        XCTAssertEqual(ThirdPartyProxyClient.egern.subscriptionURL, ThirdPartyProxyClient.surge.subscriptionURL)
-        XCTAssertTrue(ThirdPartyProxyClient.stash.subscriptionURL.absoluteString.hasPrefix(
+        XCTAssertEqual(
+            ThirdPartyProxyClient.egern.subscriptionURL(for: .remoteMirror),
+            ThirdPartyProxyClient.surge.subscriptionURL(for: .remoteMirror)
+        )
+        XCTAssertTrue(ThirdPartyProxyClient.stash.subscriptionURL(for: .remoteMirror).absoluteString.hasPrefix(
             "https://gh-proxy.org/https://raw.githubusercontent.com/AreaSong/location-spoofer/main/ThirdParty/WlocScripts/modules/"
         ))
         let stashComponents = URLComponents(
-            url: ThirdPartyProxyClient.stash.subscriptionURL,
+            url: ThirdPartyProxyClient.stash.subscriptionURL(for: .remoteMirror),
             resolvingAgainstBaseURL: false
         )
         let shadowrocketComponents = URLComponents(
-            url: ThirdPartyProxyClient.shadowrocket.subscriptionURL,
+            url: ThirdPartyProxyClient.shadowrocket.subscriptionURL(for: .onDevice),
             resolvingAgainstBaseURL: false
         )
         XCTAssertEqual(stashComponents?.path, "/https://raw.githubusercontent.com/AreaSong/location-spoofer/main/ThirdParty/WlocScripts/modules/wloc.stoverride")
-        XCTAssertEqual(shadowrocketComponents?.path, "/https://raw.githubusercontent.com/AreaSong/location-spoofer/main/ThirdParty/WlocScripts/modules/wloc.module")
+        XCTAssertEqual(shadowrocketComponents?.host, "127.0.0.1")
+        XCTAssertEqual(shadowrocketComponents?.path, "/modules/wloc.module")
         XCTAssertTrue(stashComponents?.queryItems?.isEmpty ?? true)
         XCTAssertTrue(shadowrocketComponents?.queryItems?.isEmpty ?? true)
         XCTAssertEqual(ThirdPartyProxyClient.shadowrocket.launchURL?.scheme, "shadowrocket")

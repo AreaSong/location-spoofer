@@ -31,6 +31,7 @@ struct SettingsView: View {
     @ObservedObject private var randomRadius = RandomRadiusStore.shared
     @ObservedObject private var locationAccuracy = LocationAccuracyStore.shared
     @ObservedObject private var moduleSource = ThirdPartyModuleSourceStore.shared
+    @ObservedObject private var moduleServer = ThirdPartyModuleServer.shared
     @Environment(\.dismiss) private var dismiss
     @State private var activeTip: TipKind?
     @State private var proxyOperationError = ""
@@ -587,13 +588,31 @@ struct SettingsView: View {
                 }
             }
 
-            Toggle("使用国内镜像下载模块", isOn: Binding(
-                get: { moduleSource.useMirror },
-                set: { moduleSource.setUseMirror($0) }
-            ))
-            Text("仅影响之后复制和重新导入的模块地址；已安装模块需要重新导入后切换来源。")
+            Picker("模块来源", selection: Binding(
+                get: { moduleSource.distribution },
+                set: { newValue in
+                    moduleSource.setDistribution(newValue)
+                    ThirdPartyModuleRuntime.syncServerWithDistribution()
+                }
+            )) {
+                ForEach(ThirdPartyModuleDistribution.allCases) { source in
+                    Text(source.displayName).tag(source)
+                }
+            }
+            Text(moduleSourceHint)
                 .font(.footnote)
                 .foregroundStyle(.secondary)
+            Text(thirdPartyClient.selectedClient.subscriptionURL.absoluteString)
+                .font(.caption2.monospaced())
+                .foregroundStyle(.secondary)
+                .textSelection(.enabled)
+            if moduleSource.distribution == .onDevice {
+                Text(moduleServer.isRunning
+                     ? "本机模块服务已启动"
+                     : (moduleServer.lastError ?? "本机模块服务未启动"))
+                    .font(.footnote)
+                    .foregroundStyle(moduleServer.isRunning ? Color.secondary : Color.orange)
+            }
 
             if let verificationText = thirdPartyClient.selectedClient.verificationText {
                 HStack {
@@ -606,10 +625,15 @@ struct SettingsView: View {
             }
 
             Button {
+                ThirdPartyModuleRuntime.prepareForImport()
                 UIPasteboard.general.string = thirdPartyClient.selectedClient.subscriptionURL.absoluteString
                 copiedClient = thirdPartyClient.selectedClient
             } label: {
                 Label(copiedClient == thirdPartyClient.selectedClient ? "已复制模块订阅地址" : "复制模块订阅地址", systemImage: "doc.on.doc")
+            }
+
+            Button(action: exportOnDeviceModuleFiles) {
+                Label("导出模块文件", systemImage: "square.and.arrow.up")
             }
 
             Button {
@@ -620,6 +644,7 @@ struct SettingsView: View {
             }
 
             Button {
+                ThirdPartyModuleRuntime.prepareForImport()
                 openThirdPartyClient(thirdPartyClient.selectedClient)
             } label: {
                 Label("打开 \(thirdPartyClient.selectedClient.name)", systemImage: "arrow.up.forward.app")
@@ -642,6 +667,31 @@ struct SettingsView: View {
 
             Text("复制模块订阅地址后，在对应代理客户端中添加模块/重写订阅，并为复制的全部域名（含 gsp-ssl.ls.apple.com、bluedot.is.autonavi.com）启用 MITM。第三方客户端保存坐标后，即使关闭本 App，坐标仍由代理客户端持久化并继续生效。")
                 .font(.footnote).foregroundStyle(.secondary)
+        }
+    }
+
+    private var moduleSourceHint: String {
+        switch moduleSource.distribution {
+        case .onDevice:
+            return "默认从本 App 提供模块和脚本，不访问 GitHub。导入或点更新时请保持本 App 打开。"
+        case .remoteMirror, .remoteDirect:
+            return "仅影响之后复制和重新导入的模块地址；已安装模块需要重新导入后切换来源。"
+        }
+    }
+
+    private func exportOnDeviceModuleFiles() {
+        do {
+            guard let root = ThirdPartyModuleCatalog.bundledRoot() else {
+                throw ThirdPartyModuleCatalogError.bundleMissing
+            }
+            let urls = try ThirdPartyModuleCatalog.exportOnDeviceFiles(
+                moduleFileName: thirdPartyClient.selectedClient.moduleFileName,
+                root: root
+            )
+            ShareSheetPresenter.presentFiles(urls)
+        } catch {
+            proxyOperationAlertTitle = "导出模块失败"
+            proxyOperationError = error.localizedDescription
         }
     }
 
@@ -693,6 +743,7 @@ struct SettingsView: View {
                 proxy.stop()
                 setup.completeSetup()
                 runtimeMode.setMode(.thirdParty)
+                ThirdPartyModuleRuntime.syncServerWithDistribution()
                 if runtimeMode.isInitialized(.thirdParty) {
                     do {
                         _ = try await thirdPartyProxy.query()
@@ -706,6 +757,7 @@ struct SettingsView: View {
                     dismiss()
                 }
             case .localWiFi:
+                ThirdPartyModuleRuntime.shutdown()
                 do {
                     try await thirdPartyProxy.clear()
                 } catch {
@@ -818,8 +870,12 @@ struct SettingsView: View {
 
 private enum ShareSheetPresenter {
     static func presentFile(at url: URL) {
+        presentFiles([url])
+    }
+
+    static func presentFiles(_ urls: [URL]) {
         guard let presenter = topViewController() else { return }
-        presenter.present(UIActivityViewController(activityItems: [url], applicationActivities: nil), animated: true)
+        presenter.present(UIActivityViewController(activityItems: urls, applicationActivities: nil), animated: true)
     }
 
     private static func topViewController() -> UIViewController? {

@@ -246,13 +246,16 @@ enum ThirdPartyProxyClient: String, CaseIterable, Identifiable {
         }
     }
 
+    func subscriptionURL(for distribution: ThirdPartyModuleDistribution) -> URL {
+        ThirdPartyModuleCatalog.subscriptionURL(
+            moduleFileName: moduleFileName,
+            distribution: distribution
+        )
+    }
+
     @MainActor
     var subscriptionURL: URL {
-        let path = "https://raw.githubusercontent.com/AreaSong/location-spoofer/main/ThirdParty/WlocScripts/modules/\(moduleFileName)"
-        let base = ThirdPartyModuleSourceStore.shared.useMirror
-            ? "https://gh-proxy.org/\(path)"
-            : path
-        return URL(string: base)!
+        subscriptionURL(for: ThirdPartyModuleSourceStore.shared.distribution)
     }
 
     var launchURL: URL? {

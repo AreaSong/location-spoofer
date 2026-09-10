@@ -52,6 +52,7 @@ struct FirstSetupView: View {
     @ObservedObject private var runtimeMode = ProxyRuntimeModeStore.shared
     @ObservedObject private var thirdPartyProxy = ThirdPartyProxyManager.shared
     @ObservedObject private var thirdPartyClient = ThirdPartyProxyClientStore.shared
+    @ObservedObject private var moduleSource = ThirdPartyModuleSourceStore.shared
     @State private var copiedSubscriptionURL = false
     @State private var copiedMITMHostname = false
     @State private var screenshotPreview: SetupScreenshotPreview?
@@ -108,9 +109,12 @@ struct FirstSetupView: View {
                             }
                         }
                     }
-                    .onChange(of: step) { _ in
+                    .onChange(of: step) { newStep in
                         showsVerificationResult = false
                         showsThirdPartyFailureLog = false
+                        if newStep == .thirdPartyImport {
+                            ThirdPartyModuleRuntime.prepareForImport()
+                        }
                     }
                 }
                 Divider()
@@ -162,6 +166,11 @@ struct FirstSetupView: View {
             .sheet(item: $certificateDownloadDestination) { destination in
                 SafariView(url: destination.url)
                     .ignoresSafeArea()
+            }
+            .onAppear {
+                if step == .thirdPartyImport {
+                    ThirdPartyModuleRuntime.prepareForImport()
+                }
             }
             .alert("无法直接跳转", isPresented: Binding(
                 get: { !manualHint.isEmpty },
@@ -502,8 +511,9 @@ struct FirstSetupView: View {
 
             GroupBox(label: Label("第 1 步：导入 \(client.name) 模块", systemImage: "square.and.arrow.down")) {
                 VStack(alignment: .leading, spacing: 12) {
-                    instructionRow(1, "复制 \(client.name) 的模块订阅地址。")
+                    instructionRow(1, "复制 \(client.name) 的模块订阅地址。本机地址导入或更新时请保持本 App 打开，不要杀掉。")
                     Button {
+                        ThirdPartyModuleRuntime.prepareForImport()
                         UIPasteboard.general.string = client.subscriptionURL.absoluteString
                         copiedSubscriptionURL = true
                     } label: {
@@ -511,11 +521,20 @@ struct FirstSetupView: View {
                             .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(.borderedProminent)
+                    Text("当前来源：\(moduleSource.distribution.displayName)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Text(client.subscriptionURL.absoluteString)
+                        .font(.caption2.monospaced())
+                        .foregroundStyle(.secondary)
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
 
                     instructionRow(2, client == .shadowrocket
                         ? "打开 Shadowrocket，进入“配置 → 模块”。"
                         : "打开 \(client.name)。")
                     Button {
+                        ThirdPartyModuleRuntime.prepareForImport()
                         openThirdPartyClient(client)
                     } label: {
                         Label("打开 \(client.name)", systemImage: "arrow.up.forward.app")
@@ -818,6 +837,7 @@ struct FirstSetupView: View {
         switch mode {
         case .localWiFi:
             isPreparingMode = true
+            ThirdPartyModuleRuntime.shutdown()
             Task { @MainActor in
                 await setup.prepareLocalServices()
                 isPreparingMode = false
@@ -826,6 +846,7 @@ struct FirstSetupView: View {
         case .thirdParty:
             setup.proxy.stop()
             BackgroundKeepAlive.shared.stop()
+            ThirdPartyModuleRuntime.syncServerWithDistribution()
             step = .thirdPartyClient
         }
     }

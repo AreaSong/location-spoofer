@@ -175,19 +175,32 @@ final class ThirdPartyModuleSourceStore: ObservableObject {
 
     private enum Key {
         static let useMirror = "thirdPartyModule.useMirror"
+        static let distribution = "thirdPartyModule.distribution"
     }
 
-    @Published private(set) var useMirror: Bool
+    @Published private(set) var distribution: ThirdPartyModuleDistribution
     private let defaults: UserDefaults
+
+    var useMirror: Bool { distribution == .remoteMirror }
 
     init(defaults: UserDefaults = AppGroup.defaults) {
         self.defaults = defaults
-        useMirror = defaults.object(forKey: Key.useMirror) as? Bool ?? true
+        if let raw = defaults.string(forKey: Key.distribution),
+           let stored = ThirdPartyModuleDistribution(rawValue: raw) {
+            distribution = stored
+        } else {
+            distribution = .onDevice
+        }
+    }
+
+    func setDistribution(_ distribution: ThirdPartyModuleDistribution) {
+        self.distribution = distribution
+        defaults.set(distribution.rawValue, forKey: Key.distribution)
+        defaults.removeObject(forKey: Key.useMirror)
     }
 
     func setUseMirror(_ enabled: Bool) {
-        useMirror = enabled
-        defaults.set(enabled, forKey: Key.useMirror)
+        setDistribution(enabled ? .remoteMirror : .remoteDirect)
     }
 }
 

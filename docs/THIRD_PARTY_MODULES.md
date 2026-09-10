@@ -8,12 +8,21 @@ not depend on that upstream repository remaining public.
 
 ## Subscription addresses
 
-The App builds each client's module subscription URL from this repository:
+The App copies the same module files into the application bundle and, by default,
+serves them on the device:
 
-- default mirror (gh-proxy):
+- on-device (default):
+  `http://127.0.0.1:18766/modules/<file>`
+  Script paths inside the served module are rewritten to
+  `http://127.0.0.1:18766/dist/v1/wloc.js` and `wloc-settings.js`.
+- GitHub mirror:
   `https://gh-proxy.org/https://raw.githubusercontent.com/AreaSong/location-spoofer/main/ThirdParty/WlocScripts/modules/<file>`
-- direct:
+- GitHub direct:
   `https://raw.githubusercontent.com/AreaSong/location-spoofer/main/ThirdParty/WlocScripts/modules/<file>`
+
+Importing or refreshing an on-device subscription requires this App to stay
+running so the loopback server can answer. After the client caches the scripts,
+location rewriting no longer needs GitHub.
 
 | Module file | Client |
 |---|---|
@@ -28,8 +37,8 @@ client re-fetches the module. Script files live at
 `ThirdParty/WlocScripts/dist/v1/` and are referenced by each module's
 `script-path`.
 
-After changing these files, they must be pushed to `AreaSong/location-spoofer`
-`main` before clients can download them.
+After changing these files, rebuild the App so the bundled copy updates. GitHub
+URLs only matter when the user switches the module source away from on-device.
 
 ## Script protocol
 

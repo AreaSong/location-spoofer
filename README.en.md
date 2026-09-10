@@ -146,6 +146,7 @@ In this mode:
 
 - The app owns map selection, recent selections, favorite backup, coordinate synchronization, and coordinate clearing;
 - The third-party client owns proxy/VPN, MITM, certificates, and rule execution;
+- Modules and scripts are served from this app by default (`127.0.0.1:18766`); keep the app open while importing or updating;
 - The third-party client owns coordinate persistence;
 - Wi-Fi, 4G, and 5G support depends on the client;
 - The configuration may remain active after Location Spoofer closes.
