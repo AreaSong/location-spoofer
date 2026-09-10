@@ -34,6 +34,7 @@ struct MapCameraCommand: Equatable, Identifiable {
     enum Kind: Equatable {
         case focus(coordinate: CLLocationCoordinate2D, distanceMeters: CLLocationDistance)
         case zoom(factor: Double)
+        case fit(coordinates: [CLLocationCoordinate2D])
 
         var isZoom: Bool { if case .zoom = self { return true }; return false }
 
@@ -44,6 +45,9 @@ struct MapCameraCommand: Equatable, Identifiable {
                     && lhsDistance == rhsDistance
             case let (.zoom(lhsFactor), .zoom(rhsFactor)):
                 return lhsFactor == rhsFactor
+            case let (.fit(lhsCoordinates), .fit(rhsCoordinates)):
+                return lhsCoordinates.count == rhsCoordinates.count
+                    && zip(lhsCoordinates, rhsCoordinates).allSatisfy { $0.isApproximatelyEqual(to: $1) }
             default:
                 return false
             }
@@ -271,6 +275,11 @@ final class MapLocationState: ObservableObject {
     func zoom(by factor: Double) {
         guard factor.isFinite, factor > 0 else { return }
         issueCameraCommand(.zoom(factor: factor))
+    }
+
+    func fitRoute(_ coordinates: [CLLocationCoordinate2D]) {
+        guard coordinates.count >= 2 else { return }
+        issueCameraCommand(.fit(coordinates: coordinates))
     }
 
     private func replaceSelection(

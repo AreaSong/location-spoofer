@@ -1,7 +1,7 @@
 import Foundation
 import CoreLocation
 
-enum RouteTravelMode: String, CaseIterable, Identifiable {
+enum RouteTravelMode: String, CaseIterable, Identifiable, Codable {
     case walk
     case bike
 
@@ -24,6 +24,22 @@ enum RouteTravelMode: String, CaseIterable, Identifiable {
     }
 }
 
+enum RouteRepeatMode: String, CaseIterable, Identifiable, Codable {
+    case once
+    case roundTrip
+    case loop
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .once: return "一次"
+        case .roundTrip: return "往返"
+        case .loop: return "循环"
+        }
+    }
+}
+
 struct RouteTick: Equatable {
     let coordinatePair: CoordinatePair
     let progress: Double
@@ -36,6 +52,10 @@ struct RoutePath: Equatable {
     let cumulativeMeters: [Double]
 
     var totalMeters: Double { cumulativeMeters.last ?? 0 }
+
+    func reversed() -> RoutePath {
+        RoutePath.make(Array(points.reversed()))
+    }
 
     static func make(_ points: [CoordinatePair]) -> RoutePath {
         let cleaned = collapse(points)
@@ -174,5 +194,33 @@ enum RoutePlayback {
 
     static func formattedSpeed(kilometersPerHour: Double) -> String {
         String(format: "%.1f 公里/小时", kilometersPerHour)
+    }
+
+    static func formattedRemaining(meters: Double, speedMetersPerSecond: Double) -> String {
+        "还剩 \(formattedDistance(meters))，\(formattedDuration(meters: meters, speedMetersPerSecond: speedMetersPerSecond))"
+    }
+
+    static func distanceMeters(along points: [CoordinatePair]) -> Double {
+        guard points.count >= 2 else { return 0 }
+        return zip(points, points.dropFirst()).reduce(0) { total, pair in
+            total + distanceMeters(from: pair.0, to: pair.1)
+        }
+    }
+}
+
+struct RouteMapPin: Equatable {
+    enum Role: Equatable {
+        case start
+        case via(Int)
+        case end
+    }
+
+    let coordinate: CLLocationCoordinate2D
+    let role: Role
+
+    static func == (lhs: RouteMapPin, rhs: RouteMapPin) -> Bool {
+        lhs.role == rhs.role
+            && abs(lhs.coordinate.latitude - rhs.coordinate.latitude) < 1e-8
+            && abs(lhs.coordinate.longitude - rhs.coordinate.longitude) < 1e-8
     }
 }

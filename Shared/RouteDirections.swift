@@ -4,6 +4,24 @@ import MapKit
 enum RouteDirections {
     @MainActor
     static func waypoints(
+        along anchors: [CoordinatePair],
+        mode: RouteTravelMode
+    ) async -> [CoordinatePair] {
+        guard anchors.count >= 2 else { return anchors }
+        var combined: [CoordinatePair] = []
+        for index in 0..<(anchors.count - 1) {
+            let leg = await waypoints(from: anchors[index], to: anchors[index + 1], mode: mode)
+            if combined.isEmpty {
+                combined = leg
+            } else if leg.count > 1 {
+                combined.append(contentsOf: leg.dropFirst())
+            }
+        }
+        return combined
+    }
+
+    @MainActor
+    static func waypoints(
         from start: CoordinatePair,
         to end: CoordinatePair,
         mode: RouteTravelMode

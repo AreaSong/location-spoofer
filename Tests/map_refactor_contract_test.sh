@@ -167,7 +167,11 @@ grep -q 'displayedFavorites' "$MAP_HOME" || fail "home favorite chips must share
 grep -q 'displayedFavorites' "$ROOT/App/FavoriteListView.swift" || fail "favorite list must share the sorted favorite order"
 grep -q 'setSortOrder' "$ROOT/Shared/FavoriteLocationStore.swift" || fail "favorite sort preference must be persistable"
 grep -q 'Label("走路"' "$MAP_HOME" || fail "map home must expose route walking"
+grep -q 'Label("已存路线"' "$MAP_HOME" || fail "map home must expose saved routes"
 grep -q 'route.enter()' "$MAP_HOME" || fail "opening a route must not use the current real or spoofed location as the start"
+grep -q 'route.load(saved)' "$MAP_HOME" || fail "saved routes must restore into the playback controller"
+! grep -A8 'func load' "$ROOT/Shared/RoutePlaybackController.swift" | grep -q 'enter(' \
+  || fail "loading a saved route must not go through enter() and clear the pins"
 ! grep -q 'routeDeparturePair' "$MAP_HOME" || fail "route start must not be derived from GPS or the active spoofed point"
 grep -q '直接出现在起点' "$ROOT/Shared/RoutePlaybackController.swift" \
   || fail "playback must jump to the chosen start instead of walking from the current location"
@@ -195,8 +199,49 @@ grep -q 'figure.walk' "$ROOT/App/RoutePlaybackPanel.swift" \
 test -f "$ROOT/Shared/RoutePlayback.swift" || fail "route interpolation helper is missing"
 test -f "$ROOT/Shared/RoutePlaybackController.swift" || fail "route playback controller is missing"
 test -f "$ROOT/App/RoutePlaybackPanel.swift" || fail "route playback panel is missing"
+test -f "$ROOT/Shared/SavedRouteStore.swift" || fail "saved routes must have a dedicated store"
+test -f "$ROOT/App/SavedRouteListView.swift" || fail "saved routes must have a list sheet"
+grep -q 'enum RouteRepeatMode' "$ROOT/Shared/RoutePlayback.swift" \
+  || fail "route playback must expose once, round-trip, and loop modes"
+grep -q 'case roundTrip' "$ROOT/Shared/RoutePlayback.swift" || fail "route playback must support round-trip"
+grep -q 'case loop' "$ROOT/Shared/RoutePlayback.swift" || fail "route playback must support looping"
+grep -q 'return "一次"' "$ROOT/Shared/RoutePlayback.swift" || fail "once mode must be labeled 一次"
+grep -q 'return "往返"' "$ROOT/Shared/RoutePlayback.swift" || fail "round-trip mode must be labeled 往返"
+grep -q 'return "循环"' "$ROOT/Shared/RoutePlayback.swift" || fail "loop mode must be labeled 循环"
+grep -q 'RouteRepeatMode' "$ROOT/App/RoutePlaybackPanel.swift" || fail "route panel must expose repeat modes"
+grep -q 'Button("保存")' "$ROOT/App/RoutePlaybackPanel.swift" || fail "route panel must let the user save a route"
+grep -q 'case .savedRoutes' "$MAP_HOME" || fail "map home must present the saved route list sheet"
+grep -q 'origin = Date()' "$ROOT/Shared/RoutePlaybackController.swift" \
+  || fail "reversing a route leg must reset the playback clock"
+grep -q 'headingForward' "$ROOT/Shared/RoutePlaybackController.swift" \
+  || fail "round-trip and loop playback must track heading"
+grep -q 'Button("途经")' "$ROOT/App/RoutePlaybackPanel.swift" || fail "route panel must let the user add via points"
+grep -q 'Button("倒着走")' "$ROOT/App/RoutePlaybackPanel.swift" || fail "route panel must let the user reverse a saved path"
+grep -q 'chevron.down' "$ROOT/App/RoutePlaybackPanel.swift" || fail "speed and offset must stay collapsed by default"
+grep -q 'formattedRemaining' "$ROOT/Shared/RoutePlayback.swift" || fail "playback must format remaining distance and time"
+grep -q '还剩' "$ROOT/Shared/RoutePlayback.swift" || fail "walking status must show remaining distance"
+grep -q 'setVisibleMapRect' "$ROOT/App/RouteMapAnnotations.swift" \
+  || fail "the map must fit the whole route in view"
+grep -q 'func fitRoute' "$MAP_STATE" || fail "map state must expose a fit-route camera command"
+grep -q 'onChange(of: route.pathRevision)' "$MAP_HOME" || fail "fitting the route must happen when the path is ready"
+if grep -A6 'onChange(of: route.progress)' "$MAP_HOME" | grep -q 'fitRoute'; then
+  fail "playback ticks must not refit the camera"
+fi
+grep -q 'overlayPins' "$MAP_HOME" || fail "the map must receive start, via, and end pins"
+grep -q 'return "起"' "$ROOT/App/RouteMapAnnotations.swift" || fail "the start pin must be labeled 起"
+grep -q 'return "终"' "$ROOT/App/RouteMapAnnotations.swift" || fail "the end pin must be labeled 终"
+grep -q 'viaPoints' "$ROOT/Shared/SavedRouteStore.swift" || fail "saved routes must persist via points"
+test -f "$ROOT/Shared/RoutePlaybackPreferences.swift" || fail "speed and offset must persist across launches"
+grep -q 'RoutePlaybackPreferenceStore' "$ROOT/Shared/RoutePlaybackController.swift" \
+  || fail "route playback must remember the last speed and offset"
+if grep -A12 'onChange(of: scenePhase)' "$MAP_HOME" | grep -q 'route.pause()'; then
+  fail "leaving the app must not pause route playback"
+fi
 if grep -Rq 'RoutePlayback' "$ROOT/ThirdParty/WlocScripts"; then
   fail "straight-line route playback must not modify vendored WLOC scripts"
+fi
+if grep -Rq 'SavedRoute' "$ROOT/ThirdParty/WlocScripts"; then
+  fail "saved routes must not modify vendored WLOC scripts"
 fi
 
 echo "PASS: map location state refactor contract"

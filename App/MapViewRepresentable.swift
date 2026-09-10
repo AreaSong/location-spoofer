@@ -42,6 +42,7 @@ struct MapViewRepresentable: UIViewRepresentable {
     var onZoomIn: (() -> Void)?
     var onZoomOut: (() -> Void)?
     var routeCoordinates: [CLLocationCoordinate2D] = []
+    var routePins: [RouteMapPin] = []
     var routeProgressCoordinate: CLLocationCoordinate2D?
 
     func makeCoordinator() -> Coordinator { Coordinator(parent: self) }
@@ -149,6 +150,7 @@ struct MapViewRepresentable: UIViewRepresentable {
         context.coordinator.parent = self
         context.coordinator.consume(cameraCommand, on: map)
         context.coordinator.updateRouteOverlay(routeCoordinates, on: map)
+        context.coordinator.updateRoutePins(routePins, on: map)
         context.coordinator.updateRouteProgress(routeProgressCoordinate, on: map)
         map.showsUserLocation = routeProgressCoordinate == nil
     }
@@ -170,7 +172,9 @@ struct MapViewRepresentable: UIViewRepresentable {
         private var keyboardObserverTokens: [NSObjectProtocol] = []
         private var lastForwardedRealtimeTimestamp: Date?
         private var lastRouteCoordinates: [CLLocationCoordinate2D] = []
+        private var lastRoutePins: [RouteMapPin] = []
         private var progressAnnotation: RouteProgressAnnotation?
+        private var pinAnnotations: [RoutePinAnnotation] = []
 
         deinit {
             keyboardObserverTokens.forEach(NotificationCenter.default.removeObserver)
@@ -214,19 +218,32 @@ struct MapViewRepresentable: UIViewRepresentable {
             regionChangeWasUserDriven = false
             map.userTrackingMode = .none
 
-            let region: MKCoordinateRegion
             switch command.kind {
             case let .focus(coordinate, _):
                 // 保持当前 span 不变，避免正方形 region 在竖屏 inflate
-                region = MKCoordinateRegion(center: coordinate, span: map.region.span)
+                let region = MKCoordinateRegion(center: coordinate, span: map.region.span)
+                map.setRegion(region, animated: true)
             case let .zoom(factor):
-                region = MKCoordinateRegion(
+                let region = MKCoordinateRegion(
                     center: map.centerCoordinate,
                     span: MapZoomMath.scaledSpan(map.region.span, factor: factor)
                 )
+                map.setRegion(region, animated: true)
+            case let .fit(coordinates):
+                RouteMapOverlay.fit(coordinates, on: map)
             }
+        }
 
-            map.setRegion(region, animated: true)
+        private func routePinView(for pin: RoutePinAnnotation, on map: MKMapView) -> MKAnnotationView {
+            let identifier = "route-pin-\(pin.reuseKey)"
+            let view = map.dequeueReusableAnnotationView(withIdentifier: identifier)
+                ?? MKAnnotationView(annotation: pin, reuseIdentifier: identifier)
+            view.annotation = pin
+            view.canShowCallout = false
+            view.displayPriority = .required
+            view.image = RouteMapOverlay.pinImage(text: pin.glyph, color: pin.tintColor)
+            view.centerOffset = CGPoint(x: 0, y: -11)
+            return view
         }
 
         @objc func handleTap(_ gesture: UITapGestureRecognizer) {
@@ -250,6 +267,18 @@ struct MapViewRepresentable: UIViewRepresentable {
             map.addOverlay(polyline)
         }
 
+        func updateRoutePins(_ pins: [RouteMapPin], on map: MKMapView) {
+            if pins == lastRoutePins { return }
+            lastRoutePins = pins
+            if !pinAnnotations.isEmpty {
+                map.removeAnnotations(pinAnnotations)
+            }
+            pinAnnotations = pins.map { RoutePinAnnotation(pin: $0) }
+            if !pinAnnotations.isEmpty {
+                map.addAnnotations(pinAnnotations)
+            }
+        }
+
         func updateRouteProgress(_ coordinate: CLLocationCoordinate2D?, on map: MKMapView) {
             centerPin?.isHidden = coordinate != nil
             guard let coordinate, CLLocationCoordinate2DIsValid(coordinate) else {
@@ -270,6 +299,9 @@ struct MapViewRepresentable: UIViewRepresentable {
 
         func mapView(_ mapView: MKMapView, viewFor annotation: MKAnnotation) -> MKAnnotationView? {
             if annotation is MKUserLocation { return nil }
+            if let pin = annotation as? RoutePinAnnotation {
+                return routePinView(for: pin, on: mapView)
+            }
             guard annotation is RouteProgressAnnotation else { return nil }
             let identifier = "route-progress"
             let view = mapView.dequeueReusableAnnotationView(withIdentifier: identifier)
@@ -412,13 +444,5 @@ struct MapViewRepresentable: UIViewRepresentable {
             let measured = northLocation.distance(from: southLocation)
             return measured.isFinite && measured > 0 ? measured : 1_000
         }
-    }
-}
-
-private final class RouteProgressAnnotation: NSObject, MKAnnotation {
-    @objc dynamic var coordinate: CLLocationCoordinate2D
-
-    init(coordinate: CLLocationCoordinate2D) {
-        self.coordinate = coordinate
     }
 }

@@ -13,7 +13,7 @@ private struct SearchLocationResult: Identifiable {
 }
 
 private enum HomeSheet: String, Identifiable {
-    case settings, logs, favorites
+    case settings, logs, favorites, savedRoutes
     var id: String { rawValue }
 }
 
@@ -51,6 +51,7 @@ struct MapHomeView: View {
     @Environment(\.scenePhase) private var scenePhase
     @ObservedObject var setup: SetupCoordinator
     @StateObject private var favorites: FavoriteLocationStore
+    @StateObject private var savedRoutes = SavedRouteStore()
     @StateObject private var actions = LocationActionCoordinator()
     @StateObject private var route = RoutePlaybackController()
     @ObservedObject private var proxy = ProxyManager.shared
@@ -85,6 +86,8 @@ struct MapHomeView: View {
     @State private var githubDestination: SafariDestination?
     @State private var editingFavorite: FavoriteLocation?
     @State private var editName = ""
+    @State private var showSaveRouteAlert = false
+    @State private var saveRouteName = ""
     @State private var reverseGeocodeTask: Task<Void, Never>?
     @State private var geocodeDebounceTask: Task<Void, Never>?
     @State private var showLocationAlert = false
@@ -218,6 +221,7 @@ struct MapHomeView: View {
                 onZoomIn: { mapState.zoom(by: 0.5) },
                 onZoomOut: { mapState.zoom(by: 2) },
                 routeCoordinates: route.overlayCoordinates,
+                routePins: route.overlayPins,
                 routeProgressCoordinate: route.progressCoordinate
             )
             .ignoresSafeArea(.container)
@@ -274,7 +278,9 @@ struct MapHomeView: View {
                         route: route,
                         currentPair: currentSelectionPair,
                         onPlay: playRoute,
-                        onExit: exitRoute
+                        onExit: exitRoute,
+                        onSave: promptSaveRoute,
+                        onOpenSaved: openSavedRoutes
                     )
                     if spoofState != .idle {
                         Button(action: handleMainButtonTap) {
@@ -315,6 +321,13 @@ struct MapHomeView: View {
                         onRename: { favorite, name in
                             favorites.rename(favorite.id, to: name)
                             mapState.updateExplicitName(name, forFavoriteID: favorite.id)
+                        }
+                    )
+                case .savedRoutes:
+                    SavedRouteListView(
+                        store: savedRoutes,
+                        onSelect: { saved in
+                            route.load(saved)
                         }
                     )
                 }
@@ -425,6 +438,11 @@ struct MapHomeView: View {
         .onChange(of: route.phase) { _ in
             syncRouteSpoofCoordinate()
         }
+        .onChange(of: route.pathRevision) { _ in
+            let coordinates = route.overlayCoordinates
+            guard coordinates.count >= 2 else { return }
+            mapState.fitRoute(coordinates)
+        }
         .onChange(of: net.isWiFiEnabled) { _ in
             pauseRouteIfLocationBlocked()
         }
@@ -497,6 +515,13 @@ struct MapHomeView: View {
             }
             Button("取消", role: .cancel) { editingFavorite = nil }
         } message: { Text("修改收藏地点名称") }
+        .alert("保存路线", isPresented: $showSaveRouteAlert) {
+            TextField("名称", text: $saveRouteName)
+            Button("保存") { commitSaveRoute() }
+            Button("取消", role: .cancel) {}
+        } message: {
+            Text("保存起点、终点和沿路折线，下次可以直接走。")
+        }
     }
 
     private var topControls: some View {
@@ -528,6 +553,11 @@ struct MapHomeView: View {
                     enterRoute()
                 } label: {
                     Label("走路", systemImage: "figure.walk")
+                }
+                Button {
+                    openSavedRoutes()
+                } label: {
+                    Label("已存路线", systemImage: "folder")
                 }
                 Button { activeSheet = .logs } label: { Label("日志", systemImage: "list.bullet.rectangle") }
                 Button { activeSheet = .settings } label: { Label("设置", systemImage: "gearshape") }
@@ -1119,6 +1149,24 @@ struct MapHomeView: View {
         if route.phase == .inactive {
             route.enter()
         }
+    }
+
+    private func openSavedRoutes() {
+        if locationUseBlock != nil { return }
+        activeSheet = .savedRoutes
+    }
+
+    private func promptSaveRoute() {
+        guard route.canPlay, !route.isRouting else { return }
+        saveRouteName = RoutePlayback.formattedDistance(route.distanceMeters)
+        showSaveRouteAlert = true
+    }
+
+    private func commitSaveRoute() {
+        let trimmed = saveRouteName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let snapshot = route.makeSavedRoute(name: trimmed) else { return }
+        savedRoutes.save(snapshot)
+        route.statusMessage = "已保存「\(snapshot.name)」。"
     }
 
     private func exitRoute() {

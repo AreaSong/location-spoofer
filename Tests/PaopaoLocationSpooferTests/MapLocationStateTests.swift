@@ -94,6 +94,21 @@ final class MapLocationStateTests: XCTestCase {
         XCTAssertEqual(factor, 0.5)
     }
 
+    func testFitRouteCommandKeepsSelectionAndUsesAllCoordinates() {
+        let state = MapLocationState(initialCoordinate: initial)
+        let before = state.selection
+        let start = CLLocationCoordinate2D(latitude: 22.494, longitude: 113.951)
+        let end = CLLocationCoordinate2D(latitude: 22.496, longitude: 113.954)
+        state.fitRoute([start, end])
+
+        XCTAssertEqual(state.selection.coordinate.latitude, before.coordinate.latitude, accuracy: 0.000001)
+        guard case let .fit(coordinates) = state.cameraCommand?.kind else {
+            return XCTFail("Expected fit command")
+        }
+        XCTAssertEqual(coordinates.count, 2)
+        XCTAssertEqual(coordinates[1].latitude, end.latitude, accuracy: 0.000001)
+    }
+
     func testPlaceLabelChangesWithViewportDistance() {
         let place = MapPlaceDescriptor(
             pointOfInterest: "深圳湾体育中心",
