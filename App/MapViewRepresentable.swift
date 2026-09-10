@@ -42,6 +42,7 @@ struct MapViewRepresentable: UIViewRepresentable {
     var onZoomIn: (() -> Void)?
     var onZoomOut: (() -> Void)?
     var routeCoordinates: [CLLocationCoordinate2D] = []
+    var routeProgressCoordinate: CLLocationCoordinate2D?
 
     func makeCoordinator() -> Coordinator { Coordinator(parent: self) }
 
@@ -148,6 +149,8 @@ struct MapViewRepresentable: UIViewRepresentable {
         context.coordinator.parent = self
         context.coordinator.consume(cameraCommand, on: map)
         context.coordinator.updateRouteOverlay(routeCoordinates, on: map)
+        context.coordinator.updateRouteProgress(routeProgressCoordinate, on: map)
+        map.showsUserLocation = routeProgressCoordinate == nil
     }
 
     final class Coordinator: NSObject, MKMapViewDelegate {
@@ -167,6 +170,7 @@ struct MapViewRepresentable: UIViewRepresentable {
         private var keyboardObserverTokens: [NSObjectProtocol] = []
         private var lastForwardedRealtimeTimestamp: Date?
         private var lastRouteCoordinates: [CLLocationCoordinate2D] = []
+        private var progressAnnotation: RouteProgressAnnotation?
 
         deinit {
             keyboardObserverTokens.forEach(NotificationCenter.default.removeObserver)
@@ -244,6 +248,39 @@ struct MapViewRepresentable: UIViewRepresentable {
             var points = coordinates
             let polyline = MKPolyline(coordinates: &points, count: points.count)
             map.addOverlay(polyline)
+        }
+
+        func updateRouteProgress(_ coordinate: CLLocationCoordinate2D?, on map: MKMapView) {
+            centerPin?.isHidden = coordinate != nil
+            guard let coordinate, CLLocationCoordinate2DIsValid(coordinate) else {
+                if let progressAnnotation {
+                    map.removeAnnotation(progressAnnotation)
+                    self.progressAnnotation = nil
+                }
+                return
+            }
+            if let progressAnnotation {
+                progressAnnotation.coordinate = coordinate
+                return
+            }
+            let annotation = RouteProgressAnnotation(coordinate: coordinate)
+            progressAnnotation = annotation
+            map.addAnnotation(annotation)
+        }
+
+        func mapView(_ mapView: MKMapView, viewFor annotation: MKAnnotation) -> MKAnnotationView? {
+            if annotation is MKUserLocation { return nil }
+            guard annotation is RouteProgressAnnotation else { return nil }
+            let identifier = "route-progress"
+            let view = mapView.dequeueReusableAnnotationView(withIdentifier: identifier)
+                ?? MKAnnotationView(annotation: annotation, reuseIdentifier: identifier)
+            view.annotation = annotation
+            view.canShowCallout = false
+            let config = UIImage.SymbolConfiguration(pointSize: 18, weight: .bold)
+            view.image = UIImage(systemName: "location.fill", withConfiguration: config)?
+                .withTintColor(.systemBlue, renderingMode: .alwaysOriginal)
+            view.centerOffset = CGPoint(x: 0, y: 0)
+            return view
         }
 
         func mapView(_ mapView: MKMapView, rendererFor overlay: MKOverlay) -> MKOverlayRenderer {
@@ -375,5 +412,13 @@ struct MapViewRepresentable: UIViewRepresentable {
             let measured = northLocation.distance(from: southLocation)
             return measured.isFinite && measured > 0 ? measured : 1_000
         }
+    }
+}
+
+private final class RouteProgressAnnotation: NSObject, MKAnnotation {
+    @objc dynamic var coordinate: CLLocationCoordinate2D
+
+    init(coordinate: CLLocationCoordinate2D) {
+        self.coordinate = coordinate
     }
 }

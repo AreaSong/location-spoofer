@@ -217,7 +217,8 @@ struct MapHomeView: View {
                 },
                 onZoomIn: { mapState.zoom(by: 0.5) },
                 onZoomOut: { mapState.zoom(by: 2) },
-                routeCoordinates: route.overlayCoordinates
+                routeCoordinates: route.overlayCoordinates,
+                routeProgressCoordinate: route.progressCoordinate
             )
             .ignoresSafeArea(.container)
 
@@ -275,8 +276,25 @@ struct MapHomeView: View {
                         onPlay: playRoute,
                         onExit: exitRoute
                     )
+                    if spoofState != .idle {
+                        Button(action: handleMainButtonTap) {
+                            HStack(spacing: 6) {
+                                if spoofState == .verifying {
+                                    ProgressView().tint(.white)
+                                }
+                                Text(spoofState == .active ? "停止虚拟定位" : buttonTitle)
+                                    .font(.headline)
+                            }
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 12)
+                        }
+                        .background(buttonColor, in: RoundedRectangle(cornerRadius: 14))
+                        .foregroundStyle(.white)
+                        .disabled(spoofState == .verifying)
+                    }
+                } else {
+                    bottomControls
                 }
-                bottomControls
             }
             .padding(.horizontal, 16)
             .padding(.top, 12)
@@ -382,11 +400,16 @@ struct MapHomeView: View {
             favoriteSaveTask = nil
         }
         .onChange(of: scenePhase) { phase in
-            if phase != .active {
-                route.pause()
+            guard phase == .active else {
+                if route.phase == .playing {
+                    BackgroundKeepAlive.shared.start()
+                }
                 return
             }
             if runtimeMode.mode == .localWiFi, proxy.isRunning {
+                BackgroundKeepAlive.shared.start()
+            }
+            if route.phase == .playing {
                 BackgroundKeepAlive.shared.start()
             }
             Task { @MainActor in
@@ -504,7 +527,7 @@ struct MapHomeView: View {
                 Button {
                     enterRoute()
                 } label: {
-                    Label("直线路线", systemImage: "figure.walk")
+                    Label("路线", systemImage: "figure.walk")
                 }
                 Button { activeSheet = .logs } label: { Label("日志", systemImage: "list.bullet.rectangle") }
                 Button { activeSheet = .settings } label: { Label("设置", systemImage: "gearshape") }
@@ -1115,7 +1138,7 @@ struct MapHomeView: View {
         route.requestPlay()
         if spoofState == .active {
             Task { @MainActor in
-                let applied = await applyRouteCoordinate(start)
+                let applied = await applyRouteCoordinate(route.current ?? start)
                 if applied {
                     route.noteActivated()
                 } else {
@@ -1125,7 +1148,7 @@ struct MapHomeView: View {
             return
         }
         let startFavorite = FavoriteLocation(
-            name: "直线路线",
+            name: "路线",
             coordinatePair: start,
             accuracy: LocationAccuracyStore.shared.meters
         )
@@ -1137,7 +1160,7 @@ struct MapHomeView: View {
         let accuracy = LocationAccuracyStore.shared.meters
         if runtimeMode.mode == .thirdParty {
             let favorite = FavoriteLocation(
-                name: "直线路线",
+                name: "路线",
                 coordinatePair: pair,
                 accuracy: accuracy
             )

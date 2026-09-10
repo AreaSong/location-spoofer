@@ -166,7 +166,14 @@ grep -q 'Label("排序"' "$ROOT/App/FavoriteListView.swift" || fail "favorite li
 grep -q 'displayedFavorites' "$MAP_HOME" || fail "home favorite chips must share the sorted favorite order"
 grep -q 'displayedFavorites' "$ROOT/App/FavoriteListView.swift" || fail "favorite list must share the sorted favorite order"
 grep -q 'setSortOrder' "$ROOT/Shared/FavoriteLocationStore.swift" || fail "favorite sort preference must be persistable"
-grep -q '直线路线' "$MAP_HOME" || fail "map home must expose straight-line route playback"
+grep -q 'Label("路线"' "$MAP_HOME" || fail "map home must expose along-road route playback"
+grep -q 'MKDirections' "$ROOT/Shared/RouteDirections.swift" || fail "route playback must request along-road directions"
+grep -q 'routeProgressCoordinate' "$MAP_BRIDGE" || fail "the map must show the moving virtual location"
+grep -q '正在沿路移动' "$ROOT/Shared/RoutePlaybackController.swift" \
+  || fail "route playback must keep moving after leaving the app"
+if grep -A12 'onChange(of: scenePhase)' "$MAP_HOME" | grep -q 'route.pause()'; then
+  fail "leaving the app must not pause route playback"
+fi
 grep -q 'MKPolyline' "$MAP_BRIDGE" || fail "the map bridge must draw the route as MKPolyline"
 grep -q 'func updateSpoofedWGS84' "$ROOT/App/LocationActionCoordinator.swift" \
   || fail "APP-mode route ticks must write exact WGS-84 without going through applyVerified"
