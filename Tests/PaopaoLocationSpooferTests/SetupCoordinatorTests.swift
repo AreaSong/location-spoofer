@@ -79,4 +79,19 @@ final class SetupCoordinatorTests: XCTestCase {
 
         XCTAssertFalse(coordinator.needsSetup)
     }
+
+    func testRuntimeVerificationFailureDoesNotCoverTheMap() {
+        let coordinator = SetupCoordinator()
+        LocationRuntimeFailureStore.shared.clear()
+        defer { LocationRuntimeFailureStore.shared.clear() }
+
+        coordinator.applyVerificationResult(.certNotTrusted, presentSetup: false)
+
+        XCTAssertFalse(coordinator.needsSetup)
+        XCTAssertEqual(coordinator.setupStep, .cert)
+        XCTAssertEqual(
+            LocationRuntimeFailureStore.shared.failure,
+            .appModeEnvironment("CA 证书未安装或未信任")
+        )
+    }
 }

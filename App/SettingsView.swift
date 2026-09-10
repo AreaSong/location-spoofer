@@ -33,6 +33,7 @@ struct SettingsView: View {
     @ObservedObject private var moduleSource = ThirdPartyModuleSourceStore.shared
     @ObservedObject private var moduleServer = ThirdPartyModuleServer.shared
     @ObservedObject private var net = NetworkMonitor.shared
+    @ObservedObject private var runtimeFailure = LocationRuntimeFailureStore.shared
     @Environment(\.dismiss) private var dismiss
     @State private var activeTip: TipKind?
     @State private var proxyOperationError = ""
@@ -50,6 +51,7 @@ struct SettingsView: View {
     @State private var showFavoriteImporter = false
     @State private var favoriteTransferTitle = "收藏"
     @State private var favoriteTransferMessage = ""
+    @State private var showSigningResignSheet = false
 
     var body: some View {
         Form {
@@ -71,9 +73,13 @@ struct SettingsView: View {
 
             Section("状态") {
                 if let message = signingExpiryStatus.settingsMessage {
-                    Label(message, systemImage: "calendar.badge.exclamationmark")
-                        .foregroundStyle(signingExpiryStatus.isExpired ? Color.red : Color.orange)
-                        .fixedSize(horizontal: false, vertical: true)
+                    Button {
+                        showSigningResignSheet = true
+                    } label: {
+                        Label(message, systemImage: "calendar.badge.exclamationmark")
+                            .foregroundStyle(signingExpiryStatus.isExpired ? Color.red : Color.orange)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                 }
                 if runtimeMode.mode == .localWiFi {
                     HStack {
@@ -244,6 +250,9 @@ struct SettingsView: View {
                     Label("核心定位改写逻辑移植自 Yu9191/wloc", systemImage: "heart.fill")
                         .foregroundStyle(.pink)
                 }
+                Text("原仓库已失效，模块已内置，请勿再去找订阅地址。")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
             }
         }
         .navigationTitle("设置")
@@ -258,6 +267,9 @@ struct SettingsView: View {
         .sheet(item: $githubDestination) { destination in
             SafariView(url: destination.url)
                 .ignoresSafeArea()
+        }
+        .sheet(isPresented: $showSigningResignSheet) {
+            SigningResignGuideView()
         }
         .alert(proxyOperationAlertTitle, isPresented: Binding(
             get: { !proxyOperationError.isEmpty },
@@ -599,20 +611,6 @@ struct SettingsView: View {
                 }
             }
 
-            Picker("模块来源", selection: Binding(
-                get: { moduleSource.distribution },
-                set: { newValue in
-                    moduleSource.setDistribution(newValue)
-                    ThirdPartyModuleRuntime.syncServerWithDistribution()
-                }
-            )) {
-                ForEach(ThirdPartyModuleDistribution.allCases) { source in
-                    Text(source.displayName).tag(source)
-                }
-            }
-            Text(moduleSourceHint)
-                .font(.footnote)
-                .foregroundStyle(.secondary)
             Text(thirdPartyClient.selectedClient.subscriptionURL.absoluteString)
                 .font(.caption2.monospaced())
                 .foregroundStyle(.secondary)
@@ -666,6 +664,26 @@ struct SettingsView: View {
                 dismiss()
             } label: {
                 Label("重新打开配置引导", systemImage: "arrow.clockwise.circle")
+            }
+
+            DisclosureGroup("高级") {
+                Picker("模块来源", selection: Binding(
+                    get: { moduleSource.distribution },
+                    set: { newValue in
+                        moduleSource.setDistribution(newValue)
+                        ThirdPartyModuleRuntime.syncServerWithDistribution()
+                    }
+                )) {
+                    ForEach(ThirdPartyModuleDistribution.allCases) { source in
+                        Text(source.displayName).tag(source)
+                    }
+                }
+                Text(moduleSourceHint)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                Text("换来源只影响下次导入，不能替代小火箭拦定位。")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
             }
 
             if thirdPartyClient.selectedClient == .egern {
@@ -774,10 +792,11 @@ struct SettingsView: View {
                 if runtimeMode.isInitialized(.thirdParty) {
                     do {
                         _ = try await thirdPartyProxy.query()
+                        runtimeFailure.clearThirdParty()
                         proxyOperationAlertTitle = "模式已切换"
                         proxyOperationError = "第三方代理模式检测通过。请关闭 Wi-Fi 中的 127.0.0.1:8888 手动代理，避免双重拦截。"
                     } catch {
-                        openThirdPartySetup(for: error)
+                        presentThirdPartyUnavailable(for: error)
                     }
                 } else {
                     setup.requestThirdPartyOnboarding()
@@ -796,12 +815,10 @@ struct SettingsView: View {
                 await setup.prepareLocalServices()
                 if runtimeMode.isInitialized(.localWiFi) {
                     let result = await setup.runVerificationTest()
-                    setup.applyVerificationResult(result)
+                    setup.applyVerificationResult(result, presentSetup: false)
                     if result.isSuccess {
                         proxyOperationAlertTitle = "模式已切换"
                         proxyOperationError = "APP 模式环境检测通过。请停用第三方 WLOC 模块或代理连接，避免双重拦截。"
-                    } else {
-                        dismiss()
                     }
                 } else {
                     setup.requestSetup()
@@ -823,6 +840,7 @@ struct SettingsView: View {
                     "耗时毫秒": String(Int(Date().timeIntervalSince(startedAt) * 1_000))
                 ])
                 runtimeMode.markInitialized(.thirdParty)
+                runtimeFailure.clearThirdParty()
             } catch {
                 RuntimeLogger.error(
                     "APP",
@@ -838,14 +856,15 @@ struct SettingsView: View {
                         "处理建议": ThirdPartyProxyError.recoverySuggestion(for: error)
                     ]
                 )
-                openThirdPartySetup(for: error)
+                presentThirdPartyUnavailable(for: error)
             }
         }
     }
 
-    private func openThirdPartySetup(for error: Error) {
-        setup.requestThirdPartySetup(message: error.localizedDescription)
-        dismiss()
+    private func presentThirdPartyUnavailable(for error: Error) {
+        runtimeFailure.recordThirdParty(error: error)
+        proxyOperationAlertTitle = LocationUseBlock.title
+        proxyOperationError = ThirdPartyProxyError.diagnosis(for: error).summary
     }
 
     private func resetCertificateAuthority() {

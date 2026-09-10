@@ -23,7 +23,7 @@ struct AppRemoteConfiguration: Decodable, Equatable {
     let communityPromptClients: [String]
 
     static let fallback = AppRemoteConfiguration(
-        latestVersion: "1.0.5",
+        latestVersion: "1.0.6",
         minimumSupportedVersion: "1.0.0",
         communityPromptClients: [
             ThirdPartyProxyClient.surge.rawValue,
@@ -109,14 +109,14 @@ final class AppRemoteConfigurationStore: ObservableObject {
 enum AppRemoteConfigurationService {
     static let configurationURLs = [
         URL(
-            string: "https://gh-proxy.org/https://raw.githubusercontent.com/xweiba/location-spoofer/main/version.txt"
+            string: "https://gh-proxy.org/https://raw.githubusercontent.com/AreaSong/location-spoofer/main/version.txt"
         )!,
         URL(
-            string: "https://raw.githubusercontent.com/xweiba/location-spoofer/main/version.txt"
+            string: "https://raw.githubusercontent.com/AreaSong/location-spoofer/main/version.txt"
         )!
     ]
     static let releasesURL = URL(
-        string: "https://github.com/xweiba/location-spoofer/releases/latest"
+        string: "https://github.com/AreaSong/location-spoofer/releases/latest"
     )!
 
     static func fetch() async -> AppRemoteConfiguration? {
@@ -186,7 +186,7 @@ enum AppRemoteConfigurationService {
     }
 
     static func releaseNotesURLs(version: String) -> [URL] {
-        let path = "https://raw.githubusercontent.com/xweiba/location-spoofer/main/docs/releases/v\(version).md"
+        let path = "https://raw.githubusercontent.com/AreaSong/location-spoofer/main/docs/releases/v\(version).md"
         return [
             URL(string: "https://gh-proxy.org/\(path)")!,
             URL(string: path)!

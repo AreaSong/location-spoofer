@@ -76,6 +76,12 @@ final class SigningExpiryTests: XCTestCase {
         XCTAssertEqual(parsed, date(2026, 9, 17, 4))
     }
 
+    func testResignInstructionsStayActionableAndAvoidErrorCodes() {
+        XCTAssertTrue(SigningExpiry.resignInstructions.contains("7 天"))
+        XCTAssertTrue(SigningExpiry.resignInstructions.contains("小火箭"))
+        XCTAssertFalse(SigningExpiry.resignInstructions.contains("错误代码"))
+    }
+
     func testParseIgnoresProvisionWithoutPlist() {
         XCTAssertNil(SigningExpiry.parseExpirationDate(from: Data("not a profile".utf8)))
     }

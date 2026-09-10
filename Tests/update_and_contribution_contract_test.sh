@@ -25,7 +25,7 @@ import sys
 with open(sys.argv[1], encoding="utf-8") as handle:
     config = json.load(handle)
 
-assert config["latestVersion"] == "1.0.5"
+assert config["latestVersion"] == "1.0.6"
 assert config["minimumSupportedVersion"] == "1.0.0"
 assert "shadowrocket" not in config["communityPromptClients"]
 assert set(config["communityPromptClients"]) == {
@@ -39,8 +39,8 @@ grep -q 'timeoutIntervalForRequest = 1.5' "$CONFIG" \
   || fail "remote configuration requests must use a short timeout"
 grep -q 'timeoutIntervalForResource = 2' "$CONFIG" \
   || fail "remote configuration resource loading must use a short timeout"
-grep -q 'gh-proxy.org/https://raw.githubusercontent.com/xweiba/location-spoofer/main/version.txt' "$CONFIG" \
-  || fail "update detection must prefer the domestic GitHub Raw mirror"
+grep -q 'gh-proxy.org/https://raw.githubusercontent.com/AreaSong/location-spoofer/main/version.txt' "$CONFIG" \
+  || fail "update detection must prefer this fork's domestic GitHub Raw mirror"
 grep -q 'static let configurationURLs = \[' "$CONFIG" \
   || fail "update detection must retain multiple configuration sources"
 ! grep -q 'data.count' "$CONFIG" \

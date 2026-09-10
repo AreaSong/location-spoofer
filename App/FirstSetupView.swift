@@ -546,6 +546,23 @@ struct FirstSetupView: View {
                         .foregroundStyle(.secondary)
                         .textSelection(.enabled)
                         .frame(maxWidth: .infinity, alignment: .leading)
+                    DisclosureGroup("高级") {
+                        Picker("模块来源", selection: Binding(
+                            get: { moduleSource.distribution },
+                            set: { newValue in
+                                moduleSource.setDistribution(newValue)
+                                ThirdPartyModuleRuntime.syncServerWithDistribution()
+                            }
+                        )) {
+                            ForEach(ThirdPartyModuleDistribution.allCases) { source in
+                                Text(source.displayName).tag(source)
+                            }
+                        }
+                        .pickerStyle(.menu)
+                        Text("换来源只影响下次导入，不能替代小火箭拦定位。")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
 
                     instructionRow(2, client == .shadowrocket
                         ? "打开 Shadowrocket，进入“配置 → 模块”。"

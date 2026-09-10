@@ -25,7 +25,8 @@ grep -Fq 'Label("打开 \(client.name)"' "$SETUP" \
   || fail "the import page must expose the selected client launch action"
 grep -Fq 'Label("打开 \(thirdPartyClient.selectedClient.name)"' "$SETTINGS" || fail "Settings must expose a client launch action"
 ! grep -q '在浏览器打开模块文件' "$SETTINGS" || fail "Settings must not open the module URL as the primary client action"
-grep -q 'requestThirdPartySetup' "$SETTINGS" || fail "Settings must reopen third-party setup"
+grep -q 'DisclosureGroup("高级")' "$SETUP" \
+  || fail "setup module source switching must live under Advanced"
 grep -q 'static let configurationEndpoint' "$MANAGER" \
   || fail "the third-party configuration endpoint must have one shared owner"
 grep -q 'DisclosureGroup("第三方客户端适配说明")' "$SETUP" \
@@ -111,9 +112,15 @@ grep -q 'Toggle("随机扰动"' "$SETTINGS" \
 ! grep -q 'thirdPartyTestResult?.success' "$SETUP" \
   || fail "a successful third-party test must not leave a separate completion state"
 grep -q 'setupStep = \.thirdPartyImport' "$ROOT/App/SetupCoordinator.swift" \
-  || fail "third-party runtime failures must route directly to the import guide"
-grep -q 'setup.requestThirdPartySetup(message: error.localizedDescription)' "$ROOT/App/MapHomeView.swift" \
-  || fail "third-party coordinate sync failures must open the import guide"
+  || fail "third-party import guide must remain available from setup"
+grep -q '当前不能使用定位修改' "$ROOT/Shared/LocationUseAvailability.swift" \
+  || fail "third-party runtime failures must stay on the map with a large unavailable prompt"
+grep -q 'LocationUseBlock.title' "$ROOT/App/MapHomeView.swift" \
+  || fail "the map must render the shared unavailable prompt title"
+grep -q 'LocationUseBlock.openSettingsTitle' "$ROOT/App/MapHomeView.swift" \
+  || fail "the unavailable prompt must open Settings"
+! grep -q 'setup.requestThirdPartySetup' "$ROOT/App/MapHomeView.swift" \
+  || fail "third-party coordinate sync failures must not cover the map with setup"
 grep -q '检测到第三方代理连接异常，请检查模块、MITM 和代理连接后重新检测' "$SETUP" \
   || fail "runtime repair must explain why the import guide opened"
 test "$(grep -c 'title: \"接口连接失败\"' "$SETUP")" -eq 1 \

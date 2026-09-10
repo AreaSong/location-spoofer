@@ -42,25 +42,34 @@ final class SetupCoordinator: ObservableObject {
         }
     }
 
-    func applyVerificationResult(_ result: VerificationResult) {
+    func applyVerificationResult(_ result: VerificationResult, presentSetup: Bool = true) {
         lastVerificationResult = result
         switch result {
         case .success:
             trustState = .trusted
             needsSetup = false
             message = "✓ 定位环境正常"
+            LocationRuntimeFailureStore.shared.clearAppMode()
         case .certNotTrusted:
             trustState = .unavailable
             setupStep = .cert
-            needsSetup = true
             message = "CA 证书未安装或未信任"
+            presentFailure(presentSetup: presentSetup)
         case .verificationInProgress, .verificationSuperseded:
             break
         default:
             trustState = .unavailable
             setupStep = .proxy
-            needsSetup = true
             message = "Wi-Fi 代理未正确设置，请检查 127.0.0.1:8888"
+            presentFailure(presentSetup: presentSetup)
+        }
+    }
+
+    private func presentFailure(presentSetup: Bool) {
+        if presentSetup {
+            needsSetup = true
+        } else {
+            LocationRuntimeFailureStore.shared.recordAppModeEnvironment(message)
         }
     }
 

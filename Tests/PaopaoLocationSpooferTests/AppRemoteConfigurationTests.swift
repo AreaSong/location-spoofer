@@ -62,7 +62,7 @@ final class AppRemoteConfigurationTests: XCTestCase {
     func testFallbackMatchesCurrentProjectPolicy() {
         let configuration = AppRemoteConfiguration.fallback
 
-        XCTAssertEqual(configuration.latestVersion, "1.0.5")
+        XCTAssertEqual(configuration.latestVersion, "1.0.6")
         XCTAssertEqual(configuration.minimumSupportedVersion, "1.0.0")
         XCTAssertFalse(configuration.requestsCommunityPrompt(for: .shadowrocket))
         for client in ThirdPartyProxyClient.allCases where client != .shadowrocket {
@@ -76,8 +76,18 @@ final class AppRemoteConfigurationTests: XCTestCase {
             AppRemoteConfigurationService.configurationURLs.last?.host,
             "raw.githubusercontent.com"
         )
+        XCTAssertTrue(
+            AppRemoteConfigurationService.configurationURLs.allSatisfy {
+                $0.absoluteString.contains("AreaSong/location-spoofer")
+            }
+        )
+        XCTAssertFalse(
+            AppRemoteConfigurationService.configurationURLs.contains {
+                $0.absoluteString.contains("xweiba/location-spoofer")
+            }
+        )
 
-        let releaseNotesURLs = AppRemoteConfigurationService.releaseNotesURLs(version: "1.0.5")
+        let releaseNotesURLs = AppRemoteConfigurationService.releaseNotesURLs(version: "1.0.6")
         XCTAssertEqual(releaseNotesURLs.first?.host, "gh-proxy.org")
         XCTAssertEqual(releaseNotesURLs.last?.host, "raw.githubusercontent.com")
     }

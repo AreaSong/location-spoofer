@@ -48,6 +48,13 @@ struct SigningExpiryStatus: Equatable {
 enum SigningExpiry {
     static let freeSigningWindowDays = 7
     static let mapBannerDays = 2
+    static let resignInstructions = """
+    免费 Apple ID 签名大约 7 天，到期后系统会拒绝打开 App。
+
+    用电脑重新签名并安装（Impactor、Sideloadly、爱思助手等均可）。
+
+    重装后第三方模式仍要打开小火箭模块，本 App 不能单独拦定位。
+    """
 
     static func provisionData(in bundle: Bundle = .main) -> Data? {
         let url = bundle.bundleURL.appendingPathComponent("embedded.mobileprovision")

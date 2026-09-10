@@ -23,8 +23,14 @@ grep -q 'signingExpiryStatus.settingsMessage' "$SETTINGS" \
   || fail "Settings must surface the free-signing reminder"
 grep -q '今天不再提示' "$MAP" \
   || fail "the map banner must be dismissible for the current day"
-grep -q 'signingExpiryBannerView' "$MAP" \
-  || fail "the map must render a dedicated signing-expiry banner"
+grep -q 'resignInstructions' "$EXPIRY" \
+  || fail "expiry must include resign instructions"
+grep -q 'SigningResignGuideView' "$MAP" "$SETTINGS" \
+  || fail "map and settings must open the resign guide"
+grep -q '原仓库已失效，模块已内置' "$SETTINGS" \
+  || fail "acknowledgements must warn that Yu9191 is no longer a subscription source"
+grep -q 'DisclosureGroup("高级")' "$SETTINGS" \
+  || fail "module source switching must live under Advanced in Settings"
 grep -q 'private func beginLocationOperation' "$MAP" \
   || fail "beginLocationOperation is missing"
 ! grep -A40 'private func beginLocationOperation' "$MAP" | grep -q 'SigningExpiry' \
