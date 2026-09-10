@@ -32,6 +32,7 @@ struct SettingsView: View {
     @ObservedObject private var locationAccuracy = LocationAccuracyStore.shared
     @ObservedObject private var moduleSource = ThirdPartyModuleSourceStore.shared
     @ObservedObject private var moduleServer = ThirdPartyModuleServer.shared
+    @ObservedObject private var net = NetworkMonitor.shared
     @Environment(\.dismiss) private var dismiss
     @State private var activeTip: TipKind?
     @State private var proxyOperationError = ""
@@ -61,9 +62,19 @@ struct SettingsView: View {
                 .pickerStyle(.inline)
                 .disabled(modeOperationRunning || actions.state.isBusy || thirdPartyProxy.isRequesting)
 
+                if runtimeMode.mode == .localWiFi, let message = appModeNetworkBlockedMessage {
+                    Text(message)
+                        .font(.footnote)
+                        .foregroundStyle(.orange)
+                }
             }
 
             Section("状态") {
+                if let message = signingExpiryStatus.settingsMessage {
+                    Label(message, systemImage: "calendar.badge.exclamationmark")
+                        .foregroundStyle(signingExpiryStatus.isExpired ? Color.red : Color.orange)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
                 if runtimeMode.mode == .localWiFi {
                     HStack {
                         Label("本机代理", systemImage: proxy.isRunning ? "play.circle.fill" : "stop.circle")
@@ -732,8 +743,24 @@ struct SettingsView: View {
         """
     }
 
+    private var appModeNetworkBlockedMessage: String? {
+        AppModeNetworkRequirement.blockedMessage(
+            wifiEnabled: net.isWiFiEnabled,
+            cellularEnabled: net.usesCellular
+        )
+    }
+
+    private var signingExpiryStatus: SigningExpiryStatus {
+        SigningExpiry.current()
+    }
+
     private func switchRuntimeMode(to newMode: ProxyRuntimeMode) {
         guard newMode != runtimeMode.mode, !modeOperationRunning else { return }
+        if newMode == .localWiFi, let message = appModeNetworkBlockedMessage {
+            proxyOperationAlertTitle = AppModeNetworkRequirement.title
+            proxyOperationError = message
+            return
+        }
         modeOperationRunning = true
         Task { @MainActor in
             defer { modeOperationRunning = false }
@@ -807,6 +834,7 @@ struct SettingsView: View {
                         "请求动作": "WLOC query",
                         "连接状态": String(describing: thirdPartyProxy.connectionState),
                         "耗时毫秒": String(Int(Date().timeIntervalSince(startedAt) * 1_000)),
+                        "原因": ThirdPartyProxyError.diagnosis(for: error).title,
                         "处理建议": ThirdPartyProxyError.recoverySuggestion(for: error)
                     ]
                 )

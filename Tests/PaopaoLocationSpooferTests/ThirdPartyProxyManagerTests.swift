@@ -148,6 +148,46 @@ final class ThirdPartyProxyManagerTests: XCTestCase {
         }
     }
 
+    func testNonHTTP200IsTreatedAsModuleNotIntercepted() async {
+        let requester = FakeThirdPartyRequester(body: #"{"success":true}"#, statusCode: 404)
+        let manager = ThirdPartyProxyManager(requester: requester)
+
+        do {
+            _ = try await manager.query()
+            XCTFail("expected interception failure")
+        } catch {
+            XCTAssertEqual(error as? ThirdPartyProxyError, .moduleNotIntercepted)
+            XCTAssertEqual(manager.connectionState, .failed("模块没有拦住请求"))
+        }
+    }
+
+    func testCertificateTrustErrorIsClassified() async {
+        let requester = FakeThirdPartyRequester(error: URLError(.serverCertificateUntrusted))
+        let manager = ThirdPartyProxyManager(requester: requester)
+
+        do {
+            _ = try await manager.query()
+            XCTFail("expected certificate failure")
+        } catch {
+            XCTAssertEqual(error as? ThirdPartyProxyError, .certificateUntrusted)
+            XCTAssertEqual(manager.connectionState, .failed("证书未完全信任"))
+            XCTAssertFalse(error.localizedDescription.contains("错误代码"))
+        }
+    }
+
+    func testTimeoutIsClassifiedAsProxyNotConnected() async {
+        let requester = FakeThirdPartyRequester(error: URLError(.timedOut))
+        let manager = ThirdPartyProxyManager(requester: requester)
+
+        do {
+            _ = try await manager.query()
+            XCTFail("expected connectivity failure")
+        } catch {
+            XCTAssertEqual(error as? ThirdPartyProxyError, .proxyNotConnected)
+            XCTAssertEqual(manager.connectionState, .failed("代理未连上"))
+        }
+    }
+
     func testClientLinksUseVendoredModulesAndVerificationLabels() {
         XCTAssertEqual(
             ThirdPartyProxyManager.interceptionHostnamesText,
@@ -198,19 +238,32 @@ final class ThirdPartyProxyManagerTests: XCTestCase {
 
 private final class FakeThirdPartyRequester: ThirdPartyProxyRequesting {
     private let data: Data
+    private let statusCode: Int
+    private let transportError: Error?
     private(set) var lastURL: URL?
     private(set) var requestedURLs: [URL] = []
 
-    init(body: String) {
+    init(body: String, statusCode: Int = 200) {
         data = Data(body.utf8)
+        self.statusCode = statusCode
+        transportError = nil
+    }
+
+    init(error: Error) {
+        data = Data()
+        statusCode = 0
+        transportError = error
     }
 
     func data(for request: URLRequest) async throws -> (Data, URLResponse) {
         lastURL = request.url
         requestedURLs.append(request.url!)
+        if let transportError {
+            throw transportError
+        }
         let response = HTTPURLResponse(
             url: request.url!,
-            statusCode: 200,
+            statusCode: statusCode,
             httpVersion: "HTTP/1.1",
             headerFields: ["Content-Type": "application/json"]
         )!

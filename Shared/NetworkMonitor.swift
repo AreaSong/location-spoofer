@@ -14,6 +14,7 @@ final class NetworkMonitor: ObservableObject {
 
     @Published private(set) var isSatisfied = true
     @Published private(set) var isWiFiEnabled = true
+    @Published private(set) var usesCellular = false
     @Published private(set) var currentSSID: String?
 
     /// Wi-Fi 重连、接口切换或 SSID 变化时触发。调用方必须在离开页面时移除订阅。
@@ -31,30 +32,8 @@ final class NetworkMonitor: ObservableObject {
         currentSSID = initialSSID
         lastKnownSSID = initialSSID
         monitor.pathUpdateHandler = { [weak self] path in
-            let satisfied = path.status == .satisfied
-            let wifi = path.usesInterfaceType(.wifi)
             Task { @MainActor in
-                guard let self else { return }
-                let reason: WiFiChangeReason?
-                if !self.hasReceivedInitialPath {
-                    // NWPathMonitor 的首次回调只是状态基线，不是网络切换。
-                    self.hasReceivedInitialPath = true
-                    reason = nil
-                } else if satisfied && wifi && !self.wasSatisfied {
-                    reason = .reconnected
-                } else if satisfied && wifi && !self.wasWiFiEnabled {
-                    // 蜂窝网络和 Wi-Fi 都可能是 satisfied，不能只比较 status。
-                    reason = .interfaceChanged
-                } else {
-                    reason = nil
-                }
-                self.wasSatisfied = satisfied
-                self.wasWiFiEnabled = wifi
-                self.isSatisfied = satisfied
-                self.isWiFiEnabled = wifi
-                if let reason {
-                    self.notifyWiFiChanged(reason: reason)
-                }
+                self?.apply(path)
             }
         }
         monitor.start(queue: .main)
@@ -71,6 +50,33 @@ final class NetworkMonitor: ObservableObject {
 
     func removeWiFiChangeObserver(_ token: UUID) {
         wifiChangeHandlers.removeValue(forKey: token)
+    }
+
+    private func apply(_ path: NWPath) {
+        let satisfied = path.status == .satisfied
+        let wifi = path.usesInterfaceType(.wifi)
+        let cellular = path.usesInterfaceType(.cellular)
+        let reason: WiFiChangeReason?
+        if !hasReceivedInitialPath {
+            // NWPathMonitor 的首次回调只是状态基线，不是网络切换。
+            hasReceivedInitialPath = true
+            reason = nil
+        } else if satisfied && wifi && !wasSatisfied {
+            reason = .reconnected
+        } else if satisfied && wifi && !wasWiFiEnabled {
+            // 蜂窝网络和 Wi-Fi 都可能是 satisfied，不能只比较 status。
+            reason = .interfaceChanged
+        } else {
+            reason = nil
+        }
+        wasSatisfied = satisfied
+        wasWiFiEnabled = wifi
+        isSatisfied = satisfied
+        isWiFiEnabled = wifi
+        usesCellular = cellular
+        if let reason {
+            notifyWiFiChanged(reason: reason)
+        }
     }
 
     private func notifyWiFiChanged(reason: WiFiChangeReason) {

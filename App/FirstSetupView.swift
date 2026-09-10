@@ -53,6 +53,8 @@ struct FirstSetupView: View {
     @ObservedObject private var thirdPartyProxy = ThirdPartyProxyManager.shared
     @ObservedObject private var thirdPartyClient = ThirdPartyProxyClientStore.shared
     @ObservedObject private var moduleSource = ThirdPartyModuleSourceStore.shared
+    @ObservedObject private var net = NetworkMonitor.shared
+    @State private var showAppModeNetworkAlert = false
     @State private var copiedSubscriptionURL = false
     @State private var copiedMITMHostname = false
     @State private var screenshotPreview: SetupScreenshotPreview?
@@ -172,6 +174,14 @@ struct FirstSetupView: View {
                     ThirdPartyModuleRuntime.prepareForImport()
                 }
             }
+            .alert(AppModeNetworkRequirement.title, isPresented: $showAppModeNetworkAlert) {
+                Button("改用第三方代理模式") {
+                    selectMode(.thirdParty)
+                }
+                Button("知道了", role: .cancel) {}
+            } message: {
+                Text(appModeNetworkBlockedMessage ?? "")
+            }
             .alert("无法直接跳转", isPresented: Binding(
                 get: { !manualHint.isEmpty },
                 set: { if !$0 { manualHint = "" } }
@@ -235,8 +245,8 @@ struct FirstSetupView: View {
         触发来源：地图或设置中的第三方代理操作
         请求动作：WLOC 配置接口
         检测结果：失败
-        错误详情：\(setup.message)
-        处理建议：确认模块已启用，并检查 MITM、证书和代理/VPN 连接。
+        原因：\(setup.message)
+        处理建议：确认模块已启用，证书已完全信任，并且第三方代理/VPN 已连接。
         """
     }
 
@@ -247,6 +257,13 @@ struct FirstSetupView: View {
             Text("后续可在“设置 → 运行模式”中切换。两种模式不要同时拦截 WLOC 请求。")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
+
+            if let message = appModeNetworkBlockedMessage {
+                Label(message, systemImage: "exclamationmark.triangle.fill")
+                    .font(.footnote)
+                    .foregroundStyle(.orange)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
 
             modeCard(
                 title: "APP模式",
@@ -830,8 +847,19 @@ struct FirstSetupView: View {
         }
     }
 
+    private var appModeNetworkBlockedMessage: String? {
+        AppModeNetworkRequirement.blockedMessage(
+            wifiEnabled: net.isWiFiEnabled,
+            cellularEnabled: net.usesCellular
+        )
+    }
+
     private func selectMode(_ mode: ProxyRuntimeMode) {
         guard !isPreparingMode else { return }
+        if mode == .localWiFi, appModeNetworkBlockedMessage != nil {
+            showAppModeNetworkAlert = true
+            return
+        }
         runtimeMode.setMode(mode)
         result = nil
         switch mode {
@@ -880,7 +908,8 @@ struct FirstSetupView: View {
             } catch {
                 let elapsedMilliseconds = Int(Date().timeIntervalSince(startedAt) * 1_000)
                 let connectionState = thirdPartyConnectionStateDescription
-                let errorType = String(describing: type(of: error))
+                let diagnosis = ThirdPartyProxyError.diagnosis(for: error)
+                let suggestion = ThirdPartyProxyError.recoverySuggestion(for: error)
                 RuntimeLogger.error(
                     "APP",
                     "ThirdPartyProxy",
@@ -891,8 +920,8 @@ struct FirstSetupView: View {
                         "请求动作": "WLOC query",
                         "连接状态": connectionState,
                         "耗时毫秒": String(elapsedMilliseconds),
-                        "错误类型": errorType,
-                        "处理建议": ThirdPartyProxyError.recoverySuggestion(for: error)
+                        "原因": diagnosis.title,
+                        "处理建议": suggestion
                     ]
                 )
                 thirdPartyTestFailure = ThirdPartyConnectionTestFailure(
@@ -905,9 +934,8 @@ struct FirstSetupView: View {
                     连接状态：\(connectionState)
                     检测结果：失败
                     耗时：\(elapsedMilliseconds) ms
-                    错误类型：\(errorType)
-                    错误详情：\(error.localizedDescription)
-                    处理建议：\(ThirdPartyProxyError.recoverySuggestion(for: error))。
+                    原因：\(diagnosis.title)
+                    处理建议：\(suggestion)。
                     """
                 )
                 showsThirdPartyFailureLog = true

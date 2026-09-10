@@ -102,6 +102,20 @@ grep -q 'activeTip = .deactivation' "$MAP_HOME" || fail "manual deactivation hel
 grep -q 'stabilizationNanoseconds: UInt64 = 3_000_000_000' "$MAP_HOME" || fail "Wi-Fi changes must wait three seconds before environment verification"
 ! grep -q 'wifiChangeReminderTipKind' "$MAP_HOME" || fail "Wi-Fi failures must not use a duplicate reminder mapping"
 grep -q 'setup.requestSetup(message:' "$MAP_HOME" || fail "missing Wi-Fi must enter the reusable proxy setup guide"
+grep -q 'enum AppModeNetworkRequirement' "$ROOT/Shared/AppModeNetworkRequirement.swift" \
+  || fail "APP mode must have a shared Wi-Fi/cellular gate"
+grep -q 'usesCellular' "$NETWORK_MONITOR" \
+  || fail "network monitor must publish cellular path state"
+FIRST_SETUP="$ROOT/App/FirstSetupView.swift"
+SETTINGS_VIEW="$ROOT/App/SettingsView.swift"
+grep -q 'showAppModeNetworkAlert' "$FIRST_SETUP" \
+  || fail "setup must block APP mode without Wi-Fi"
+grep -q '改用第三方代理模式' "$FIRST_SETUP" \
+  || fail "setup must offer switching to third-party mode when APP mode is blocked"
+grep -q 'newMode == .localWiFi, let message = appModeNetworkBlockedMessage' "$SETTINGS_VIEW" \
+  || fail "Settings must refuse switching to APP mode without Wi-Fi"
+grep -q 'if runtimeMode.mode == .localWiFi, let message = appModeNetworkBlockedMessage' "$MAP_HOME" \
+  || fail "the map must block APP-mode start without Wi-Fi"
 test "$(grep -c 'setup.applyVerificationResult(result)' "$MAP_HOME")" -ge 2 \
   || fail "activation and Wi-Fi-change verification failures must use the shared setup reducer"
 ! grep -q 'activeTip = \.proxySetup' "$MAP_HOME" || fail "proxy failures must not use a duplicate tip sheet"

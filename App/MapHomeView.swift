@@ -62,6 +62,7 @@ struct MapHomeView: View {
     @StateObject private var realtime = RealtimeLocationManager.shared
     @StateObject private var mapState: MapLocationState
     @ObservedObject private var net = NetworkMonitor.shared
+    @ObservedObject private var signingExpiryBanner = SigningExpiryBannerStore.shared
 
     @State private var searchText = ""
     @State private var searchResults: [SearchLocationResult] = []
@@ -85,6 +86,7 @@ struct MapHomeView: View {
     @State private var reverseGeocodeTask: Task<Void, Never>?
     @State private var geocodeDebounceTask: Task<Void, Never>?
     @State private var showLocationAlert = false
+    @State private var appModeNetworkMessage = ""
     @State private var realtimeRequestTask: Task<Void, Never>?
     @State private var realtimeRequestContext: RealtimeLocationRequestContext?
     @State private var wifiChangeObserverToken: UUID?
@@ -218,6 +220,12 @@ struct MapHomeView: View {
 
             VStack(spacing: 10) {
                 topControls
+                if runtimeMode.mode == .localWiFi, let message = appModeNetworkBlockedMessage {
+                    appModeNetworkBanner(message)
+                }
+                if let message = signingExpiryMapMessage {
+                    signingExpiryBannerView(message)
+                }
                 if !searchResults.isEmpty || !searchError.isEmpty { searchResultList }
                 Spacer()
                 // 右下角按钮
@@ -332,6 +340,15 @@ struct MapHomeView: View {
         )) {
             Button("知道了", role: .cancel) {}
         } message: { Text(manualHint) }
+        .alert(AppModeNetworkRequirement.title, isPresented: Binding(
+            get: { !appModeNetworkMessage.isEmpty },
+            set: { if !$0 { appModeNetworkMessage = "" } }
+        )) {
+            Button("改用第三方代理模式") {
+                switchToThirdPartyFromNetworkGate()
+            }
+            Button("知道了", role: .cancel) {}
+        } message: { Text(appModeNetworkMessage) }
         .onAppear {
             displayedMapCoordinateSystem = CoordinateConverter.currentMapCoordinateSystem
             startMapRuntimeOnce()
@@ -673,7 +690,82 @@ struct MapHomeView: View {
         }
     }
 
+    private var appModeNetworkBlockedMessage: String? {
+        AppModeNetworkRequirement.blockedMessage(
+            wifiEnabled: net.isWiFiEnabled,
+            cellularEnabled: net.usesCellular
+        )
+    }
+
+    private var signingExpiryStatus: SigningExpiryStatus {
+        _ = signingExpiryBanner.revision
+        return SigningExpiry.current()
+    }
+
+    private var signingExpiryMapMessage: String? {
+        let status = signingExpiryStatus
+        guard let message = status.mapBannerMessage,
+              let expiration = status.expirationDate,
+              !signingExpiryBanner.isBannerDismissed(expirationDate: expiration, now: Date()) else {
+            return nil
+        }
+        return message
+    }
+
+    private func signingExpiryBannerView(_ message: String) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label(message, systemImage: "calendar.badge.exclamationmark")
+                .font(.footnote)
+                .foregroundStyle(signingExpiryStatus.isExpired ? Color.red : Color.orange)
+                .fixedSize(horizontal: false, vertical: true)
+            if let expiration = signingExpiryStatus.expirationDate {
+                Button("今天不再提示") {
+                    signingExpiryBanner.dismissBanner(expirationDate: expiration, now: Date())
+                }
+                .font(.footnote.weight(.semibold))
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(12)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+    }
+
+    private func appModeNetworkBanner(_ message: String) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label(message, systemImage: "exclamationmark.triangle.fill")
+                .font(.footnote)
+                .foregroundStyle(.orange)
+                .fixedSize(horizontal: false, vertical: true)
+            Button("改用第三方代理模式") {
+                switchToThirdPartyFromNetworkGate()
+            }
+            .font(.footnote.weight(.semibold))
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(12)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+    }
+
+    private func switchToThirdPartyFromNetworkGate() {
+        if actions.virtualLocationEnabled {
+            actions.clear()
+        }
+        spoofState = .idle
+        proxy.stop()
+        runtimeMode.setMode(.thirdParty)
+        ThirdPartyModuleRuntime.syncServerWithDistribution()
+        if runtimeMode.isInitialized(.thirdParty) {
+            refreshThirdPartyState()
+        } else {
+            setup.requestThirdPartyOnboarding()
+        }
+    }
+
     private func beginLocationOperation() {
+        if runtimeMode.mode == .localWiFi, let message = appModeNetworkBlockedMessage {
+            appModeNetworkMessage = message
+            return
+        }
         guard spoofState != .verifying, locationOperationTask == nil else { return }
         let wasActive = spoofState == .active
         locationOperationID &+= 1
@@ -719,6 +811,7 @@ struct MapHomeView: View {
                             "当前客户端": thirdPartyClient.selectedClient.name,
                             "请求动作": "WLOC save",
                             "恢复状态": wasActive ? "保留原第三方坐标" : "保持未启用",
+                            "原因": ThirdPartyProxyError.diagnosis(for: error).title,
                             "处理建议": ThirdPartyProxyError.recoverySuggestion(for: error)
                         ]
                     )
@@ -801,6 +894,7 @@ struct MapHomeView: View {
                             "当前客户端": thirdPartyClient.selectedClient.name,
                             "请求动作": "WLOC clear",
                             "恢复状态": "保留已启用状态",
+                            "原因": ThirdPartyProxyError.diagnosis(for: error).title,
                             "处理建议": ThirdPartyProxyError.recoverySuggestion(for: error)
                         ]
                     )
@@ -1288,7 +1382,7 @@ struct MapHomeView: View {
                     "Wi-Fi接口": String(net.isWiFiEnabled)
                 ])
                 activeTip = nil
-                setup.requestSetup(message: "当前未连接可用的 Wi-Fi，请连接 Wi-Fi 后配置 127.0.0.1:8888 手动代理。")
+                setup.requestSetup(message: "当前未连接可用的 Wi-Fi。APP 模式只支持 Wi-Fi；如果只有流量，请改用第三方代理模式并保持小火箭开启。")
                 return
             }
 

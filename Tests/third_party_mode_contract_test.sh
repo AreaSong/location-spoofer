@@ -51,6 +51,8 @@ grep -q 'WlocScripts' "$ROOT/project.yml" \
   || fail "app bundle must include vendored WlocScripts"
 grep -q '保持本 App 打开' "$SETUP" \
   || fail "setup must tell users to keep the app open when importing on-device modules"
+grep -q 'APP 模式只支持 Wi-Fi' "$ROOT/Shared/AppModeNetworkRequirement.swift" \
+  || fail "APP mode must refuse cellular-only networks"
 grep -q '导出模块文件' "$SETTINGS" \
   || fail "Settings must expose on-device module export"
 SCRIPTS="$ROOT/ThirdParty/WlocScripts"
@@ -125,6 +127,18 @@ grep -q 'scrollProxy.scrollTo("thirdPartyFailureLog"' "$SETUP" \
   || fail "third-party failure must scroll to the detailed log"
 grep -q '======== 第三方代理连接检测 ========' "$SETUP" \
   || fail "third-party inline diagnostics must include a structured test log"
+grep -Fq '原因：\(diagnosis.title)' "$SETUP" \
+  || fail "third-party failure logs must show a human-readable cause"
+! grep -q '错误类型：' "$SETUP" \
+  || fail "third-party failure logs must not expose Swift error types"
+! grep -q '错误详情：' "$SETUP" \
+  || fail "third-party failure logs must not dump raw error details"
+! grep -q '错误代码' "$SETUP" "$SETTINGS" "$ROOT/App/MapHomeView.swift" "$ROOT/App/DiagnosticsView.swift" \
+  || fail "user-facing third-party errors must not show error codes"
+grep -q 'case certificateUntrusted' "$MANAGER" \
+  || fail "certificate trust failures must be classified separately"
+grep -q 'case proxyNotConnected' "$MANAGER" \
+  || fail "proxy connectivity failures must be classified separately"
 grep -Fq 'Label("第 2 步：完成 \(client.name) 配置"' "$SETUP" \
   || fail "unverified clients must use a two-step import and configuration guide"
 grep -Fq 'Text("请在 \(client.name) 中完成相应配置。")' "$SETUP" \

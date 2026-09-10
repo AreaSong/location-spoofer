@@ -1,0 +1,33 @@
+{
+  "pollIntervalSeconds": 15,
+  "requestTimeoutSeconds": 15,
+  "authAlertCooldownSeconds": 1800,
+  "request": {
+    "url": "https://your-backend.example.com/api/student/pending-checkins",
+    "method": "GET",
+    "headers": {
+      "Authorization": "Bearer ${STUDENT_TOKEN}",
+      "Accept": "application/json"
+    },
+    "body": null
+  },
+  "authFailure": {
+    "httpStatus": [401, 403],
+    "jsonCodePath": "code",
+    "jsonCodeValues": [401, 403, "UNAUTHORIZED", "unauthorized"]
+  },
+  "fields": {
+    "listPath": "data.list",
+    "idPath": "id",
+    "titlePath": "title",
+    "deadlinePath": "deadline",
+    "signedPath": "signed"
+  },
+  "bark": {
+    "server": "https://api.day.app",
+    "deviceKey": "${BARK_DEVICE_KEY}",
+    "group": "checkin-monitor",
+    "level": "timeSensitive"
+  },
+  "statePath": "./state.json"
+}

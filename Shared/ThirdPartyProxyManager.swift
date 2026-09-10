@@ -21,29 +21,77 @@ enum ThirdPartyProxyError: LocalizedError, Equatable {
     case rejected(String)
     case coordinateMismatch
     case network(String)
+    case certificateUntrusted
+    case proxyNotConnected
 
-    var errorDescription: String? {
+    var diagnosis: ThirdPartyProxyDiagnosis {
         switch self {
         case .invalidResponse:
-            return "第三方代理返回了无法识别的数据"
+            return .invalidResponse
         case .moduleNotIntercepted:
-            return "请求未被第三方代理模块拦截，请检查模块、MITM 和代理连接"
+            return .moduleNotIntercepted
         case .rejected(let message):
-            return message
+            return .rejected(message)
         case .coordinateMismatch:
-            return "第三方代理保存的坐标与当前选点不一致"
+            return .coordinateMismatch
         case .network(let message):
-            return "第三方代理请求失败：\(message)"
+            return .network(message)
+        case .certificateUntrusted:
+            return .certificateUntrusted
+        case .proxyNotConnected:
+            return .proxyNotConnected
         }
     }
 
-    var recoverySuggestion: String {
-        return "检查模块、MITM、证书和代理/VPN连接"
+    var errorDescription: String? {
+        diagnosis.summary
     }
 
+    var recoverySuggestion: String {
+        diagnosis.recoverySuggestion(usingOnDeviceModule: false, localServerRunning: true)
+    }
+
+    static func fromTransport(_ error: Error) -> ThirdPartyProxyError {
+        switch ThirdPartyProxyDiagnosis.fromTransport(error) {
+        case .certificateUntrusted:
+            return .certificateUntrusted
+        case .proxyNotConnected:
+            return .proxyNotConnected
+        case .network(let message):
+            return .network(message)
+        case .invalidResponse:
+            return .invalidResponse
+        case .moduleNotIntercepted:
+            return .moduleNotIntercepted
+        case .rejected(let message):
+            return .rejected(message)
+        case .coordinateMismatch:
+            return .coordinateMismatch
+        }
+    }
+
+    static func diagnosis(for error: Error) -> ThirdPartyProxyDiagnosis {
+        (error as? Self)?.diagnosis ?? .fromTransport(error)
+    }
+
+    @MainActor
     static func recoverySuggestion(for error: Error) -> String {
-        (error as? Self)?.recoverySuggestion
-            ?? "检查模块、MITM、证书和代理/VPN连接"
+        recoverySuggestion(
+            for: error,
+            usingOnDeviceModule: ThirdPartyModuleSourceStore.shared.distribution == .onDevice,
+            localServerRunning: ThirdPartyModuleServer.shared.isRunning
+        )
+    }
+
+    static func recoverySuggestion(
+        for error: Error,
+        usingOnDeviceModule: Bool,
+        localServerRunning: Bool
+    ) -> String {
+        diagnosis(for: error).recoverySuggestion(
+            usingOnDeviceModule: usingOnDeviceModule,
+            localServerRunning: localServerRunning
+        )
     }
 }
 
@@ -199,13 +247,17 @@ final class ThirdPartyProxyManager: ObservableObject {
 
             return response
         } catch let error as ThirdPartyProxyError {
-            connectionState = .failed(error.localizedDescription)
-            RuntimeLogger.error("APP", "ThirdPartyProxy", "第三方代理请求失败", error: error)
+            connectionState = .failed(error.diagnosis.title)
+            RuntimeLogger.error("APP", "ThirdPartyProxy", "第三方代理请求失败", error: error, details: [
+                "原因": error.diagnosis.title
+            ])
             throw error
         } catch {
-            let mapped = ThirdPartyProxyError.network(error.localizedDescription)
-            connectionState = .failed(mapped.localizedDescription)
-            RuntimeLogger.error("APP", "ThirdPartyProxy", "第三方代理请求失败", error: error)
+            let mapped = ThirdPartyProxyError.fromTransport(error)
+            connectionState = .failed(mapped.diagnosis.title)
+            RuntimeLogger.error("APP", "ThirdPartyProxy", "第三方代理请求失败", error: error, details: [
+                "原因": mapped.diagnosis.title
+            ])
             throw mapped
         }
     }

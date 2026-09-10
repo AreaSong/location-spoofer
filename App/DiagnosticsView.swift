@@ -249,12 +249,14 @@ struct RuntimeLogsView: View {
             已保存坐标: \(active ? "是" : "否")
             """
         } catch {
-            testResult = "第三方模块连接失败"
+            let diagnosis = ThirdPartyProxyError.diagnosis(for: error)
+            testResult = diagnosis.title
             testMessage = """
             ======== 第三方代理连接检测 ========
             模式: 测试模式
             请求: wloc-settings/save?action=query
-            结果: \(error.localizedDescription)
+            原因: \(diagnosis.title)
+            处理建议: \(ThirdPartyProxyError.recoverySuggestion(for: error))
             """
         }
     }
