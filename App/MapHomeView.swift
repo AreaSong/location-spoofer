@@ -66,6 +66,7 @@ struct MapHomeView: View {
     @StateObject var mapState: MapLocationState
     @ObservedObject var net = NetworkMonitor.shared
     @ObservedObject var signingExpiryBanner = SigningExpiryBannerStore.shared
+    @ObservedObject var routeLocation = RouteLocationSetupStore.shared
     @ObservedObject var runtimeFailure = LocationRuntimeFailureStore.shared
 
     @State var searchText = ""
@@ -93,6 +94,8 @@ struct MapHomeView: View {
     @State var geocodeDebounceTask: Task<Void, Never>?
     @State var showLocationAlert = false
     @State var showSigningResignSheet = false
+    @State var showRouteLocationSetup = false
+    @State var lastRoutePhase = RoutePhase.inactive
     @State var realtimeRequestTask: Task<Void, Never>?
     @State var realtimeRequestContext: RealtimeLocationRequestContext?
     @State var wifiChangeObserverToken: UUID?
@@ -392,6 +395,19 @@ struct MapHomeView: View {
         .sheet(isPresented: $showSigningResignSheet) {
             SigningResignGuideView()
         }
+        .sheet(isPresented: $showRouteLocationSetup) {
+            NavigationView {
+                List { RouteLocationSettingsSection() }
+                    .navigationTitle("路线定位")
+                    .toolbar {
+                        Button("关闭") { showRouteLocationSetup = false }
+                    }
+            }
+        }
+        .onChange(of: route.phase) { phase in
+            clearRouteLocationIfNeeded(from: lastRoutePhase, to: phase)
+            lastRoutePhase = phase
+        }
         .onAppear {
             displayedMapCoordinateSystem = CoordinateConverter.currentMapCoordinateSystem
             startMapRuntimeOnce()
@@ -425,6 +441,7 @@ struct MapHomeView: View {
                 }
                 return
             }
+            routeLocation.refresh()
             if runtimeMode.mode == .localWiFi, proxy.isRunning {
                 BackgroundKeepAlive.shared.start()
             }

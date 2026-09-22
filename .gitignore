@@ -10,6 +10,7 @@ xcuserdata/
 *.xcuserstate
 *.ipa
 *.a
+!Vendor/idevice/libidevice_ffi.a
 *.o
 *.log
 Core/vendor/

@@ -77,6 +77,7 @@ extension SettingsView {
             }
 
             locationSimulationSection
+            RouteLocationSettingsSection()
             favoriteBackupSection
 
             if runtimeMode.mode == .thirdParty {

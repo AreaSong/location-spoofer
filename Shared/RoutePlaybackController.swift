@@ -45,6 +45,9 @@ final class RoutePlaybackController: ObservableObject {
 
     var applyCoordinate: ((CoordinatePair) async -> Bool)?
     var tickIntervalNanoseconds: UInt64 = 1_000_000_000
+    /// 开发者定位推送每次采样都写，不再等 8 米或 5 秒。
+    var ignoresWriteGate = false
+    var pushFailureMessage = "系统定位推送失败，已暂停。"
 
     private(set) var headingForward = true
     private var elapsed: TimeInterval = 0
@@ -325,6 +328,7 @@ final class RoutePlaybackController: ObservableObject {
         elapsed = 0
         statusMessage = ""
         editingSavedRoute = nil
+        ignoresWriteGate = false
         phase = .inactive
     }
 
@@ -441,11 +445,12 @@ final class RoutePlaybackController: ObservableObject {
             progress = tick.progress
             let now = Date()
             let forceWrite = tick.isFinished
-            if writeGate.shouldWrite(tick.coordinatePair, at: now, force: forceWrite) {
+            let due = ignoresWriteGate || writeGate.shouldWrite(tick.coordinatePair, at: now, force: forceWrite)
+            if due {
                 let applied = await applyCoordinate?(tick.coordinatePair) ?? false
                 if !applied {
                     pause()
-                    statusMessage = "写入坐标失败，已暂停。"
+                    statusMessage = pushFailureMessage
                     return
                 }
                 writeGate.markWritten(tick.coordinatePair, at: now)

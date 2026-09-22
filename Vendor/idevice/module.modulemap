@@ -1,0 +1,4 @@
+module IdeviceLocation {
+    header "idevice_location.h"
+    export *
+}

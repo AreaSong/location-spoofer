@@ -32,10 +32,12 @@ targets:
         INFOPLIST_FILE: Resources/Info.plist
         CODE_SIGN_ENTITLEMENTS: Resources/PaopaoLocationSpoofer.entitlements
         TARGETED_DEVICE_FAMILY: "1"
-        HEADER_SEARCH_PATHS: "$(PROJECT_DIR)/Core"
+        HEADER_SEARCH_PATHS: "$(PROJECT_DIR)/Core $(PROJECT_DIR)/Vendor/idevice"
+        SWIFT_INCLUDE_PATHS: "$(PROJECT_DIR)/Vendor/idevice"
         SWIFT_OBJC_BRIDGING_HEADER: App/PaopaoLocationSpoofer-Bridging-Header.h
         OTHER_LDFLAGS: "$(inherited) -lwloccore"
-        LIBRARY_SEARCH_PATHS: "$(PROJECT_DIR)/Core/build/$(PLATFORM_NAME)"
+        "OTHER_LDFLAGS[sdk=iphoneos*]": "$(inherited) -lidevice_ffi -lc++ -lz"
+        LIBRARY_SEARCH_PATHS: "$(PROJECT_DIR)/Core/build/$(PLATFORM_NAME) $(PROJECT_DIR)/Vendor/idevice"
 
   PaopaoLocationSpooferTests:
     type: bundle.unit-test

@@ -12,14 +12,12 @@ extension MapHomeView {
     }
 
     func enterRoute() {
-        if locationUseBlock != nil { return }
         if route.phase == .inactive {
             route.enter()
         }
     }
 
     func openSavedRoutes() {
-        if locationUseBlock != nil { return }
         activeSheet = .savedRoutes
     }
 
@@ -48,7 +46,9 @@ extension MapHomeView {
     }
 
     func exitRoute() {
+        let previous = route.phase
         route.exit()
+        clearRouteLocationIfNeeded(from: previous, to: route.phase)
     }
 
     @ViewBuilder
@@ -97,50 +97,51 @@ extension MapHomeView {
 
     func playRoute() {
         bindRoutePlayback()
-        if locationUseBlock != nil { return }
-        if spoofState == .verifying { return }
+        routeLocation.refresh()
         if route.phase == .paused {
+            guard beginRouteLocation() else { return }
             route.resume()
             return
         }
         guard let start = route.start, route.canPlay else { return }
+        guard beginRouteLocation() else { return }
         route.requestPlay()
-        if spoofState == .active {
-            Task { @MainActor in
-                let applied = await applyRouteCoordinate(route.current ?? start)
-                if applied {
-                    route.noteActivated()
-                } else {
-                    route.cancelWaiting()
-                }
+        Task { @MainActor in
+            let applied = await applyRouteCoordinate(route.current ?? start)
+            if applied {
+                route.noteActivated()
+            } else {
+                route.cancelWaiting()
+                route.statusMessage = route.pushFailureMessage
             }
-            return
         }
-        let startFavorite = FavoriteLocation(
-            name: "路线",
-            coordinatePair: start,
-            accuracy: LocationAccuracyStore.shared.meters
-        )
-        beginLocationOperation(target: startFavorite)
+    }
+
+    func beginRouteLocation() -> Bool {
+        guard RouteLocationLaunch.prepare(route, readiness: routeLocation.readiness) == nil else {
+            showRouteLocationSetup = true
+            return false
+        }
+        return true
     }
 
     func applyRouteCoordinate(_ pair: CoordinatePair) async -> Bool {
-        await session.writeRoute(pair, offsetMeters: route.offsetMeters)
+        let coordinate = pair.wgs84
+        if let failure = await routeLocation.set(latitude: coordinate.latitude, longitude: coordinate.longitude) {
+            route.pushFailureMessage = failure.message
+            return false
+        }
+        return true
+    }
+
+    func clearRouteLocationIfNeeded(from previous: RoutePhase, to next: RoutePhase) {
+        guard RouteLocationStop.shouldClearSimulation(from: previous, to: next) else { return }
+        Task { await routeLocation.clear() }
     }
 
     func handleRouteSpoofStateChange(_ state: SpoofState) {
-        switch state {
-        case .active:
-            if route.waitingForActivation {
-                route.noteActivated()
-            }
-        case .idle:
-            if route.waitingForActivation {
-                route.cancelWaiting()
-            }
-            route.pause()
-        case .verifying:
-            break
+        if state == .idle, route.waitingForActivation {
+            route.cancelWaiting()
         }
     }
 
