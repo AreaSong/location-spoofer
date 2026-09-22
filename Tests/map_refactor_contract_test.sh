@@ -24,10 +24,20 @@ PROBE="$ROOT/Shared/MapCoordinateSystemProbe.swift"
 NETWORK_MONITOR="$ROOT/Shared/NetworkMonitor.swift"
 
 MAP_HOME="$(mktemp)"
-trap 'rm -f "$MAP_HOME"' EXIT
+SETTINGS_VIEW="$(mktemp)"
+FIRST_SETUP="$(mktemp)"
+trap 'rm -f "$MAP_HOME" "$SETTINGS_VIEW" "$FIRST_SETUP"' EXIT
 cat "$MAP_HOME_MAIN" > "$MAP_HOME"
 for extra in "$ROOT"/App/MapHomeView+*.swift "$ROOT"/App/MapHomeBottomCard.swift; do
   [ -f "$extra" ] && cat "$extra" >> "$MAP_HOME"
+done
+cat "$ROOT/App/SettingsView.swift" > "$SETTINGS_VIEW"
+for extra in "$ROOT"/App/SettingsView+*.swift; do
+  [ -f "$extra" ] && cat "$extra" >> "$SETTINGS_VIEW"
+done
+cat "$ROOT/App/FirstSetupView.swift" > "$FIRST_SETUP"
+for extra in "$ROOT"/App/FirstSetupView+*.swift; do
+  [ -f "$extra" ] && cat "$extra" >> "$FIRST_SETUP"
 done
 
 for file in "$MAP_HOME_MAIN" "$MAP_STATE" "$MAP_BRIDGE" "$REALTIME" "$SETUP" "$PROXY" "$SETTINGS_NAVIGATOR" "$DIAGNOSTICS" "$CONTENT" "$CONVERTER" "$PROBE" "$NETWORK_MONITOR"; do
@@ -117,8 +127,6 @@ grep -q 'enum AppModeNetworkRequirement' "$ROOT/Shared/AppModeNetworkRequirement
   || fail "APP mode must have a shared Wi-Fi/cellular gate"
 grep -q 'usesCellular' "$NETWORK_MONITOR" \
   || fail "network monitor must publish cellular path state"
-FIRST_SETUP="$ROOT/App/FirstSetupView.swift"
-SETTINGS_VIEW="$ROOT/App/SettingsView.swift"
 grep -q 'showAppModeNetworkAlert' "$FIRST_SETUP" \
   || fail "setup must block APP mode without Wi-Fi"
 grep -q '改用第三方代理模式' "$FIRST_SETUP" \
@@ -144,13 +152,13 @@ grep -q '看门狗' "$KEEP_ALIVE" || fail "keep-alive must restart if the audio 
 grep -q 'func isWlocPatchRequest' "$ROOT/Core/proxy.go" || fail "WLOC patching must accept /clls/wloc with a trailing slash"
 grep -q 'wloc pass-through' "$ROOT/Core/proxy.go" || fail "unpatched WLOC-host POSTs must be logged"
 test -f "$ROOT/Shared/LocationCoordinateOffset.swift" || fail "APP mode must offset WGS-84 with a dedicated helper"
-grep -q 'Toggle("随机扰动"' "$ROOT/App/SettingsView.swift" || fail "random perturbation must be available in settings"
-grep -q '定位精度' "$ROOT/App/SettingsView.swift" || fail "settings must expose a configurable location accuracy"
+grep -q 'Toggle("随机扰动"' "$SETTINGS_VIEW" || fail "random perturbation must be available in settings"
+grep -q '定位精度' "$SETTINGS_VIEW" || fail "settings must expose a configurable location accuracy"
 grep -q 'LocationAccuracyStore.shared.meters' "$MAP_HOME" || fail "map apply must stamp the accuracy store onto the current selection"
 ! grep -q 'accuracy: 25' "$MAP_HOME" || fail "map apply must not hardcode accuracy 25"
 grep -q 'effectiveRadiusMeters' "$ROOT/Shared/AppGroup.swift" || fail "disabled random radius must write a zero offset"
-grep -q '地图坐标标准' "$ROOT/App/SettingsView.swift" || fail "settings must show the current map coordinate system"
-grep -q '检测未命中白名单，当前按国内标准显示' "$ROOT/App/SettingsView.swift" || fail "settings must explain the GCJ-02 fallback"
+grep -q '地图坐标标准' "$SETTINGS_VIEW" || fail "settings must show the current map coordinate system"
+grep -q '检测未命中白名单，当前按国内标准显示' "$SETTINGS_VIEW" || fail "settings must explain the GCJ-02 fallback"
 test -f "$ROOT/Shared/CoordinateTextParser.swift" || fail "coordinate search must parse typed latitude/longitude"
 test -f "$ROOT/Shared/FavoriteTransfer.swift" || fail "favorite backup must use a dedicated transfer format"
 grep -q 'paopao-favorites' "$ROOT/Shared/FavoriteTransfer.swift" || fail "favorite backup JSON must use the paopao-favorites format"

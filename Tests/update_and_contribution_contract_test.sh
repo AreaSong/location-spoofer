@@ -5,13 +5,21 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CONFIG="$ROOT/Shared/AppRemoteConfiguration.swift"
 CONTENT="$ROOT/App/ContentView.swift"
 MAP="$(mktemp)"
-trap 'rm -f "$MAP"' EXIT
+SETUP="$(mktemp)"
+SETTINGS="$(mktemp)"
+trap 'rm -f "$MAP" "$SETUP" "$SETTINGS"' EXIT
 cat "$ROOT/App/MapHomeView.swift" > "$MAP"
 for extra in "$ROOT"/App/MapHomeView+*.swift "$ROOT"/App/MapHomeBottomCard.swift; do
   [ -f "$extra" ] && cat "$extra" >> "$MAP"
 done
-SETUP="$ROOT/App/FirstSetupView.swift"
-SETTINGS="$ROOT/App/SettingsView.swift"
+cat "$ROOT/App/FirstSetupView.swift" > "$SETUP"
+for extra in "$ROOT"/App/FirstSetupView+*.swift; do
+  [ -f "$extra" ] && cat "$extra" >> "$SETUP"
+done
+cat "$ROOT/App/SettingsView.swift" > "$SETTINGS"
+for extra in "$ROOT"/App/SettingsView+*.swift; do
+  [ -f "$extra" ] && cat "$extra" >> "$SETTINGS"
+done
 BUG_REPORT="$ROOT/App/BugReportView.swift"
 GITHUB_SUBMISSION="$ROOT/Shared/GitHubSubmission.swift"
 DISCUSSION_FORM="$ROOT/.github/DISCUSSION_TEMPLATE/第三方配置分享.yml"

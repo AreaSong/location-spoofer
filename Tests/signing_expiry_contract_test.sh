@@ -6,12 +6,16 @@ fail() { echo "FAIL: $*" >&2; exit 1; }
 
 EXPIRY="$ROOT/Shared/SigningExpiry.swift"
 MAP="$(mktemp)"
-trap 'rm -f "$MAP"' EXIT
+SETTINGS="$(mktemp)"
+trap 'rm -f "$MAP" "$SETTINGS"' EXIT
 cat "$ROOT/App/MapHomeView.swift" > "$MAP"
 for extra in "$ROOT"/App/MapHomeView+*.swift "$ROOT"/App/MapHomeBottomCard.swift; do
   [ -f "$extra" ] && cat "$extra" >> "$MAP"
 done
-SETTINGS="$ROOT/App/SettingsView.swift"
+cat "$ROOT/App/SettingsView.swift" > "$SETTINGS"
+for extra in "$ROOT"/App/SettingsView+*.swift; do
+  [ -f "$extra" ] && cat "$extra" >> "$SETTINGS"
+done
 
 test -f "$EXPIRY" || fail "signing expiry helper is missing"
 grep -q 'embedded.mobileprovision' "$EXPIRY" \
