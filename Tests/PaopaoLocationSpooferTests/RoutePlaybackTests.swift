@@ -1,3 +1,4 @@
+import Combine
 import XCTest
 @testable import PaopaoLocationSpoofer
 
@@ -253,6 +254,82 @@ final class RoutePlaybackControllerTests: XCTestCase {
         XCTAssertTrue(route.waitingForActivation)
         XCTAssertEqual(route.phase, .preparing)
         XCTAssertEqual(route.progress, 0)
+    }
+
+    func testPlaybackTicksDoNotPublishRouteStructure() async {
+        let route = preparedRoute(repeatMode: .once)
+        route.tickIntervalNanoseconds = 20_000_000
+        route.applyCoordinate = { _ in true }
+        var structuralChanges = 0
+        let structuralToken = route.objectWillChange.sink { structuralChanges += 1 }
+        route.requestPlay()
+        route.noteActivated()
+        let baseline = structuralChanges
+        let progressed = expectation(description: "playback clock advances")
+        var fulfilled = false
+        let progressToken = route.clock.$progress.sink { value in
+            guard value > 0, !fulfilled else { return }
+            fulfilled = true
+            progressed.fulfill()
+        }
+        await fulfillment(of: [progressed], timeout: 2)
+        XCTAssertEqual(structuralChanges, baseline)
+        XCTAssertEqual(route.clock.progress, route.progress)
+        XCTAssertEqual(route.clock.current, route.current)
+        route.pause()
+        structuralToken.cancel()
+        progressToken.cancel()
+    }
+
+    func testSwitchButtonUsesLastWrittenCoordinate() {
+        let written = CoordinateConverter.coordinatePair(
+            lat: 22.494,
+            lon: 113.951,
+            mapCoordinateSystem: .wgs84
+        )
+        let nearby = CoordinateConverter.coordinatePair(
+            lat: 22.49405,
+            lon: 113.951,
+            mapCoordinateSystem: .wgs84
+        )
+        XCTAssertFalse(
+            SpoofSelectionSwitch.needsSwitch(
+                isActive: true,
+                writtenLatitude: written.wgs84.latitude,
+                writtenLongitude: written.wgs84.longitude,
+                selection: nearby
+            )
+        )
+
+        let elsewhere = CoordinateConverter.coordinatePair(
+            lat: 22.5,
+            lon: 113.96,
+            mapCoordinateSystem: .wgs84
+        )
+        XCTAssertTrue(
+            SpoofSelectionSwitch.needsSwitch(
+                isActive: true,
+                writtenLatitude: written.wgs84.latitude,
+                writtenLongitude: written.wgs84.longitude,
+                selection: elsewhere
+            )
+        )
+        XCTAssertFalse(
+            SpoofSelectionSwitch.needsSwitch(
+                isActive: false,
+                writtenLatitude: written.wgs84.latitude,
+                writtenLongitude: written.wgs84.longitude,
+                selection: elsewhere
+            )
+        )
+        XCTAssertFalse(
+            SpoofSelectionSwitch.needsSwitch(
+                isActive: true,
+                writtenLatitude: nil,
+                writtenLongitude: nil,
+                selection: elsewhere
+            )
+        )
     }
 
     func testHandleFinishedLegOnceStops() {

@@ -1,3 +1,4 @@
+import Combine
 import CoreLocation
 import Foundation
 import MapKit
@@ -44,7 +45,7 @@ struct MapViewRepresentable: UIViewRepresentable {
     var onZoomOut: (() -> Void)?
     var routeCoordinates: [CLLocationCoordinate2D] = []
     var routePins: [RouteMapPin] = []
-    var routeProgressCoordinate: CLLocationCoordinate2D?
+    var playbackClock: RoutePlaybackClock?
 
     func makeCoordinator() -> Coordinator { Coordinator(parent: self) }
 
@@ -153,8 +154,9 @@ struct MapViewRepresentable: UIViewRepresentable {
         context.coordinator.consume(cameraCommand, on: map)
         context.coordinator.updateRouteOverlay(routeCoordinates, on: map)
         context.coordinator.updateRoutePins(routePins, on: map)
-        context.coordinator.updateRouteProgress(routeProgressCoordinate, on: map)
-        map.showsUserLocation = routeProgressCoordinate == nil
+        if let playbackClock {
+            context.coordinator.bindPlaybackClock(playbackClock, on: map)
+        }
     }
 
     final class Coordinator: NSObject, MKMapViewDelegate, UIGestureRecognizerDelegate {
@@ -176,6 +178,8 @@ struct MapViewRepresentable: UIViewRepresentable {
         private var lastRouteCoordinates: [CLLocationCoordinate2D] = []
         private var lastRoutePins: [RouteMapPin] = []
         private var progressAnnotation: RouteProgressAnnotation?
+        private var boundPlaybackClock: RoutePlaybackClock?
+        private var markerCancellable: AnyCancellable?
         private var pinAnnotations: [RoutePinAnnotation] = []
 
         deinit {
@@ -297,6 +301,24 @@ struct MapViewRepresentable: UIViewRepresentable {
             }
         }
 
+        func bindPlaybackClock(_ clock: RoutePlaybackClock, on map: MKMapView) {
+            self.map = map
+            applyProgressMarker(clock.markerCoordinate, on: map)
+            guard boundPlaybackClock !== clock else { return }
+            boundPlaybackClock = clock
+            markerCancellable = clock.$markerCoordinate
+                .receive(on: DispatchQueue.main)
+                .sink { [weak self] coordinate in
+                    guard let self, let map = self.map else { return }
+                    self.applyProgressMarker(coordinate, on: map)
+                }
+        }
+
+        private func applyProgressMarker(_ coordinate: CLLocationCoordinate2D?, on map: MKMapView) {
+            updateRouteProgress(coordinate, on: map)
+            map.showsUserLocation = coordinate == nil
+        }
+
         func updateRouteProgress(_ coordinate: CLLocationCoordinate2D?, on map: MKMapView) {
             centerPin?.isHidden = coordinate != nil
             guard let coordinate, CLLocationCoordinate2DIsValid(coordinate) else {
@@ -377,12 +399,7 @@ struct MapViewRepresentable: UIViewRepresentable {
         }
 
         func mapView(_ mapView: MKMapView, regionWillChangeAnimated animated: Bool) {
-            let activeRecognizers = ([mapView as UIView] + mapView.subviews)
-                .compactMap(\.gestureRecognizers)
-                .flatMap { $0 }
-                .filter { recognizer in
-                    recognizer.state == .began || recognizer.state == .changed
-                }
+            let activeRecognizers = activeGestureRecognizers(on: mapView)
             let hasActiveGesture = !activeRecognizers.isEmpty
 
             // Pinching updates the viewport/name granularity only. MapKit can
@@ -396,6 +413,20 @@ struct MapViewRepresentable: UIViewRepresentable {
                 activeCameraCommandID = nil
                 activeCommandIsZoom = false
             }
+        }
+
+        private func activeGestureRecognizers(on mapView: MKMapView) -> [UIGestureRecognizer] {
+            var recognizers: [UIGestureRecognizer] = []
+            let views = [mapView as UIView] + mapView.subviews
+            for view in views {
+                guard let attached = view.gestureRecognizers else { continue }
+                for recognizer in attached {
+                    if recognizer.state == .began || recognizer.state == .changed {
+                        recognizers.append(recognizer)
+                    }
+                }
+            }
+            return recognizers
         }
 
         func mapView(_ mapView: MKMapView, regionDidChangeAnimated animated: Bool) {

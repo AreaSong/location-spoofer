@@ -185,7 +185,7 @@ grep -q '直接出现在起点' "$ROOT/Shared/RoutePlaybackController.swift" \
 grep -q 'Button("起点")' "$ROOT/App/RoutePlaybackPanel.swift" || fail "route panel must let the user set a start pin"
 grep -q 'Button("终点")' "$ROOT/App/RoutePlaybackPanel.swift" || fail "route panel must let the user set an end pin"
 grep -q 'MKDirections' "$ROOT/Shared/RouteDirections.swift" || fail "route playback must request along-road directions"
-grep -q 'routeProgressCoordinate' "$MAP_BRIDGE" || fail "the map must show the moving virtual location"
+grep -q 'markerCoordinate' "$MAP_BRIDGE" || fail "the map must show the moving virtual location"
 grep -q '正在从起点沿路走到终点' "$ROOT/Shared/RoutePlaybackController+Status.swift" \
   || fail "route playback must keep the spoofed location moving along the chosen path"
 if grep -A12 'onChange(of: scenePhase)' "$MAP_HOME" | grep -q 'route.pause()'; then
@@ -231,9 +231,16 @@ grep -q 'setVisibleMapRect' "$ROOT/App/RouteMapAnnotations.swift" \
   || fail "the map must fit the whole route in view"
 grep -q 'func fitRoute' "$MAP_STATE" || fail "map state must expose a fit-route camera command"
 grep -q 'onChange(of: route.pathRevision)' "$MAP_HOME" || fail "fitting the route must happen when the path is ready"
-if grep -A6 'onChange(of: route.progress)' "$MAP_HOME" | grep -q 'fitRoute'; then
-  fail "playback ticks must not refit the camera"
+if grep -q 'onChange(of: route.progress)' "$MAP_HOME"; then
+  fail "playback ticks must not invalidate the home view"
 fi
+grep -q 'playbackClock' "$MAP_BRIDGE" || fail "map progress must follow the playback clock"
+grep -q 'SpoofSelectionSwitch.needsSwitch' "$MAP_HOME" \
+  || fail "switch button must compare the last written coordinate"
+grep -q 'activeSpoofLat = wgs.latitude' "$MAP_HOME" \
+  || fail "route writes must record the coordinate that was actually applied"
+test -f "$ROOT/Shared/RoutePlaybackClock.swift" \
+  || fail "playback progress must publish separately from the route structure"
 grep -q 'overlayPins' "$MAP_HOME" || fail "the map must receive start, via, and end pins"
 grep -q 'return "起"' "$ROOT/App/RouteMapAnnotations.swift" || fail "the start pin must be labeled 起"
 grep -q 'return "终"' "$ROOT/App/RouteMapAnnotations.swift" || fail "the end pin must be labeled 终"

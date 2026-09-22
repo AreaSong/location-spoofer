@@ -48,8 +48,51 @@ extension MapHomeView {
     }
 
     func exitRoute() {
-        syncRouteSpoofCoordinate()
         route.exit()
+    }
+
+    @ViewBuilder
+    var routePlaybackSpoofControls: some View {
+        if spoofState != .idle {
+            HStack(spacing: 10) {
+                Button(action: handleMainButtonTap) {
+                    HStack(spacing: 6) {
+                        if spoofState == .verifying {
+                            ProgressView().tint(.white)
+                        }
+                        Text(routePlaybackButtonTitle)
+                            .font(.headline)
+                            .lineLimit(1)
+                    }
+                    .frame(maxWidth: needsSwitchButton ? nil : .infinity)
+                    .frame(minWidth: needsSwitchButton ? 56 : nil)
+                    .padding(.vertical, 12)
+                    .padding(.horizontal, needsSwitchButton ? 12 : 0)
+                }
+                .background(buttonColor, in: RoundedRectangle(cornerRadius: 14))
+                .foregroundStyle(.white)
+                .disabled(spoofState == .verifying)
+
+                if needsSwitchButton {
+                    Button(action: { beginLocationOperation() }) {
+                        Label("切换到此处", systemImage: "arrow.triangle.swap")
+                            .font(.body.weight(.medium))
+                            .lineLimit(1)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 12)
+                            .padding(.horizontal, 16)
+                    }
+                    .background(.blue, in: RoundedRectangle(cornerRadius: 14))
+                    .foregroundStyle(.white)
+                }
+            }
+        }
+    }
+
+    private var routePlaybackButtonTitle: String {
+        if spoofState == .active, needsSwitchButton { return "关闭" }
+        if spoofState == .active { return "停止虚拟定位" }
+        return buttonTitle
     }
 
     func playRoute() {
@@ -92,7 +135,9 @@ extension MapHomeView {
                 accuracy: accuracy
             )
             do {
-                _ = try await thirdPartyProxy.save(favorite, randomRadius: offsetMeters)
+                let response = try await thirdPartyProxy.save(favorite, randomRadius: offsetMeters)
+                activeSpoofLat = response.latitude ?? pair.wgs84.latitude
+                activeSpoofLon = response.longitude ?? pair.wgs84.longitude
                 runtimeFailure.clearThirdParty()
                 return true
             } catch {
@@ -111,17 +156,16 @@ extension MapHomeView {
         }
         let written = RoutePlayback.offset(pair, radiusMeters: offsetMeters)
         let wgs = written.wgs84
-        return actions.updateSpoofedWGS84(
+        let applied = actions.updateSpoofedWGS84(
             latitude: wgs.latitude,
             longitude: wgs.longitude,
             accuracy: accuracy
         )
-    }
-
-    func syncRouteSpoofCoordinate() {
-        guard route.phase != .inactive, let current = route.current else { return }
-        activeSpoofLat = current.wgs84.latitude
-        activeSpoofLon = current.wgs84.longitude
+        if applied {
+            activeSpoofLat = wgs.latitude
+            activeSpoofLon = wgs.longitude
+        }
+        return applied
     }
 
     func handleRouteSpoofStateChange(_ state: SpoofState) {

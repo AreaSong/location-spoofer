@@ -1,3 +1,4 @@
+import CoreLocation
 import Foundation
 
 extension RoutePlaybackController {
@@ -44,5 +45,25 @@ extension RoutePlaybackController {
             return "已走到终点。你的虚拟定位现在停在这里。"
         }
         return "已走回起点。你的虚拟定位现在停在这里。"
+    }
+}
+
+extension RoutePlaybackController {
+    var progressCoordinate: CLLocationCoordinate2D? {
+        switch phase {
+        case .playing, .paused, .finished:
+            let system = CoordinateConverter.currentMapCoordinateSystem
+            return (current ?? start)?.coordinate(for: system)
+        case .inactive, .preparing:
+            return nil
+        }
+    }
+
+    func refreshProgressMarker() {
+        publishMarker()
+    }
+
+    func publishMarker() {
+        clock.setMarker(progressCoordinate)
     }
 }

@@ -47,6 +47,7 @@ extension MapHomeView {
         realtimeRequestContext = nil
         mapState.clearRealtimeLocationForMapCoordinateSystemChange()
         displayedMapCoordinateSystem = change.current
+        route.refreshProgressMarker()
         let pinWasReprojected = reprojectMapSelection(for: change)
         if let stored = LastCoordinateStore.load() {
             scheduleGeocode(pair: stored.coordinatePair, revision: mapState.selection.revision)

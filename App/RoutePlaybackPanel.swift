@@ -2,6 +2,7 @@ import SwiftUI
 
 struct RoutePlaybackPanel: View {
     @ObservedObject var route: RoutePlaybackController
+    @ObservedObject var clock: RoutePlaybackClock
     let currentPair: CoordinatePair
     let onPlay: () -> Void
     let onExit: () -> Void
@@ -37,14 +38,14 @@ struct RoutePlaybackPanel: View {
             switch route.phase {
             case .playing:
                 HStack(spacing: 8) {
-                    ProgressView(value: route.progress)
+                    ProgressView(value: clock.progress)
                     Button("暂停") { route.pause() }
                         .buttonStyle(.borderedProminent)
                         .controlSize(.small)
                 }
             case .paused, .finished:
                 HStack(spacing: 8) {
-                    ProgressView(value: route.progress)
+                    ProgressView(value: clock.progress)
                     saveButton
                     playButton
                 }
@@ -71,8 +72,8 @@ struct RoutePlaybackPanel: View {
                     playButton
                 }
             }
-            if !route.statusMessage.isEmpty {
-                Text(route.statusMessage)
+            if !clock.statusMessage.isEmpty {
+                Text(clock.statusMessage)
                     .font(.caption2)
                     .foregroundStyle(.secondary)
                     .lineLimit(2)

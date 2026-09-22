@@ -239,7 +239,7 @@ struct MapHomeView: View {
                 onZoomOut: { mapState.zoom(by: 2) },
                 routeCoordinates: route.overlayCoordinates,
                 routePins: route.overlayPins,
-                routeProgressCoordinate: route.progressCoordinate
+                playbackClock: route.clock
             )
             .ignoresSafeArea(.container)
 
@@ -293,28 +293,14 @@ struct MapHomeView: View {
                 if route.phase != .inactive {
                     RoutePlaybackPanel(
                         route: route,
+                        clock: route.clock,
                         currentPair: currentSelectionPair,
                         onPlay: playRoute,
                         onExit: exitRoute,
                         onSave: promptSaveRoute,
                         onOpenSaved: openSavedRoutes
                     )
-                    if spoofState != .idle {
-                        Button(action: handleMainButtonTap) {
-                            HStack(spacing: 6) {
-                                if spoofState == .verifying {
-                                    ProgressView().tint(.white)
-                                }
-                                Text(spoofState == .active ? "停止虚拟定位" : buttonTitle)
-                                    .font(.headline)
-                            }
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 12)
-                        }
-                        .background(buttonColor, in: RoundedRectangle(cornerRadius: 14))
-                        .foregroundStyle(.white)
-                        .disabled(spoofState == .verifying)
-                    }
+                    routePlaybackSpoofControls
                 } else {
                     bottomControls
                 }
@@ -454,12 +440,6 @@ struct MapHomeView: View {
         }
         .onChange(of: spoofState) { state in
             handleRouteSpoofStateChange(state)
-        }
-        .onChange(of: route.progress) { _ in
-            syncRouteSpoofCoordinate()
-        }
-        .onChange(of: route.phase) { _ in
-            syncRouteSpoofCoordinate()
         }
         .onChange(of: route.pathRevision) { _ in
             let coordinates = route.overlayCoordinates

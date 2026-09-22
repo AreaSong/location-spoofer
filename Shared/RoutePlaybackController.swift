@@ -13,7 +13,11 @@ enum RoutePhase: Equatable {
 final class RoutePlaybackController: ObservableObject {
     static let maxViaCount = 5
 
-    @Published private(set) var phase: RoutePhase = .inactive
+    let clock = RoutePlaybackClock()
+
+    @Published private(set) var phase: RoutePhase = .inactive {
+        didSet { publishMarker() }
+    }
     @Published var travelMode: RouteTravelMode
     @Published var speedKilometersPerHour: Double
     @Published var offsetMeters: Double
@@ -22,13 +26,22 @@ final class RoutePlaybackController: ObservableObject {
     @Published private(set) var end: CoordinatePair?
     @Published private(set) var vias: [CoordinatePair] = []
     @Published private(set) var path: RoutePath?
-    @Published private(set) var progress: Double = 0
-    @Published private(set) var current: CoordinatePair?
+    private(set) var progress: Double = 0 {
+        didSet { clock.setProgress(progress) }
+    }
+    private(set) var current: CoordinatePair? {
+        didSet {
+            clock.setCurrent(current)
+            publishMarker()
+        }
+    }
     @Published private(set) var waitingForActivation = false
     @Published private(set) var isRouting = false
     @Published private(set) var pathRevision: UInt64 = 0
     @Published private(set) var editingSavedRoute: SavedRoute?
-    @Published var statusMessage = ""
+    var statusMessage = "" {
+        didSet { clock.setStatusMessage(statusMessage) }
+    }
 
     var applyCoordinate: ((CoordinatePair) async -> Bool)?
     var tickIntervalNanoseconds: UInt64 = 1_000_000_000
@@ -113,16 +126,6 @@ final class RoutePlaybackController: ObservableObject {
             pins.append(RouteMapPin(coordinate: end.coordinate(for: system), role: .end))
         }
         return pins
-    }
-
-    var progressCoordinate: CLLocationCoordinate2D? {
-        switch phase {
-        case .playing, .paused, .finished:
-            let system = CoordinateConverter.currentMapCoordinateSystem
-            return (current ?? start)?.coordinate(for: system)
-        case .inactive, .preparing:
-            return nil
-        }
     }
 
     func enter(start pair: CoordinatePair? = nil) {

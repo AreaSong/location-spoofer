@@ -5,12 +5,11 @@ import CoreLocation
 
 extension MapHomeView {
     var needsSwitchButton: Bool {
-        guard spoofState == .active,
-              let sLat = activeSpoofLat,
-              let sLon = activeSpoofLon else { return false }
-        return !currentSelectionFavorite.coordinatePair.matchesWGS84(
-            latitude: sLat,
-            longitude: sLon
+        SpoofSelectionSwitch.needsSwitch(
+            isActive: spoofState == .active,
+            writtenLatitude: activeSpoofLat,
+            writtenLongitude: activeSpoofLon,
+            selection: currentSelectionFavorite.coordinatePair
         )
     }
 
