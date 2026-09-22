@@ -125,47 +125,7 @@ extension MapHomeView {
     }
 
     func applyRouteCoordinate(_ pair: CoordinatePair) async -> Bool {
-        if locationUseBlock != nil { return false }
-        let accuracy = LocationAccuracyStore.shared.meters
-        let offsetMeters = route.offsetMeters
-        if runtimeMode.mode == .thirdParty {
-            let favorite = FavoriteLocation(
-                name: "路线",
-                coordinatePair: pair,
-                accuracy: accuracy
-            )
-            do {
-                let response = try await thirdPartyProxy.save(favorite, randomRadius: offsetMeters)
-                activeSpoofLat = response.latitude ?? pair.wgs84.latitude
-                activeSpoofLon = response.longitude ?? pair.wgs84.longitude
-                runtimeFailure.clearThirdParty()
-                return true
-            } catch {
-                RuntimeLogger.error(
-                    "APP",
-                    "ThirdPartyProxy",
-                    "路线写入第三方坐标失败",
-                    error: error,
-                    details: [
-                        "当前客户端": thirdPartyClient.selectedClient.name,
-                        "原因": ThirdPartyProxyError.diagnosis(for: error).title
-                    ]
-                )
-                return false
-            }
-        }
-        let written = RoutePlayback.offset(pair, radiusMeters: offsetMeters)
-        let wgs = written.wgs84
-        let applied = actions.updateSpoofedWGS84(
-            latitude: wgs.latitude,
-            longitude: wgs.longitude,
-            accuracy: accuracy
-        )
-        if applied {
-            activeSpoofLat = wgs.latitude
-            activeSpoofLon = wgs.longitude
-        }
-        return applied
+        await session.writeRoute(pair, offsetMeters: route.offsetMeters)
     }
 
     func handleRouteSpoofStateChange(_ state: SpoofState) {

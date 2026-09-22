@@ -126,163 +126,99 @@ extension MapHomeView {
     }
 
     func beginLocationOperation(target overrideTarget: FavoriteLocation? = nil) {
-        if locationUseBlock != nil {
-            return
-        }
-        if route.phase == .playing {
-            route.pause()
-        }
-        guard spoofState != .verifying, locationOperationTask == nil else { return }
-        let wasActive = spoofState == .active
-        locationOperationID &+= 1
-        let operationID = locationOperationID
-        let selectionRevision = mapState.selection.revision
-        let target = overrideTarget ?? currentSelectionFavorite
-        spoofState = .verifying
-
-        locationOperationTask = Task { @MainActor in
-            if runtimeMode.mode == .thirdParty {
-                do {
-                    let response = try await thirdPartyProxy.save(
-                        target,
-                        randomRadius: route.waitingForActivation ? 0 : nil
-                    )
-                    guard !Task.isCancelled,
-                          operationID == locationOperationID,
-                          runtimeMode.mode == .thirdParty else {
-                        return
-                    }
-                    // The remote write has already succeeded. If the user moved
-                    // the map meanwhile, keep this target active and let
-                    // needsSwitchButton offer syncing the newer selection.
-                    spoofState = .active
-                    activeSpoofLat = response.latitude
-                    activeSpoofLon = response.longitude
-                    runtimeFailure.clearThirdParty()
-                    RuntimeLogger.info("APP", "定位", "第三方代理坐标同步成功", details: [
-                        "当前客户端": thirdPartyClient.selectedClient.name,
-                        "坐标标准": "WGS-84",
-                        "客户端模式": "测试模式",
-                        "选点期间发生变化": String(selectionRevision != mapState.selection.revision)
-                    ])
-                    presentSuccessfulOperationTip(.activation)
-                    queueCommunityContributionPrompt(for: thirdPartyClient.selectedClient)
-                } catch {
-                    guard operationID == locationOperationID else { return }
-                    // A failed replacement does not clear the coordinate that
-                    // was already persisted inside the third-party client.
-                    spoofState = wasActive ? .active : .idle
-                    RuntimeLogger.error(
-                        "APP",
-                        "ThirdPartyProxy",
-                        "同步坐标到第三方客户端失败",
-                        error: error,
-                        details: [
-                            "当前客户端": thirdPartyClient.selectedClient.name,
-                            "请求动作": "WLOC save",
-                            "恢复状态": wasActive ? "保留原第三方坐标" : "保持未启用",
-                            "原因": ThirdPartyProxyError.diagnosis(for: error).title,
-                            "处理建议": ThirdPartyProxyError.recoverySuggestion(for: error)
-                        ]
-                    )
-                    runtimeFailure.recordThirdParty(error: error)
-                }
-                if operationID == locationOperationID {
-                    locationOperationTask = nil
-                }
-                return
-            }
-
-            let result = await setup.runVerificationTest()
-            guard !Task.isCancelled,
-                  operationID == locationOperationID,
-                  selectionRevision == mapState.selection.revision else {
-                if operationID == locationOperationID {
-                    spoofState = actions.virtualLocationEnabled ? .active : .idle
-                    locationOperationTask = nil
-                }
-                return
-            }
-
-            if result.isSuccess {
-                let applied = actions.applyVerified(target)
-                spoofState = applied ? .active : .idle
-                if applied {
-                    activeSpoofLat = target.latitude
-                    activeSpoofLon = target.longitude
-                    lastSpoofDiagnosisSystem = nil
-                    hasLoggedSpoofDiagnosis = false
-                }
-                RuntimeLogger.info("APP", "定位", "验证结果", details: [
-                    "success": "true",
-                    "applied": String(applied),
-                    "spoofState": String(describing: spoofState)
-                ])
-                if applied {
-                    presentSuccessfulOperationTip(.activation)
-                }
-            } else {
-                spoofState = actions.virtualLocationEnabled ? .active : .idle
-                RuntimeLogger.warning("APP", "定位", "验证失败", details: [
-                    "result": result.id,
-                    "spoofState": String(describing: spoofState)
-                ])
-                if result != .verificationInProgress,
-                   result != .verificationSuperseded {
-                    RuntimeLogger.warning("APP", "定位", "开启前检测失败，保持主页并可打开设置", details: [
-                        "结果": result.id
-                    ])
-                    activeTip = nil
-                    setup.applyVerificationResult(result, presentSetup: false)
-                }
-            }
-            locationOperationTask = nil
-        }
+        session.begin(target: overrideTarget ?? currentSelectionFavorite)
     }
 
     func stopSpoofing() {
-        route.pause()
-        locationOperationTask?.cancel()
-        locationOperationTask = nil
-        locationOperationID &+= 1
-        if runtimeMode.mode == .thirdParty {
-            spoofState = .verifying
-            locationOperationTask = Task { @MainActor in
-                do {
-                    try await thirdPartyProxy.clear()
-                    spoofState = .idle
-                    activeSpoofLat = nil
-                    activeSpoofLon = nil
-                    presentSuccessfulOperationTip(.deactivation)
-                } catch {
-                    spoofState = .active
-                    RuntimeLogger.error(
-                        "APP",
-                        "ThirdPartyProxy",
-                        "清除第三方客户端坐标失败",
-                        error: error,
-                        details: [
-                            "当前客户端": thirdPartyClient.selectedClient.name,
-                            "请求动作": "WLOC clear",
-                            "恢复状态": "保留已启用状态",
-                            "原因": ThirdPartyProxyError.diagnosis(for: error).title,
-                            "处理建议": ThirdPartyProxyError.recoverySuggestion(for: error)
-                        ]
-                    )
-                    runtimeFailure.recordThirdParty(error: error)
-                }
-                locationOperationTask = nil
-            }
-            return
-        }
+        session.stop()
+    }
 
-        actions.clear()
-        spoofState = .idle
-        activeSpoofLat = nil
-        activeSpoofLon = nil
-        lastSpoofDiagnosisSystem = nil
-        hasLoggedSpoofDiagnosis = false
-        presentSuccessfulOperationTip(.deactivation)
+    func handleSpoofEffects(_ effects: [SpoofSessionEffect]) {
+        for effect in effects {
+            switch effect {
+            case .activationSucceeded:
+                presentSuccessfulOperationTip(.activation)
+            case .deactivationSucceeded:
+                presentSuccessfulOperationTip(.deactivation)
+            case .offerCommunityContribution:
+                queueCommunityContributionPrompt(for: thirdPartyClient.selectedClient)
+            case .localVerificationFailed(let result):
+                activeTip = nil
+                setup.applyVerificationResult(result, presentSetup: false)
+            case .resetLocalDiagnosis:
+                lastSpoofDiagnosisSystem = nil
+                hasLoggedSpoofDiagnosis = false
+            }
+        }
+    }
+
+    static func makeSpoofSession(
+        setup: SetupCoordinator,
+        actions: LocationActionCoordinator,
+        route: RoutePlaybackController,
+        mapState: MapLocationState
+    ) -> SpoofSession {
+        var initialState = SpoofState.idle
+        var initialLatitude: Double?
+        var initialLongitude: Double?
+        if ProxyRuntimeModeStore.shared.mode == .localWiFi,
+           let settings = WlocSettingsStore.load(), settings.enabled {
+            initialState = .active
+            initialLatitude = settings.latitude
+            initialLongitude = settings.longitude
+        }
+        let session = SpoofSession(
+            state: initialState,
+            writtenLatitude: initialLatitude,
+            writtenLongitude: initialLongitude
+        )
+        session.bind(spoofServices(setup: setup, actions: actions, route: route, mapState: mapState))
+        return session
+    }
+
+    private static func spoofServices(
+        setup: SetupCoordinator,
+        actions: LocationActionCoordinator,
+        route: RoutePlaybackController,
+        mapState: MapLocationState
+    ) -> SpoofSession.Services {
+        let thirdParty = ThirdPartyProxyManager.shared
+        let failure = LocationRuntimeFailureStore.shared
+        let client = ThirdPartyProxyClientStore.shared
+        return SpoofSession.Services(
+            mode: { ProxyRuntimeModeStore.shared.mode },
+            isUseBlocked: {
+                LocationUseAvailability.current(
+                    mode: ProxyRuntimeModeStore.shared.mode,
+                    wifiEnabled: NetworkMonitor.shared.isWiFiEnabled,
+                    cellularEnabled: NetworkMonitor.shared.usesCellular,
+                    runtimeFailure: failure.failure,
+                    signing: SigningExpiry.current()
+                ) != nil
+            },
+            selectionRevision: { mapState.selection.revision },
+            localSpoofEnabled: { actions.virtualLocationEnabled },
+            thirdPartyClientName: { client.selectedClient.name },
+            routeIsPlaying: { route.phase == .playing },
+            routeWaitsForActivation: { route.waitingForActivation },
+            routeOffsetMeters: { route.offsetMeters },
+            accuracyMeters: { LocationAccuracyStore.shared.meters },
+            pauseRoute: { route.pause() },
+            verify: { await setup.runVerificationTest() },
+            applyVerified: { actions.applyVerified($0) },
+            updateLocalWGS84: { latitude, longitude, accuracy in
+                actions.updateSpoofedWGS84(latitude: latitude, longitude: longitude, accuracy: accuracy)
+            },
+            clearLocal: { actions.clear() },
+            saveThirdParty: { favorite, randomRadius in
+                try await thirdParty.save(favorite, randomRadius: randomRadius)
+            },
+            clearThirdParty: { try await thirdParty.clear() },
+            queryThirdParty: { try await thirdParty.query() },
+            clearThirdPartyFailure: { failure.clearThirdParty() },
+            recordThirdPartyFailure: { failure.recordThirdParty(error: $0) },
+            recordThirdPartyMessage: { failure.recordThirdParty(message: $0) }
+        )
     }
 
     func presentSuccessfulOperationTip(_ kind: VirtualLocationTipKind) {
@@ -342,44 +278,7 @@ extension MapHomeView {
     }
 
     func refreshThirdPartyState() {
-        guard runtimeMode.mode == .thirdParty,
-              locationOperationTask == nil else { return }
-        locationOperationTask = Task { @MainActor in
-            do {
-                let response = try await thirdPartyProxy.query()
-                if response.success,
-                   let latitude = response.latitude,
-                   let longitude = response.longitude {
-                    activeSpoofLat = latitude
-                    activeSpoofLon = longitude
-                    spoofState = .active
-                    runtimeFailure.clearThirdParty()
-                } else if response.error?.contains("无已保存") == true {
-                    activeSpoofLat = nil
-                    activeSpoofLon = nil
-                    spoofState = .idle
-                    runtimeFailure.clearThirdParty()
-                } else {
-                    spoofState = .idle
-                    RuntimeLogger.warning("APP", "ThirdPartyProxy", "第三方代理查询返回失败", details: [
-                        "当前客户端": thirdPartyClient.selectedClient.name,
-                        "请求动作": "WLOC query",
-                        "错误": response.error ?? "未知错误"
-                    ])
-                    runtimeFailure.recordThirdParty(message: response.error ?? "第三方代理查询失败")
-                }
-            } catch {
-                spoofState = .idle
-                RuntimeLogger.warning("APP", "ThirdPartyProxy", "启动后第三方代理状态查询失败", details: [
-                    "当前客户端": thirdPartyClient.selectedClient.name,
-                    "请求动作": "WLOC query",
-                    "连接状态": String(describing: thirdPartyProxy.connectionState),
-                    "错误": error.localizedDescription
-                ])
-                runtimeFailure.recordThirdParty(error: error)
-            }
-            locationOperationTask = nil
-        }
+        session.refreshThirdParty()
     }
 
     func handleWiFiChange(reason: WiFiChangeReason) {

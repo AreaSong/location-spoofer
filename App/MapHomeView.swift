@@ -17,7 +17,7 @@ enum HomeSheet: String, Identifiable {
     var id: String { rawValue }
 }
 
-enum SpoofState {
+enum SpoofState: Equatable {
     case idle, verifying, active
 }
 
@@ -52,8 +52,9 @@ struct MapHomeView: View {
     @ObservedObject var setup: SetupCoordinator
     @StateObject var favorites: FavoriteLocationStore
     @StateObject var savedRoutes = SavedRouteStore()
-    @StateObject var actions = LocationActionCoordinator()
-    @StateObject var route = RoutePlaybackController()
+    @StateObject var actions: LocationActionCoordinator
+    @StateObject var route: RoutePlaybackController
+    @StateObject var session: SpoofSession
     @ObservedObject var proxy = ProxyManager.shared
     @ObservedObject var keepAlive = BackgroundKeepAlive.shared
     @ObservedObject var recentSelections = RecentSelectionStore.shared
@@ -98,21 +99,19 @@ struct MapHomeView: View {
     @State var wifiVerificationTask: Task<Void, Never>?
     @State var wifiVerificationID: UUID?
     @State var copiedCoordinateSystem: CoordinateConverter.MapCoordinateSystem?
-    @State var spoofState: SpoofState = .idle
-    @State var locationOperationTask: Task<Void, Never>?
-    @State var locationOperationID: UInt64 = 0
     @State var mapCoordinateSystemRefreshTask: Task<Void, Never>?
     @State var mapCoordinateSystemRefreshID: UInt64 = 0
     @State var bluePointRefreshPending = false
     @State var realtimeButtonTask: Task<Void, Never>?
     @State var favoriteSaveTask: Task<Void, Never>?
     @State var displayedMapCoordinateSystem = CoordinateConverter.currentMapCoordinateSystem
-    // 激活时的坐标（本地存，绕过 C 桥接层精度丢失）
-    @State var activeSpoofLat: Double?
-    @State var activeSpoofLon: Double?
     @State var lastSpoofDiagnosisSystem: CoordinateConverter.MapCoordinateSystem?
     @State var hasLoggedSpoofDiagnosis = false
     @State var cachedSelectionPair: CoordinatePair
+
+    var spoofState: SpoofState { session.state }
+    var activeSpoofLat: Double? { session.writtenLatitude }
+    var activeSpoofLon: Double? { session.writtenLongitude }
 
     init(setup: SetupCoordinator) {
         self.setup = setup
@@ -171,19 +170,23 @@ struct MapHomeView: View {
             "初始来源": String(describing: initialSource),
             "地图标准": CoordinateConverter.currentMapCoordinateSystem.rawValue
         ])
-        _mapState = StateObject(wrappedValue: MapLocationState(
+        let mapModel = MapLocationState(
             initialCoordinate: initialCoord,
             initialViewportMeters: initialZoom,
             initialSource: initialSource,
             initialName: initialName
+        )
+        _mapState = StateObject(wrappedValue: mapModel)
+        let actionCoordinator = LocationActionCoordinator()
+        _actions = StateObject(wrappedValue: actionCoordinator)
+        let routeController = RoutePlaybackController()
+        _route = StateObject(wrappedValue: routeController)
+        _session = StateObject(wrappedValue: MapHomeView.makeSpoofSession(
+            setup: setup,
+            actions: actionCoordinator,
+            route: routeController,
+            mapState: mapModel
         ))
-
-        if ProxyRuntimeModeStore.shared.mode == .localWiFi,
-           let settings = WlocSettingsStore.load(), settings.enabled {
-            _spoofState = State(initialValue: .active)
-            _activeSpoofLat = State(initialValue: settings.latitude)
-            _activeSpoofLon = State(initialValue: settings.longitude)
-        }
     }
 
     var body: some View {
@@ -441,6 +444,9 @@ struct MapHomeView: View {
         .onChange(of: spoofState) { state in
             handleRouteSpoofStateChange(state)
         }
+        .onChange(of: session.effectRevision) { _ in
+            handleSpoofEffects(session.consumeEffects())
+        }
         .onChange(of: route.pathRevision) { _ in
             let coordinates = route.overlayCoordinates
             guard coordinates.count >= 2 else { return }
@@ -456,9 +462,8 @@ struct MapHomeView: View {
             pauseRouteIfLocationBlocked()
         }
         .onChange(of: proxy.isRunning) { running in
-            if runtimeMode.mode == .localWiFi, !running && spoofState == .active {
-                spoofState = .idle
-                actions.clear()
+            if !running {
+                session.noteLocalProxyStopped()
             }
         }
         .onChange(of: showEnableTip) { isPresented in
@@ -469,22 +474,16 @@ struct MapHomeView: View {
             }
         }
         .onChange(of: runtimeMode.mode) { mode in
-            locationOperationTask?.cancel()
-            locationOperationTask = nil
-            locationOperationID &+= 1
+            session.cancelForModeChange()
             if let token = wifiChangeObserverToken {
                 net.removeWiFiChangeObserver(token)
                 wifiChangeObserverToken = nil
             }
             wifiVerificationTask?.cancel()
             wifiVerificationTask = nil
-            activeSpoofLat = nil
-            activeSpoofLon = nil
             if mode == .localWiFi {
-                spoofState = actions.virtualLocationEnabled ? .active : .idle
                 registerWiFiChangeObserver()
             } else {
-                spoofState = .idle
                 refreshThirdPartyState()
             }
             route.pause()

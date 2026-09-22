@@ -61,7 +61,9 @@ grep -q 'case awaitingAuthorization' "$REALTIME" || fail "location requests must
 grep -q 'var location: CLLocation?' "$REALTIME" || fail "Core Location driver must expose its cached native sample"
 grep -q 'oneShotTimeoutNanoseconds' "$REALTIME" || fail "one-shot and fallback timeouts must be independent"
 ! grep -q 'pendingContinuation' "$REALTIME" || fail "unversioned pendingContinuation must be removed"
-grep -q 'applyVerified' "$MAP_HOME" || fail "verified location commits must be synchronous after revision validation"
+grep -q 'applyVerified' "$ROOT/App/SpoofSession.swift" || fail "verified location commits must be synchronous after revision validation"
+grep -q 'selectionRevision == services.selectionRevision()' "$ROOT/App/SpoofSession.swift" \
+  || fail "APP verification must be discarded when the map selection changes"
 grep -q 'func applyVerificationResult' "$SETUP" || fail "verification results must have one setup-state reducer"
 grep -q 'case .success:' "$SETUP" || fail "successful verification must converge setup state"
 grep -q 'case .certNotTrusted:' "$SETUP" || fail "certificate failure must converge setup state"
@@ -194,7 +196,7 @@ fi
 grep -q 'MKPolyline' "$MAP_BRIDGE" || fail "the map bridge must draw the route as MKPolyline"
 grep -q 'func updateSpoofedWGS84' "$ROOT/App/LocationActionCoordinator.swift" \
   || fail "APP-mode route ticks must write exact WGS-84 without going through applyVerified"
-grep -q 'randomRadius: offsetMeters' "$MAP_HOME" || fail "route ticks must use the user-selected offset as third-party randomRadius"
+grep -q 'randomRadius: offsetMeters' "$ROOT/App/SpoofSession.swift" || fail "route ticks must use the user-selected offset as third-party randomRadius"
 grep -q 'speedKilometersPerHour' "$ROOT/Shared/RoutePlaybackController.swift" \
   || fail "route playback must expose a custom speed"
 grep -q 'offsetMeters' "$ROOT/App/RoutePlaybackPanel.swift" \
@@ -237,7 +239,7 @@ fi
 grep -q 'playbackClock' "$MAP_BRIDGE" || fail "map progress must follow the playback clock"
 grep -q 'SpoofSelectionSwitch.needsSwitch' "$MAP_HOME" \
   || fail "switch button must compare the last written coordinate"
-grep -q 'activeSpoofLat = wgs.latitude' "$MAP_HOME" \
+grep -q 'writtenLatitude = wgs.latitude' "$ROOT/App/SpoofSession.swift" \
   || fail "route writes must record the coordinate that was actually applied"
 test -f "$ROOT/Shared/RoutePlaybackClock.swift" \
   || fail "playback progress must publish separately from the route structure"
