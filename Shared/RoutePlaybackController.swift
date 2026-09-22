@@ -37,6 +37,7 @@ final class RoutePlaybackController: ObservableObject {
     private var elapsed: TimeInterval = 0
     private var playbackTask: Task<Void, Never>?
     private var pathGeneration: UInt64 = 0
+    private var writeGate = RouteWriteGate()
     private let preferenceStore: RoutePlaybackPreferenceStore
 
     init(preferenceStore: RoutePlaybackPreferenceStore = RoutePlaybackPreferenceStore()) {
@@ -413,6 +414,7 @@ final class RoutePlaybackController: ObservableObject {
 
     private func startLoop() {
         stopPlaybackTask()
+        writeGate.reset()
         BackgroundKeepAlive.shared.start()
         phase = .playing
         statusMessage = playbackStatusMessage()
@@ -434,11 +436,16 @@ final class RoutePlaybackController: ObservableObject {
             )
             current = tick.coordinatePair
             progress = tick.progress
-            let applied = await applyCoordinate?(tick.coordinatePair) ?? false
-            if !applied {
-                pause()
-                statusMessage = "写入坐标失败，已暂停。"
-                return
+            let now = Date()
+            let forceWrite = tick.isFinished
+            if writeGate.shouldWrite(tick.coordinatePair, at: now, force: forceWrite) {
+                let applied = await applyCoordinate?(tick.coordinatePair) ?? false
+                if !applied {
+                    pause()
+                    statusMessage = "写入坐标失败，已暂停。"
+                    return
+                }
+                writeGate.markWritten(tick.coordinatePair, at: now)
             }
             if tick.isFinished {
                 if handleFinishedLeg() {

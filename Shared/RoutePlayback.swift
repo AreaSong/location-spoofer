@@ -224,3 +224,29 @@ struct RouteMapPin: Equatable {
             && abs(lhs.coordinate.longitude - rhs.coordinate.longitude) < 1e-8
     }
 }
+
+struct RouteWriteGate {
+    static let minimumDistanceMeters: Double = 8
+    static let minimumInterval: TimeInterval = 5
+
+    private(set) var lastWritten: CoordinatePair?
+    private(set) var lastWrittenAt: Date?
+
+    mutating func reset() {
+        lastWritten = nil
+        lastWrittenAt = nil
+    }
+
+    mutating func shouldWrite(_ pair: CoordinatePair, at now: Date, force: Bool) -> Bool {
+        if force { return true }
+        guard let lastWritten, let lastWrittenAt else { return true }
+        let moved = RoutePlayback.distanceMeters(from: lastWritten, to: pair)
+        let waited = now.timeIntervalSince(lastWrittenAt)
+        return moved >= Self.minimumDistanceMeters || waited >= Self.minimumInterval
+    }
+
+    mutating func markWritten(_ pair: CoordinatePair, at now: Date) {
+        lastWritten = pair
+        lastWrittenAt = now
+    }
+}

@@ -115,30 +115,8 @@ func newProxy(cert *tls.Certificate) *goproxy.ProxyHttpServer {
 			w.Write([]byte(fmt.Sprintf(`{"enabled":%t,"lat":%.6f,"lon":%.6f,"accuracy":%d,"motionSimulationEnabled":%t}`, enabled, lat, lon, accuracy, motionEnabled)))
 			return
 		}
-		if r.URL.Path == "/proxy.mobileconfig" || r.URL.Path == "/proxy.mobileconfig/" {
-			w.Header().Set("Content-Type", "application/x-apple-aspen-config")
-			w.Header().Set("Content-Disposition", "attachment; filename=paopao-proxy.mobileconfig")
-			w.Write([]byte(generateProxyMobileConfig()))
-			return
-		}
-		// Serve cert download page for rendoor.cert-like hosts
-		if r.Host == "rendoor.cert" || strings.HasPrefix(r.Host, "rendoor.cert:") {
-			stateMu.Lock()
-			cert := globalCACert
-			stateMu.Unlock()
-			if cert != nil && r.URL.Path == "/cert" {
-				certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: cert.Certificate[0]})
-				w.Header().Set("Content-Type", "application/x-x509-ca-cert")
-				w.Header().Set("Content-Disposition", "attachment; filename=wloccore-ca.crt")
-				w.Write(certPEM)
-				return
-			}
-			w.Header().Set("Content-Type", "text/html; charset=utf-8")
-			w.Write([]byte(`<!DOCTYPE html><html><head><meta charset="utf-8"><meta http-equiv="refresh" content="2;url=/cert"><title>CA Certificate</title></head><body><p>Downloading CA certificate...</p></body></html>`))
-			return
-		}
 		w.WriteHeader(http.StatusBadGateway)
-		w.Write([]byte("This is a proxy server. Use Safari to visit http://127.0.0.1:8888/proxy.mobileconfig for proxy setup, or http://rendoor.cert for CA certificate."))
+		w.Write([]byte("This is a proxy server. Use Safari to visit http://127.0.0.1:8888/cert to download the CA certificate."))
 	})
 
 	if cert != nil {
@@ -194,37 +172,7 @@ func serveLocalRequests(req *http.Request, ctx *goproxy.ProxyCtx) (*http.Request
 		}
 	}
 
-	if host != "rendoor.cert" && host != "www.rendoor.cert" {
-		return req, nil
-	}
-
-	stateMu.Lock()
-	cert := globalCACert
-	stateMu.Unlock()
-	if cert == nil {
-		return req, nil
-	}
-
-	if req.URL.Path == "/cert" {
-		certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: cert.Certificate[0]})
-		resp := goproxy.NewResponse(req, "application/x-x509-ca-cert", http.StatusOK, string(certPEM))
-		resp.Header.Set("Content-Disposition", `attachment; filename=wloccore-ca.crt`)
-		return req, resp
-	}
-
-	html := `<!DOCTYPE html>
-<html>
-<head>
-<meta charset="utf-8">
-<meta http-equiv="refresh" content="2;url=/cert">
-<title>Preparing Certificate</title>
-</head>
-<body>
-<p>正在准备 CA 证书，如未弹出请点击 <a href="/cert">这里</a>。</p>
-</body>
-</html>`
-	resp := goproxy.NewResponse(req, "text/html; charset=utf-8", http.StatusOK, html)
-	return req, resp
+	return req, nil
 }
 
 func patchWlocResponse(resp *http.Response, ctx *goproxy.ProxyCtx) *http.Response {
@@ -289,51 +237,6 @@ func patchWlocResponse(resp *http.Response, ctx *goproxy.ProxyCtx) *http.Respons
 	resp.Header.Set("Content-Length", strconv.Itoa(len(patched)))
 	logEvent(fmt.Sprintf("wloc patched locations=%d wifi=%d cell=%d skipped=%d in=%d out=%d", stats.Locations, stats.WiFi, stats.Cell, stats.Skipped, len(body), len(patched)))
 	return resp
-}
-
-func generateProxyMobileConfig() string {
-	return `<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-	<key>PayloadContent</key>
-	<array>
-		<dict>
-			<key>PayloadDescription</key>
-			<string>Configures a global HTTP proxy for location spoofing.</string>
-			<key>PayloadDisplayName</key>
-			<string>Paopao Location Proxy</string>
-			<key>PayloadIdentifier</key>
-			<string>com.paopaolabs.location-spoofer.proxy.payload</string>
-			<key>PayloadType</key>
-			<string>com.apple.proxy.http.global</string>
-			<key>PayloadUUID</key>
-			<string>` + uuidString() + `</string>
-			<key>PayloadVersion</key>
-			<integer>1</integer>
-			<key>GlobalHTTPProxy</key>
-			<dict>
-				<key>ProxyServer</key>
-				<string>127.0.0.1</string>
-				<key>ProxyServerPort</key>
-				<integer>8888</integer>
-				<key>ProxyType</key>
-				<string>Manual</string>
-			</dict>
-		</dict>
-	</array>
-	<key>PayloadDisplayName</key>
-	<string>Paopao Location Proxy</string>
-	<key>PayloadIdentifier</key>
-	<string>com.paopaolabs.location-spoofer.proxy</string>
-	<key>PayloadType</key>
-	<string>Configuration</string>
-	<key>PayloadUUID</key>
-	<string>` + uuidString() + `</string>
-	<key>PayloadVersion</key>
-	<integer>1</integer>
-</dict>
-</plist>`
 }
 
 func uuidString() string {

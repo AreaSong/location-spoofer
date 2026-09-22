@@ -256,33 +256,86 @@ final class ThirdPartyProxyManagerTests: XCTestCase {
         store.select(.stash)
         XCTAssertEqual(ThirdPartyProxyClientStore(defaults: defaults).selectedClient, .stash)
     }
+
+    func testConcurrentRequestsRunInOrderInsteadOfRejecting() async throws {
+        let favorite = FavoriteLocation(
+            name: "深圳湾",
+            latitude: 22.494,
+            longitude: 113.951,
+            accuracy: 20,
+            mapCoordinateSystem: .gcj02
+        )
+        let wgs84 = favorite.coordinatePair.wgs84
+        let saveBody = String(
+            format: #"{"success":true,"longitude":%.8f,"latitude":%.8f,"accuracy":20}"#,
+            locale: Locale(identifier: "en_US_POSIX"),
+            wgs84.longitude,
+            wgs84.latitude
+        )
+        let requester = FakeThirdPartyRequester(
+            bodies: [
+                #"{"success":false,"error":"无已保存的坐标"}"#,
+                saveBody
+            ],
+            delayNanoseconds: 80_000_000
+        )
+        let manager = ThirdPartyProxyManager(requester: requester, randomRadiusMeters: { 0 })
+
+        async let query = manager.query()
+        try await Task.sleep(nanoseconds: 20_000_000)
+        XCTAssertTrue(manager.isRequesting)
+        async let save = manager.save(favorite, randomRadius: 0)
+
+        let queryResponse = try await query
+        let saveResponse = try await save
+        XCTAssertFalse(queryResponse.success)
+        XCTAssertTrue(saveResponse.success)
+        XCTAssertEqual(requester.requestedURLs.first?.query, "action=query")
+        XCTAssertTrue(requester.requestedURLs[1].query?.contains("lat=") == true)
+        XCTAssertFalse(manager.isRequesting)
+        XCTAssertEqual(manager.connectionState, .connected(active: true))
+    }
 }
 
 private final class FakeThirdPartyRequester: ThirdPartyProxyRequesting {
-    private let data: Data
+    private var remainingBodies: [Data]
     private let statusCode: Int
     private let transportError: Error?
+    private let delayNanoseconds: UInt64
     private(set) var lastURL: URL?
     private(set) var requestedURLs: [URL] = []
 
     init(body: String, statusCode: Int = 200) {
-        data = Data(body.utf8)
+        remainingBodies = [Data(body.utf8)]
         self.statusCode = statusCode
         transportError = nil
+        delayNanoseconds = 0
+    }
+
+    init(bodies: [String], delayNanoseconds: UInt64 = 0) {
+        remainingBodies = bodies.map { Data($0.utf8) }
+        statusCode = 200
+        transportError = nil
+        self.delayNanoseconds = delayNanoseconds
     }
 
     init(error: Error) {
-        data = Data()
+        remainingBodies = []
         statusCode = 0
         transportError = error
+        delayNanoseconds = 0
     }
 
     func data(for request: URLRequest) async throws -> (Data, URLResponse) {
         lastURL = request.url
         requestedURLs.append(request.url!)
+        if delayNanoseconds > 0 {
+            try await Task.sleep(nanoseconds: delayNanoseconds)
+        }
         if let transportError {
             throw transportError
         }
+        let data = remainingBodies.isEmpty ? Data() : remainingBodies.removeFirst()
         let response = HTTPURLResponse(
             url: request.url!,
             statusCode: statusCode,

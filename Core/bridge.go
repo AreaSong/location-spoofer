@@ -12,17 +12,10 @@ import (
 	"encoding/binary"
 	"fmt"
 	"math"
-	"net"
 	"net/http"
 	"runtime/cgo"
 	"strconv"
 )
-
-//export wloccore_init
-func wloccore_init() {}
-
-//export wloccore_hello
-func wloccore_hello() {}
 
 //export wloccore_version
 func wloccore_version() *C.char {
@@ -51,11 +44,6 @@ func wloccore_validateca(certData, keyData *C.char) C.int {
 		return 0
 	}
 	return 1
-}
-
-//export wloccore_startproxy
-func wloccore_startproxy(certData, keyData *C.char, lat, lon C.double, enabled C.int, accuracy C.int) C.uintptr_t {
-	return wloccore_startproxyv2(certData, keyData, lat, lon, enabled, accuracy, 0)
 }
 
 //export wloccore_startproxyv2
@@ -110,11 +98,6 @@ func proxyForHandle(h C.uintptr_t) (server *http.Server, handle cgo.Handle, ok b
 	return server, handle, ok
 }
 
-//export wloccore_setcoords
-func wloccore_setcoords(lat, lon C.double, enabled C.int, accuracy C.int) {
-	wloccore_setpatchconfig(lat, lon, enabled, accuracy, 0)
-}
-
 //export wloccore_setpatchconfig
 func wloccore_setpatchconfig(lat, lon C.double, enabled C.int, accuracy C.int, motionEnabled C.int) {
 	stateMu.Lock()
@@ -151,75 +134,6 @@ func wloccore_drainlogs() *C.char {
 	return C.CString(s)
 }
 
-//export wloccore_startcertserver
-func wloccore_startcertserver(certData, keyData *C.char) C.uintptr_t {
-	if certData == nil || keyData == nil {
-		return 0
-	}
-	logEvent("start certificate server requested")
-	server, err := startCertificateServer([]byte(C.GoString(certData)), []byte(C.GoString(keyData)))
-	if err != nil {
-		logEvent("start certificate server failed: " + err.Error())
-		return 0
-	}
-	logEvent("certificate server started http=" + server.DownloadURL() + " probe=" + server.ProbeURL())
-	return C.uintptr_t(cgo.NewHandle(server))
-}
-
-func certificateServerForHandle(h C.uintptr_t) (server *certificateServer, handle cgo.Handle, ok bool) {
-	if h == 0 {
-		return nil, 0, false
-	}
-	defer func() {
-		if recover() != nil {
-			server, handle, ok = nil, 0, false
-		}
-	}()
-	handle = cgo.Handle(h)
-	server, ok = handle.Value().(*certificateServer)
-	return server, handle, ok
-}
-
-//export wloccore_certserver_httpport
-func wloccore_certserver_httpport(h C.uintptr_t) C.int {
-	server, _, ok := certificateServerForHandle(h)
-	if !ok {
-		return 0
-	}
-	return C.int(server.httpLn.Addr().(*net.TCPAddr).Port)
-}
-
-//export wloccore_certserver_httpsport
-func wloccore_certserver_httpsport(h C.uintptr_t) C.int {
-	server, _, ok := certificateServerForHandle(h)
-	if !ok {
-		return 0
-	}
-	return C.int(server.httpsLn.Addr().(*net.TCPAddr).Port)
-}
-
-//export wloccore_certserver_leafsha256
-func wloccore_certserver_leafsha256(h C.uintptr_t) *C.char {
-	server, _, ok := certificateServerForHandle(h)
-	if !ok {
-		return nil
-	}
-	return C.CString(server.LeafSHA256())
-}
-
-//export wloccore_stopcertserver
-func wloccore_stopcertserver(h C.uintptr_t) C.int {
-	server, handle, ok := certificateServerForHandle(h)
-	if !ok {
-		return 1
-	}
-	handle.Delete()
-	if err := server.Close(); err != nil {
-		return 2
-	}
-	return 0
-}
-
 //export wloccore_testpatch
 func wloccore_testpatch(lat, lon C.double, accuracy C.int) *C.char {
 	c := wlocCoords{Latitude: float64(lat), Longitude: float64(lon), Accuracy: int(accuracy)}
@@ -250,20 +164,7 @@ func wloccore_testpatch(lat, lon C.double, accuracy C.int) *C.char {
 	return C.CString(fmt.Sprintf("ok: lat=%f lon=%f wifi=%d cell=%d locations=%d", c.Latitude, c.Longitude, stats.WiFi, stats.Cell, stats.Locations))
 }
 
-//export wloccore_testrequesthex
-func wloccore_testrequesthex() *C.char {
-	return C.CString(fmt.Sprintf("%x", makeTestWlocRequest()))
-}
-
 //export wloccore_refreshverifytoken
 func wloccore_refreshverifytoken() *C.char {
 	return C.CString(refreshVerifyToken())
-}
-
-//export wloccore_checkverifytoken
-func wloccore_checkverifytoken(token *C.char) C.int {
-	if checkVerifyToken(C.GoString(token)) {
-		return 1
-	}
-	return 0
 }

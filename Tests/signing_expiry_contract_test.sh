@@ -5,7 +5,12 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 fail() { echo "FAIL: $*" >&2; exit 1; }
 
 EXPIRY="$ROOT/Shared/SigningExpiry.swift"
-MAP="$ROOT/App/MapHomeView.swift"
+MAP="$(mktemp)"
+trap 'rm -f "$MAP"' EXIT
+cat "$ROOT/App/MapHomeView.swift" > "$MAP"
+for extra in "$ROOT"/App/MapHomeView+*.swift "$ROOT"/App/MapHomeBottomCard.swift; do
+  [ -f "$extra" ] && cat "$extra" >> "$MAP"
+done
 SETTINGS="$ROOT/App/SettingsView.swift"
 
 test -f "$EXPIRY" || fail "signing expiry helper is missing"
@@ -31,9 +36,9 @@ grep -q '原仓库已失效，模块已内置' "$SETTINGS" \
   || fail "acknowledgements must warn that Yu9191 is no longer a subscription source"
 grep -q 'DisclosureGroup("高级")' "$SETTINGS" \
   || fail "module source switching must live under Advanced in Settings"
-grep -q 'private func beginLocationOperation' "$MAP" \
+grep -q 'func beginLocationOperation' "$MAP" \
   || fail "beginLocationOperation is missing"
-! grep -A40 'private func beginLocationOperation' "$MAP" | grep -q 'SigningExpiry' \
+! grep -A40 'func beginLocationOperation' "$MAP" | grep -q 'SigningExpiry' \
   || fail "signing expiry must not block starting a location operation"
 ! grep -q '错误代码' "$EXPIRY" "$MAP" "$SETTINGS" \
   || fail "signing expiry copy must not mention error codes"

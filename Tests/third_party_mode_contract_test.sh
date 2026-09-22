@@ -9,6 +9,12 @@ MANAGER="$ROOT/Shared/ThirdPartyProxyManager.swift"
 CONTENT="$ROOT/App/ContentView.swift"
 SETUP="$ROOT/App/FirstSetupView.swift"
 SETTINGS="$ROOT/App/SettingsView.swift"
+MAP="$(mktemp)"
+trap 'rm -f "$MAP"' EXIT
+cat "$ROOT/App/MapHomeView.swift" > "$MAP"
+for extra in "$ROOT"/App/MapHomeView+*.swift "$ROOT"/App/MapHomeBottomCard.swift; do
+  [ -f "$extra" ] && cat "$extra" >> "$MAP"
+done
 
 grep -q 'return "APP模式"' "$MODE" || fail "APP mode display name is missing"
 grep -q 'return "第三方代理模式"' "$MODE" || fail "third-party mode display name is missing"
@@ -117,11 +123,11 @@ grep -q 'setupStep = \.thirdPartyImport' "$ROOT/App/SetupCoordinator.swift" \
   || fail "third-party import guide must remain available from setup"
 grep -q '当前不能使用定位修改' "$ROOT/Shared/LocationUseAvailability.swift" \
   || fail "third-party runtime failures must stay on the map with a large unavailable prompt"
-grep -q 'LocationUseBlock.title' "$ROOT/App/MapHomeView.swift" \
+grep -q 'LocationUseBlock.title' "$MAP" \
   || fail "the map must render the shared unavailable prompt title"
-grep -q 'LocationUseBlock.openSettingsTitle' "$ROOT/App/MapHomeView.swift" \
+grep -q 'LocationUseBlock.openSettingsTitle' "$MAP" \
   || fail "the unavailable prompt must open Settings"
-! grep -q 'setup.requestThirdPartySetup' "$ROOT/App/MapHomeView.swift" \
+! grep -q 'setup.requestThirdPartySetup' "$MAP" \
   || fail "third-party coordinate sync failures must not cover the map with setup"
 grep -q '检测到第三方代理连接异常，请检查模块、MITM 和代理连接后重新检测' "$SETUP" \
   || fail "runtime repair must explain why the import guide opened"
@@ -142,7 +148,7 @@ grep -Fq '原因：\(diagnosis.title)' "$SETUP" \
   || fail "third-party failure logs must not expose Swift error types"
 ! grep -q '错误详情：' "$SETUP" \
   || fail "third-party failure logs must not dump raw error details"
-! grep -q '错误代码' "$SETUP" "$SETTINGS" "$ROOT/App/MapHomeView.swift" "$ROOT/App/DiagnosticsView.swift" \
+! grep -q '错误代码' "$SETUP" "$SETTINGS" "$MAP" "$ROOT/App/DiagnosticsView.swift" \
   || fail "user-facing third-party errors must not show error codes"
 grep -q 'case certificateUntrusted' "$MANAGER" \
   || fail "certificate trust failures must be classified separately"
@@ -170,9 +176,9 @@ test "$config_line" -lt "$module_line" || fail "Shadowrocket setup must show the
 test -s "$ROOT/docs/onboarding-screenshots/shadowrocket/shadowrocket-module-import.jpg" \
   || fail "unannotated Shadowrocket source screenshots must be retained by client"
 ! grep -q 'ToolbarItem(placement: .navigationBarLeading)' "$SETUP" || fail "setup must not show a top-left navigation action"
-grep -q 'presentSuccessfulOperationTip(.activation)' "$ROOT/App/MapHomeView.swift" || fail "third-party save must present the activation tip"
-grep -q 'presentSuccessfulOperationTip(.deactivation)' "$ROOT/App/MapHomeView.swift" || fail "third-party clear must present the deactivation tip"
-grep -q 'if spoofState == .active' "$ROOT/App/MapHomeView.swift" || fail "manual help must follow the shared spoof state"
+grep -q 'presentSuccessfulOperationTip(.activation)' "$MAP" || fail "third-party save must present the activation tip"
+grep -q 'presentSuccessfulOperationTip(.deactivation)' "$MAP" || fail "third-party clear must present the deactivation tip"
+grep -q 'if spoofState == .active' "$MAP" || fail "manual help must follow the shared spoof state"
 grep -q 'MARKETING_VERSION: "1.0.6"' "$ROOT/project.yml" || fail "marketing version must be 1.0.6"
 grep -q 'CURRENT_PROJECT_VERSION: "7"' "$ROOT/project.yml" || fail "build version must be 7"
 

@@ -10,7 +10,7 @@ grep -Fq 'Label("还是无法取消？"' "$TIP_VIEWS" || fail "deactivation help
 grep -q 'frame(maxWidth: .infinity, alignment: .leading)' "$TIP_VIEWS" \
   || fail "tip detail copy must align to the leading edge"
 
-MAP_HOME="$ROOT/App/MapHomeView.swift"
+MAP_HOME_MAIN="$ROOT/App/MapHomeView.swift"
 MAP_STATE="$ROOT/App/MapLocationState.swift"
 MAP_BRIDGE="$ROOT/App/MapViewRepresentable.swift"
 REALTIME="$ROOT/App/RealtimeLocationManager.swift"
@@ -23,7 +23,14 @@ CONVERTER="$ROOT/Shared/CoordinateConverter.swift"
 PROBE="$ROOT/Shared/MapCoordinateSystemProbe.swift"
 NETWORK_MONITOR="$ROOT/Shared/NetworkMonitor.swift"
 
-for file in "$MAP_HOME" "$MAP_STATE" "$MAP_BRIDGE" "$REALTIME" "$SETUP" "$PROXY" "$SETTINGS_NAVIGATOR" "$DIAGNOSTICS" "$CONTENT" "$CONVERTER" "$PROBE" "$NETWORK_MONITOR"; do
+MAP_HOME="$(mktemp)"
+trap 'rm -f "$MAP_HOME"' EXIT
+cat "$MAP_HOME_MAIN" > "$MAP_HOME"
+for extra in "$ROOT"/App/MapHomeView+*.swift "$ROOT"/App/MapHomeBottomCard.swift; do
+  [ -f "$extra" ] && cat "$extra" >> "$MAP_HOME"
+done
+
+for file in "$MAP_HOME_MAIN" "$MAP_STATE" "$MAP_BRIDGE" "$REALTIME" "$SETUP" "$PROXY" "$SETTINGS_NAVIGATOR" "$DIAGNOSTICS" "$CONTENT" "$CONVERTER" "$PROBE" "$NETWORK_MONITOR"; do
   test -f "$file" || fail "missing required refactor file: $file"
 done
 
@@ -76,7 +83,7 @@ grep -q 'refreshRuntimeMapCoordinateSystem(reason:' "$PROBE" || fail "fixed-anch
 grep -q '固定锚点名称未列入白名单' "$PROBE" || fail "unknown fixed-anchor names must not be classified as WGS-84"
 grep -q 'forFixedAnchorFirstResultName name: String) -> MapCoordinateSystem?' "$PROBE" || fail "fixed-anchor name mapping must return nil for unknown names"
 grep -q 'scheduleBluePointMapCoordinateSystemRefresh()' "$MAP_HOME" || fail "native blue-point samples must trigger runtime map-type refresh while spoofing"
-! grep -A3 'private func scheduleBluePointMapCoordinateSystemRefresh' "$MAP_HOME" | grep -q 'spoofState == .active' || fail "blue-point map-type refresh must also detect the return to physical location"
+! grep -A3 'func scheduleBluePointMapCoordinateSystemRefresh' "$MAP_HOME" | grep -q 'spoofState == .active' || fail "blue-point map-type refresh must also detect the return to physical location"
 grep -q 'awaitCoordinatedMapCoordinateSystemRefresh(reason: "点击实时定位")' "$MAP_HOME" || fail "realtime button must await the coordinated map-type refresh"
 grep -q 'favorites.selectMatching(coordinatePair: pair)' "$MAP_HOME" || fail "realtime selection must restore a matching favorite selection"
 grep -q 'awaitCoordinatedMapCoordinateSystemRefresh(reason: "保存收藏")' "$MAP_HOME" || fail "favorite save must await the coordinated map-type refresh"

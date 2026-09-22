@@ -117,6 +117,7 @@ final class ThirdPartyProxyManager: ObservableObject {
     @Published private(set) var connectionState: ThirdPartyProxyConnectionState = .unknown
     @Published private(set) var activeSettings: ThirdPartyProxySettingsResponse?
     @Published private(set) var isRequesting = false
+    private var requestWaiters: [CheckedContinuation<Void, Never>] = []
     private let requester: any ThirdPartyProxyRequesting
     private let randomRadiusMeters: () -> Double
 
@@ -209,12 +210,27 @@ final class ThirdPartyProxyManager: ObservableObject {
         case clear
     }
 
-    private func perform(action: Action) async throws -> ThirdPartyProxySettingsResponse {
-        guard !isRequesting else {
-            throw ThirdPartyProxyError.rejected("已有第三方代理请求正在执行")
+    private func enqueueRequest() async {
+        if !isRequesting {
+            isRequesting = true
+            return
         }
-        isRequesting = true
-        defer { isRequesting = false }
+        await withCheckedContinuation { continuation in
+            requestWaiters.append(continuation)
+        }
+    }
+
+    private func dequeueRequest() {
+        if requestWaiters.isEmpty {
+            isRequesting = false
+            return
+        }
+        requestWaiters.removeFirst().resume()
+    }
+
+    private func perform(action: Action) async throws -> ThirdPartyProxySettingsResponse {
+        await enqueueRequest()
+        defer { dequeueRequest() }
 
         var components = URLComponents(url: Self.configurationEndpoint, resolvingAgainstBaseURL: false)!
         switch action {

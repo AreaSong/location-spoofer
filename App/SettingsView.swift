@@ -230,11 +230,11 @@ struct SettingsView: View {
 
             Section("关于") {
                 Button {
-                    if let url = URL(string: "https://github.com/xweiba/location-spoofer") {
+                    if let url = URL(string: "https://github.com/AreaSong/location-spoofer") {
                         UIApplication.shared.open(url)
                     }
                 } label: {
-                    Label("xweiba/location-spoofer", systemImage: "link")
+                    Label("AreaSong/location-spoofer", systemImage: "link")
                 }
                 Text("如果觉得好用，欢迎去 GitHub 给项目点个 Star")
                     .font(.caption2)

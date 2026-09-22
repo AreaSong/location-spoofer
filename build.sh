@@ -27,13 +27,33 @@ require_command() {
 }
 
 run_simulator_tests() {
-  local simulator_destination="${SIMULATOR_DESTINATION:-platform=iOS Simulator,name=iPhone 16}"
+  local simulator_destination
+  simulator_destination="$(resolve_simulator_destination)"
 
   xcodebuild \
     -project PaopaoLocationSpoofer.xcodeproj \
     -scheme PaopaoLocationSpoofer \
     -destination "$simulator_destination" \
     test
+}
+
+resolve_simulator_destination() {
+  if [ -n "${SIMULATOR_DESTINATION:-}" ]; then
+    printf '%s\n' "$SIMULATOR_DESTINATION"
+    return
+  fi
+
+  local device_name
+  device_name="$(
+    xcrun simctl list devices available \
+      | sed -n 's/^[[:space:]]*\(iPhone [^()]\{1,\}\) (.*/\1/p' \
+      | head -n 1
+  )"
+  if [ -z "$device_name" ]; then
+    echo "No available iPhone simulator. Set SIMULATOR_DESTINATION explicitly." >&2
+    exit 1
+  fi
+  printf 'platform=iOS Simulator,name=%s\n' "$device_name"
 }
 
 run_tests=0

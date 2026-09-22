@@ -168,6 +168,39 @@ final class RoutePlaybackTests: XCTestCase {
         XCTAssertEqual(backAtStart.coordinatePair.wgs84.latitude, start.wgs84.latitude, accuracy: 0.000_000_1)
         XCTAssertEqual(backAtStart.coordinatePair.wgs84.longitude, start.wgs84.longitude, accuracy: 0.000_000_1)
     }
+
+    func testWriteGateRequiresDistanceOrElapsedTime() {
+        let start = CoordinateConverter.coordinatePair(
+            lat: 22.494,
+            lon: 113.951,
+            mapCoordinateSystem: .wgs84
+        )
+        let nearby = CoordinateConverter.coordinatePair(
+            lat: 22.49402,
+            lon: 113.951,
+            mapCoordinateSystem: .wgs84
+        )
+        let far = CoordinateConverter.coordinatePair(
+            lat: 22.495,
+            lon: 113.951,
+            mapCoordinateSystem: .wgs84
+        )
+        XCTAssertLessThan(RoutePlayback.distanceMeters(from: start, to: nearby), RouteWriteGate.minimumDistanceMeters)
+        XCTAssertGreaterThan(RoutePlayback.distanceMeters(from: start, to: far), RouteWriteGate.minimumDistanceMeters)
+
+        var gate = RouteWriteGate()
+        let t0 = Date(timeIntervalSince1970: 1_000)
+        XCTAssertTrue(gate.shouldWrite(start, at: t0, force: false))
+        gate.markWritten(start, at: t0)
+
+        XCTAssertFalse(gate.shouldWrite(nearby, at: t0.addingTimeInterval(1), force: false))
+        XCTAssertTrue(gate.shouldWrite(far, at: t0.addingTimeInterval(1), force: false))
+        XCTAssertTrue(gate.shouldWrite(nearby, at: t0.addingTimeInterval(RouteWriteGate.minimumInterval), force: false))
+        XCTAssertTrue(gate.shouldWrite(nearby, at: t0.addingTimeInterval(1), force: true))
+
+        gate.reset()
+        XCTAssertTrue(gate.shouldWrite(nearby, at: t0.addingTimeInterval(1), force: false))
+    }
 }
 
 @MainActor

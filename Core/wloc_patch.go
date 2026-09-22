@@ -9,7 +9,6 @@ import (
 	"io"
 	"math"
 	"regexp"
-	"time"
 )
 
 const (
@@ -569,49 +568,5 @@ func makeTestWlocBody() []byte {
 	out = append(out, magic...)
 	out = append(out, lenBytes[:]...)
 	out = append(out, payload...)
-	return out
-}
-
-func makeTestWlocRequest() []byte {
-	var out []byte
-
-	// 3 个 Wi-Fi AP（真实 wloc 请求格式）
-	type ap struct {
-		mac     string
-		rssi    int32
-		channel int32
-	}
-	aps := []ap{
-		{"aa:bb:cc:dd:ee:ff", -45, 6},
-		{"11:22:33:44:55:66", -62, 11},
-		{"77:88:99:00:11:22", -71, 1},
-	}
-	now := uint32(time.Now().Unix())
-	for _, a := range aps {
-		var device []byte
-		device = append(device, writeLengthDelimited(1, []byte(a.mac))...)
-		device = append(device, writeTag(4, wireVarint)...)
-		device = append(device, writeVarint(uint64(int64(a.rssi)))...)
-		device = append(device, writeTag(6, wireVarint)...)
-		device = append(device, writeVarint(uint64(a.channel))...)
-		device = append(device, writeTag(11, wireVarint)...)
-		device = append(device, writeVarint(uint64(now))...)
-		out = append(out, writeLengthDelimited(1, device)...)
-	}
-
-	// 1 个蜂窝基站
-	var cell []byte
-	cell = append(cell, writeTag(1, wireVarint)...)
-	cell = append(cell, writeVarint(1)...) // GSM
-	cell = append(cell, writeTag(2, wireVarint)...)
-	cell = append(cell, writeVarint(460)...) // MCC China
-	cell = append(cell, writeTag(3, wireVarint)...)
-	cell = append(cell, writeVarint(1)...) // MNC
-	cell = append(cell, writeTag(4, wireVarint)...)
-	cell = append(cell, writeVarint(15200)...) // LAC
-	cell = append(cell, writeTag(5, wireVarint)...)
-	cell = append(cell, writeVarint(24680)...) // CellID
-	out = append(out, writeLengthDelimited(5, cell)...)
-
 	return out
 }

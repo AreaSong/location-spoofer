@@ -271,7 +271,7 @@ Release assets are unsigned IPA files and must be installed on an iPhone with a 
 
 1. **Enable sideloading support**: On iOS 16 or newer, open Settings → Privacy & Security → Developer Mode, enable it,
    then restart and confirm when prompted. iOS 15 does not have this switch, so skip this step.
-2. **Download the IPA**: Open this project's [Releases](https://github.com/xweiba/location-spoofer/releases) and download
+2. **Download the IPA**: Open this project's [Releases](https://github.com/AreaSong/location-spoofer/releases) and download
    the latest `PaopaoLocationSpoofer-unsigned.ipa`.
 3. **Prepare signing software**: Download the appropriate Impactor build from
    [Impactor Releases](https://github.com/claration/Impactor/releases). Other tools that support self-signing and installing
@@ -357,7 +357,7 @@ Source builds require:
 Building the iOS app directly on Windows is not supported.
 
 ```bash
-git clone https://github.com/xweiba/location-spoofer.git
+git clone https://github.com/AreaSong/location-spoofer.git
 cd location-spoofer
 
 ./build.sh
@@ -404,10 +404,10 @@ Do not post real locations, authentication information, CA private keys, or comp
 
 Contributions are welcome for:
 
-- [Bug reports](https://github.com/xweiba/location-spoofer/issues/new?template=bug-report.yml);
-- [Feature requests](https://github.com/xweiba/location-spoofer/discussions/categories/%E5%8A%9F%E8%83%BD%E5%BB%BA%E8%AE%AE);
-- [Usage help and compatibility results](https://github.com/xweiba/location-spoofer/discussions/categories/%E4%BD%BF%E7%94%A8%E5%B8%AE%E5%8A%A9);
-- [Third-party client configurations and sanitized screenshots](https://github.com/xweiba/location-spoofer/discussions/categories/%E7%AC%AC%E4%B8%89%E6%96%B9%E9%85%8D%E7%BD%AE%E5%88%86%E4%BA%AB);
+- [Bug reports](https://github.com/AreaSong/location-spoofer/issues/new?template=bug-report.yml);
+- [Feature requests](https://github.com/AreaSong/location-spoofer/discussions/categories/%E5%8A%9F%E8%83%BD%E5%BB%BA%E8%AE%AE);
+- [Usage help and compatibility results](https://github.com/AreaSong/location-spoofer/discussions/categories/%E4%BD%BF%E7%94%A8%E5%B8%AE%E5%8A%A9);
+- [Third-party client configurations and sanitized screenshots](https://github.com/AreaSong/location-spoofer/discussions/categories/%E7%AC%AC%E4%B8%89%E6%96%B9%E9%85%8D%E7%BD%AE%E5%88%86%E4%BA%AB);
 - Performance improvements;
 - Documentation improvements;
 - Additional tests.
@@ -430,7 +430,7 @@ Paste it into the **App-generated diagnostic report** field in the GitHub Issue 
 - [Third-party module documentation](docs/THIRD_PARTY_MODULES.md)
 - [Changelog](docs/CHANGELOG.md)
 - [中文文档](README.md)
-- [GitHub Issues](https://github.com/xweiba/location-spoofer/issues)
+- [GitHub Issues](https://github.com/AreaSong/location-spoofer/issues)
 
 ## Feature Preview
 

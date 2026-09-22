@@ -4,7 +4,12 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CONFIG="$ROOT/Shared/AppRemoteConfiguration.swift"
 CONTENT="$ROOT/App/ContentView.swift"
-MAP="$ROOT/App/MapHomeView.swift"
+MAP="$(mktemp)"
+trap 'rm -f "$MAP"' EXIT
+cat "$ROOT/App/MapHomeView.swift" > "$MAP"
+for extra in "$ROOT"/App/MapHomeView+*.swift "$ROOT"/App/MapHomeBottomCard.swift; do
+  [ -f "$extra" ] && cat "$extra" >> "$MAP"
+done
 SETUP="$ROOT/App/FirstSetupView.swift"
 SETTINGS="$ROOT/App/SettingsView.swift"
 BUG_REPORT="$ROOT/App/BugReportView.swift"
@@ -72,7 +77,7 @@ grep -q 'Button("不再提示", role: .cancel)' "$MAP" \
   || fail "the third community prompt must allow permanent suppression"
 grep -q '匿名收录，不在 README 展示投稿账号' "$GITHUB_SUBMISSION" \
   || fail "the contribution template must offer anonymous README attribution"
-grep -Fq 'https://github.com/xweiba/location-spoofer/discussions/new?category=%E7%AC%AC%E4%B8%89%E6%96%B9%E9%85%8D%E7%BD%AE%E5%88%86%E4%BA%AB' "$GITHUB_SUBMISSION" \
+grep -Fq 'https://github.com/AreaSong/location-spoofer/discussions/new?category=%E7%AC%AC%E4%B8%89%E6%96%B9%E9%85%8D%E7%BD%AE%E5%88%86%E4%BA%AB' "$GITHUB_SUBMISSION" \
   || fail "community submission must use one fixed Discussions address"
 grep -q 'UIPasteboard.general.string = GitHubSubmission.communityContributionTemplate' "$MAP" \
   || fail "the explicit copy action must copy the contribution template"
@@ -80,11 +85,11 @@ grep -A8 'Button("去提交")' "$MAP" | grep -q 'UIPasteboard.general.string = G
   || fail "the submit action must copy the template before opening GitHub"
 grep -A8 'Button("去提交")' "$MAP" | grep -q 'openCommunityContributionPage()' \
   || fail "the submit action must open the fixed Discussions page after copying"
-! grep -A12 'private func openCommunityContributionPage' "$MAP" | grep -q 'URLComponents' \
+! grep -A12 'func openCommunityContributionPage' "$MAP" | grep -q 'URLComponents' \
   || fail "the fixed community address must not be rebuilt from dynamic query items"
-grep -A4 'private func openCommunityContributionPage' "$MAP" | grep -q 'SafariDestination' \
+grep -A4 'func openCommunityContributionPage' "$MAP" | grep -q 'SafariDestination' \
   || fail "community submission must open with the shared in-App Safari destination"
-! grep -A4 'private func openCommunityContributionPage' "$MAP" | grep -q 'UIApplication.shared.open' \
+! grep -A4 'func openCommunityContributionPage' "$MAP" | grep -q 'UIApplication.shared.open' \
   || fail "community submission must not be intercepted by an external GitHub client"
 test -s "$DISCUSSION_FORM" \
   || fail "the fixed Discussions category must provide a maintained submission form"
@@ -111,7 +116,7 @@ done
 grep -Fq 'label: 第三方客户端版本' "$DISCUSSION_FORM" \
   || fail "the Discussions form must clearly request the third-party client version"
 
-grep -Fq 'https://github.com/xweiba/location-spoofer/issues/new?template=bug-report.yml' "$GITHUB_SUBMISSION" \
+grep -Fq 'https://github.com/AreaSong/location-spoofer/issues/new?template=bug-report.yml' "$GITHUB_SUBMISSION" \
   || fail "the App bug report must open the dedicated Issue form"
 grep -Fq 'GitHubSubmission.bugReportURL' "$BUG_REPORT" \
   || fail "the App bug report must use the shared GitHub destination"

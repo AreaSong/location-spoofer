@@ -8,12 +8,10 @@ struct CertificateAuthority: Equatable {
 
 enum CoreBridgeError: LocalizedError {
     case generationFailed
-    case serverStartFailed
 
     var errorDescription: String? {
         switch self {
         case .generationFailed: return "无法生成本地证书"
-        case .serverStartFailed: return "无法启动本地证书服务"
         }
     }
 }
@@ -61,59 +59,5 @@ enum CoreBridge {
         guard let ptr = wloccore_refreshverifytoken() else { return "" }
         defer { free(ptr) }
         return String(cString: ptr)
-    }
-}
-
-final class LocalCertificateServer {
-    private var handle: UInt = 0
-    private(set) var downloadURL: URL?
-    private(set) var probeURL: URL?
-    private(set) var leafHash = ""
-
-    deinit { stop() }
-
-    func start(authority: CertificateAuthority) throws {
-        if handle != 0 {
-            RuntimeLogger.debug("APP", "Certificate.server", "本地证书服务已在运行")
-            return
-        }
-        RuntimeLogger.info("APP", "Certificate.server", "调用 Go Core 启动本地证书服务")
-        let newHandle: UInt = authority.certPEM.withCString { certPointer in
-            authority.keyPEM.withCString { keyPointer in
-                UInt(wloccore_startcertserver(UnsafeMutablePointer(mutating: certPointer), UnsafeMutablePointer(mutating: keyPointer)))
-            }
-        }
-        guard newHandle != 0 else {
-            CoreBridge.flushLogs(category: "CertificateServer")
-            throw CoreBridgeError.serverStartFailed
-        }
-        let httpPort = Int(wloccore_certserver_httpport(newHandle))
-        let httpsPort = Int(wloccore_certserver_httpsport(newHandle))
-        guard httpPort > 0, httpsPort > 0, let hashPointer = wloccore_certserver_leafsha256(newHandle) else {
-            _ = wloccore_stopcertserver(newHandle)
-            throw CoreBridgeError.serverStartFailed
-        }
-        defer { free(hashPointer) }
-        handle = newHandle
-        downloadURL = URL(string: "http://127.0.0.1:\(httpPort)/ca.cer")
-        probeURL = URL(string: "https://127.0.0.1:\(httpsPort)/health")
-        leafHash = String(cString: hashPointer)
-        RuntimeLogger.info("APP", "Certificate.server", "本地证书服务启动成功", details: [
-            "httpPort": String(httpPort),
-            "httpsPort": String(httpsPort),
-            "leafHash": leafHash
-        ])
-        CoreBridge.flushLogs(category: "CertificateServer")
-    }
-
-    func stop() {
-        guard handle != 0 else { return }
-        let result = wloccore_stopcertserver(handle)
-        RuntimeLogger.info("APP", "Certificate.server", "停止本地证书服务", details: ["result": String(result)])
-        CoreBridge.flushLogs(category: "CertificateServer")
-        handle = 0
-        downloadURL = nil
-        probeURL = nil
-        leafHash = ""
     }
 }

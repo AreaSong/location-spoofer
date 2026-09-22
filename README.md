@@ -254,7 +254,7 @@ Release 附件是未签名 IPA，需要使用自签工具安装到 iPhone：
 
 1. **开启自签支持**：iOS 16 及以上版本前往“设置 → 隐私与安全性 → 开发者模式”，开启后按系统提示重启并
    确认；iOS 15 没有此开关，可跳过本步。
-2. **下载 IPA**：前往本项目的 [Releases](https://github.com/xweiba/location-spoofer/releases)，下载最新的
+2. **下载 IPA**：前往本项目的 [Releases](https://github.com/AreaSong/location-spoofer/releases)，下载最新的
    `PaopaoLocationSpoofer-unsigned.ipa`。
 3. **准备自签软件**：前往 [Impactor Releases](https://github.com/claration/Impactor/releases) 下载对应系统
    版本的 Impactor；也可以使用爱思助手等支持 IPA 自签安装的软件。
@@ -336,7 +336,7 @@ docs/       构建、模块和版本文档
 当前项目不支持在 Windows 上直接构建 iOS 应用。
 
 ```bash
-git clone https://github.com/xweiba/location-spoofer.git
+git clone https://github.com/AreaSong/location-spoofer.git
 cd location-spoofer
 
 ./build.sh
@@ -383,10 +383,10 @@ dist/PaopaoLocationSpoofer-unsigned.ipa
 
 欢迎提交：
 
-- [Bug Report](https://github.com/xweiba/location-spoofer/issues/new?template=bug-report.yml)；
-- [功能建议](https://github.com/xweiba/location-spoofer/discussions/categories/%E5%8A%9F%E8%83%BD%E5%BB%BA%E8%AE%AE)；
-- [使用帮助与兼容性测试](https://github.com/xweiba/location-spoofer/discussions/categories/%E4%BD%BF%E7%94%A8%E5%B8%AE%E5%8A%A9)；
-- [第三方客户端配置和脱敏原始截图](https://github.com/xweiba/location-spoofer/discussions/categories/%E7%AC%AC%E4%B8%89%E6%96%B9%E9%85%8D%E7%BD%AE%E5%88%86%E4%BA%AB)；
+- [Bug Report](https://github.com/AreaSong/location-spoofer/issues/new?template=bug-report.yml)；
+- [功能建议](https://github.com/AreaSong/location-spoofer/discussions/categories/%E5%8A%9F%E8%83%BD%E5%BB%BA%E8%AE%AE)；
+- [使用帮助与兼容性测试](https://github.com/AreaSong/location-spoofer/discussions/categories/%E4%BD%BF%E7%94%A8%E5%B8%AE%E5%8A%A9)；
+- [第三方客户端配置和脱敏原始截图](https://github.com/AreaSong/location-spoofer/discussions/categories/%E7%AC%AC%E4%B8%89%E6%96%B9%E9%85%8D%E7%BD%AE%E5%88%86%E4%BA%AB)；
 - 性能改进；
 - 文档改进；
 - 测试补充。
@@ -410,7 +410,7 @@ GitHub Issue Form 中的“App 生成的诊断报告”字段与 App 复制内�
 - [社区客户端教程与截图提交](docs/COMMUNITY_TUTORIALS.md)
 - [更新日志](docs/CHANGELOG.md)
 - [英文文档](README.en.md)
-- [GitHub Issues](https://github.com/xweiba/location-spoofer/issues)
+- [GitHub Issues](https://github.com/AreaSong/location-spoofer/issues)
 
 ## 功能预览
 
