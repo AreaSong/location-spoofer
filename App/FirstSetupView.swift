@@ -22,6 +22,7 @@ enum SetupStep: Int, CaseIterable {
     case cert
     case thirdPartyClient
     case thirdPartyImport
+    case developerTunnel
 
     var title: String {
         switch self {
@@ -30,6 +31,7 @@ enum SetupStep: Int, CaseIterable {
         case .cert: return "初始化 CA 证书"
         case .thirdPartyClient: return "选择客户端"
         case .thirdPartyImport: return "导入并检测"
+        case .developerTunnel: return "连接隧道"
         }
     }
 }
@@ -50,6 +52,7 @@ struct FirstSetupView: View {
     @State var showDiagnostics = false
     @StateObject var diagnosticActions = LocationActionCoordinator()
     @ObservedObject var runtimeMode = ProxyRuntimeModeStore.shared
+    @ObservedObject var routeLocation = RouteLocationSetupStore.shared
     @ObservedObject var thirdPartyProxy = ThirdPartyProxyManager.shared
     @ObservedObject var thirdPartyClient = ThirdPartyProxyClientStore.shared
     @ObservedObject var moduleSource = ThirdPartyModuleSourceStore.shared
@@ -102,6 +105,7 @@ struct FirstSetupView: View {
                             case .cert: certificateStep
                             case .thirdPartyClient: thirdPartyClientStep
                             case .thirdPartyImport: thirdPartyImportStep
+                            case .developerTunnel: developerTunnelStep
                             }
                             if let displayedVerificationResult { resultView(displayedVerificationResult) }
                         }
@@ -229,6 +233,8 @@ struct FirstSetupView: View {
             return [.mode, .proxy, .cert]
         case .thirdPartyClient, .thirdPartyImport:
             return [.mode, .thirdPartyClient, .thirdPartyImport]
+        case .developerTunnel:
+            return [.mode, .developerTunnel]
         }
     }
 
@@ -251,6 +257,8 @@ struct FirstSetupView: View {
         case .thirdPartyImport:
             thirdPartyTestFailure = nil
             step = .thirdPartyClient
+        case .developerTunnel:
+            step = .mode
         }
     }
 
@@ -307,6 +315,14 @@ struct FirstSetupView: View {
             }
             .buttonStyle(.borderedProminent)
             .disabled(!certificateStepsComplete || isVerifying)
+        } else if step == .developerTunnel {
+            Button {
+                onComplete()
+            } label: {
+                actionLabel("完成")
+            }
+            .buttonStyle(.borderedProminent)
+            .disabled(routeLocation.readiness != .ready)
         } else if step == .thirdPartyClient {
             Button {
                 step = .thirdPartyImport

@@ -95,6 +95,7 @@ struct MapHomeView: View {
     @State var showLocationAlert = false
     @State var showSigningResignSheet = false
     @State var showRouteLocationSetup = false
+    @State var developerLocationError = ""
     @State var lastRoutePhase = RoutePhase.inactive
     @State var realtimeRequestTask: Task<Void, Never>?
     @State var realtimeRequestContext: RealtimeLocationRequestContext?
@@ -414,7 +415,7 @@ struct MapHomeView: View {
             bindRoutePlayback()
             if runtimeMode.mode == .localWiFi {
                 registerWiFiChangeObserver()
-            } else {
+            } else if runtimeMode.mode == .thirdParty {
                 refreshThirdPartyState()
             }
         }
@@ -500,7 +501,7 @@ struct MapHomeView: View {
             wifiVerificationTask = nil
             if mode == .localWiFi {
                 registerWiFiChangeObserver()
-            } else {
+            } else if mode == .thirdParty {
                 refreshThirdPartyState()
             }
             route.pause()
@@ -510,6 +511,15 @@ struct MapHomeView: View {
         }
         .sheet(isPresented: $showEnableTip) { enableTipSheet }
         .sheet(isPresented: $showDisableTip) { disableTipSheet }
+        .alert("定位推送失败", isPresented: Binding(
+            get: { !developerLocationError.isEmpty },
+            set: { if !$0 { developerLocationError = "" } }
+        )) {
+            Button("打开路线定位") { showRouteLocationSetup = true }
+            Button("知道了", role: .cancel) {}
+        } message: {
+            Text(developerLocationError)
+        }
         .alert("定位失败", isPresented: $showLocationAlert) {
             Button("打开设置") {
                 openSettings(.locationServices)

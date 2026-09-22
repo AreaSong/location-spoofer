@@ -40,6 +40,9 @@ extension SettingsView {
         modeOperationRunning = true
         Task { @MainActor in
             defer { modeOperationRunning = false }
+            if runtimeMode.mode == .developerTunnel {
+                await RouteLocationSetupStore.shared.clear()
+            }
             switch newMode {
             case .thirdParty:
                 if actions.virtualLocationEnabled { actions.clear() }
@@ -58,6 +61,18 @@ extension SettingsView {
                     }
                 } else {
                     setup.requestThirdPartyOnboarding()
+                    dismiss()
+                }
+            case .developerTunnel:
+                if actions.virtualLocationEnabled { actions.clear() }
+                proxy.stop()
+                ThirdPartyModuleRuntime.shutdown()
+                runtimeMode.setMode(.developerTunnel)
+                if runtimeMode.isInitialized(.developerTunnel) {
+                    proxyOperationAlertTitle = "模式已切换"
+                    proxyOperationError = "已改用 LocalDevVPN。请确认隧道已连接，并已导入配对文件。"
+                } else {
+                    setup.requestDeveloperOnboarding()
                     dismiss()
                 }
             case .localWiFi:

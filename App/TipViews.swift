@@ -57,6 +57,10 @@ struct ActivationTipContent: View {
     var body: some View {
         GroupBox(label: Label("让虚拟定位生效", systemImage: "checklist")) {
             VStack(alignment: .leading, spacing: 10) {
+                if runtimeMode == .developerTunnel {
+                    step(1, "连接 LocalDevVPN", "打开 LocalDevVPN 并连上隧道，确认已导入配对文件。")
+                    step(2, "开始虚拟定位", "回到地图，点底部「开始虚拟定位」。系统会停在当前图钉，不用再开关定位服务。")
+                } else {
                 if runtimeMode == .thirdParty {
                     step(0, "确认第三方代理已开启", "保持已导入的 WLOC 模块、HTTPS 解密和第三方代理/VPN 连接开启。")
                 }
@@ -66,18 +70,20 @@ struct ActivationTipContent: View {
                 step(4, "打开 Wi‑Fi，启动虚拟定位", runtimeMode == .thirdParty ? "从控制中心打开 Wi‑Fi（飞行模式保持开启），确认第三方代理已连接。坐标已经同步到第三方代理。等待 2 秒。" : "从控制中心打开 Wi‑Fi（飞行模式保持开启），进入 App 点底部「开始虚拟定位」。等待 2 秒。")
                 step(5, "关闭飞行模式", "从控制中心关闭飞行模式。等待 2 秒。")
                 systemStep(6, "重新开启定位服务", "再次进入「设置 → 隐私与安全性 → 定位服务」，打开总开关。完成后打开地图验证定位是否已变化。")
+                }
             }.padding(.vertical, 4)
         }
 
-        GroupBox(label: Label("还是无法生效？", systemImage: "exclamationmark.triangle")) {
-            Text("操作到第 3 步时关机重启，开机后从第 4 步继续。这样能彻底清除系统缓存的定位数据。")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.leading)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.vertical, 4)
+        if runtimeMode != .developerTunnel {
+            GroupBox(label: Label("还是无法生效？", systemImage: "exclamationmark.triangle")) {
+                Text("操作到第 3 步时关机重启，开机后从第 4 步继续。这样能彻底清除系统缓存的定位数据。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.leading)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.vertical, 4)
+            }
         }
-
     }
 
     private func step(_ n: Int, _ title: String, _ detail: String) -> some View {

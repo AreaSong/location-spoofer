@@ -37,6 +37,13 @@ extension MapHomeView {
     }
 
     func handleMainButtonTap() {
+        if runtimeMode.mode == .developerTunnel, spoofState != .active {
+            routeLocation.refresh()
+            if routeLocation.readiness != .ready {
+                showRouteLocationSetup = true
+                return
+            }
+        }
         switch spoofState {
         case .idle:
             beginLocationOperation()
@@ -102,6 +109,8 @@ extension MapHomeView {
                 presentSuccessfulOperationTip(.deactivation)
             case .offerCommunityContribution:
                 queueCommunityContributionPrompt(for: thirdPartyClient.selectedClient)
+            case .developerPushFailed(let message):
+                developerLocationError = message
             case .localVerificationFailed(let result):
                 activeTip = nil
                 setup.applyVerificationResult(result, presentSetup: false)
@@ -177,7 +186,16 @@ extension MapHomeView {
             queryThirdParty: { try await thirdParty.query() },
             clearThirdPartyFailure: { failure.clearThirdParty() },
             recordThirdPartyFailure: { failure.recordThirdParty(error: $0) },
-            recordThirdPartyMessage: { failure.recordThirdParty(message: $0) }
+            recordThirdPartyMessage: { failure.recordThirdParty(message: $0) },
+            pushDeveloper: { favorite in
+                await RouteLocationSetupStore.shared.set(
+                    latitude: favorite.latitude,
+                    longitude: favorite.longitude
+                )
+            },
+            clearDeveloper: {
+                await RouteLocationSetupStore.shared.clear()
+            }
         )
     }
 
@@ -216,6 +234,9 @@ extension MapHomeView {
     }
 
     var homeRuntimeStatusText: String {
+        if runtimeMode.mode == .developerTunnel {
+            return routeLocation.readiness == .ready ? "隧道已连接" : "隧道未就绪"
+        }
         if runtimeMode.mode == .thirdParty {
             switch thirdPartyProxy.connectionState {
             case .unknown: return "未检测"

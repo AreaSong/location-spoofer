@@ -18,6 +18,7 @@ final class ProxyRuntimeModeTests: XCTestCase {
         XCTAssertFalse(initial.hasSelectedMode)
         XCTAssertFalse(initial.isInitialized(.localWiFi))
         XCTAssertFalse(initial.isInitialized(.thirdParty))
+        XCTAssertFalse(initial.isInitialized(.developerTunnel))
 
         initial.setMode(.thirdParty)
         initial.markInitialized(.thirdParty)
@@ -26,6 +27,8 @@ final class ProxyRuntimeModeTests: XCTestCase {
         XCTAssertTrue(restored.hasSelectedMode)
         XCTAssertFalse(restored.isInitialized(.localWiFi))
         XCTAssertTrue(restored.isInitialized(.thirdParty))
+        restored.markInitialized(.developerTunnel)
+        XCTAssertTrue(ProxyRuntimeModeStore(defaults: defaults, legacyDefaults: legacyDefaults).isInitialized(.developerTunnel))
 
         restored.resetInitialization(.thirdParty)
         XCTAssertFalse(restored.isInitialized(.thirdParty))

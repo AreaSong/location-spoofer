@@ -3,6 +3,7 @@ import Foundation
 enum ProxyRuntimeMode: String, CaseIterable, Codable, Identifiable {
     case localWiFi
     case thirdParty
+    case developerTunnel
 
     var id: String { rawValue }
 
@@ -10,6 +11,7 @@ enum ProxyRuntimeMode: String, CaseIterable, Codable, Identifiable {
         switch self {
         case .localWiFi: return "APP模式"
         case .thirdParty: return "第三方代理模式"
+        case .developerTunnel: return "LocalDevVPN 模式"
         }
     }
 }
@@ -23,6 +25,7 @@ final class ProxyRuntimeModeStore: ObservableObject {
         static let hasSelectedRuntimeMode = "hasSelectedProxyRuntimeMode"
         static let localWiFiInitialized = "localWiFiRuntimeModeInitialized"
         static let thirdPartyInitialized = "thirdPartyRuntimeModeInitialized"
+        static let developerTunnelInitialized = "developerTunnelRuntimeModeInitialized"
         static let initializationMigrationCompleted = "runtimeModeInitializationMigrationCompleted"
         static let legacySetupCompleted = "setupCompleted"
     }
@@ -31,6 +34,7 @@ final class ProxyRuntimeModeStore: ObservableObject {
     @Published private(set) var hasSelectedMode: Bool
     @Published private(set) var localWiFiInitialized: Bool
     @Published private(set) var thirdPartyInitialized: Bool
+    @Published private(set) var developerTunnelInitialized: Bool
     private let defaults: UserDefaults
     private let legacyDefaults: UserDefaults
 
@@ -45,6 +49,7 @@ final class ProxyRuntimeModeStore: ObservableObject {
         self.hasSelectedMode = defaults.bool(forKey: Key.hasSelectedRuntimeMode)
         self.localWiFiInitialized = defaults.bool(forKey: Key.localWiFiInitialized)
         self.thirdPartyInitialized = defaults.bool(forKey: Key.thirdPartyInitialized)
+        self.developerTunnelInitialized = defaults.bool(forKey: Key.developerTunnelInitialized)
         migrateLegacyInitializationIfNeeded()
     }
 
@@ -66,6 +71,7 @@ final class ProxyRuntimeModeStore: ObservableObject {
         switch mode {
         case .localWiFi: return localWiFiInitialized
         case .thirdParty: return thirdPartyInitialized
+        case .developerTunnel: return developerTunnelInitialized
         }
     }
 
@@ -85,6 +91,9 @@ final class ProxyRuntimeModeStore: ObservableObject {
         case .thirdParty:
             thirdPartyInitialized = initialized
             defaults.set(initialized, forKey: Key.thirdPartyInitialized)
+        case .developerTunnel:
+            developerTunnelInitialized = initialized
+            defaults.set(initialized, forKey: Key.developerTunnelInitialized)
         }
     }
 

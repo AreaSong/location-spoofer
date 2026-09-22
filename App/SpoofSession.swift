@@ -3,9 +3,10 @@ import Foundation
 enum SpoofSessionEffect: Equatable {
     case activationSucceeded
     case deactivationSucceeded
-    case offerCommunityContribution
-    case localVerificationFailed(VerificationResult)
-    case resetLocalDiagnosis
+        case offerCommunityContribution
+        case localVerificationFailed(VerificationResult)
+        case developerPushFailed(String)
+        case resetLocalDiagnosis
 }
 
 /// 虚拟定位的开启、停止和路线写入。
@@ -33,6 +34,8 @@ final class SpoofSession: ObservableObject {
         var clearThirdPartyFailure: () -> Void
         var recordThirdPartyFailure: (Error) -> Void
         var recordThirdPartyMessage: (String) -> Void
+        var pushDeveloper: (FavoriteLocation) async -> RouteLocationPushFailure?
+        var clearDeveloper: () async -> Void
     }
 
     @Published private(set) var state: SpoofState
@@ -76,7 +79,8 @@ final class SpoofSession: ObservableObject {
         let operationID = operationID
         let selectionRevision = services.selectionRevision()
         state = .verifying
-        if services.mode() == .thirdParty {
+        switch services.mode() {
+        case .thirdParty:
             operationTask = Task {
                 await self.saveThirdParty(
                     target,
@@ -85,20 +89,34 @@ final class SpoofSession: ObservableObject {
                     selectionRevision: selectionRevision
                 )
             }
-            return
+        case .developerTunnel:
+            operationTask = Task {
+                await self.pushDeveloperLocation(target, operationID: operationID, wasActive: wasActive)
+            }
+        case .localWiFi:
+            operationTask = Task {
+                await self.verifyLocal(target, operationID: operationID, selectionRevision: selectionRevision)
+            }
         }
-        operationTask = Task { await self.verifyLocal(target, operationID: operationID, selectionRevision: selectionRevision) }
     }
 
     func stop() {
         guard let services else { return }
         services.pauseRoute()
         invalidateOperation()
-        if services.mode() == .thirdParty {
+        switch services.mode() {
+        case .thirdParty:
             state = .verifying
             let operationID = self.operationID
             operationTask = Task { await self.clearThirdParty(operationID: operationID) }
             return
+        case .developerTunnel:
+            state = .verifying
+            let operationID = self.operationID
+            operationTask = Task { await self.clearDeveloperLocation(operationID: operationID) }
+            return
+        case .localWiFi:
+            break
         }
         services.clearLocal()
         writtenLatitude = nil
@@ -138,6 +156,36 @@ final class SpoofSession: ObservableObject {
         guard let services, services.mode() == .localWiFi, state == .active else { return }
         services.clearLocal()
         state = .idle
+    }
+
+    private func pushDeveloperLocation(
+        _ target: FavoriteLocation,
+        operationID: UInt64,
+        wasActive: Bool
+    ) async {
+        guard let services else { return }
+        let failure = await services.pushDeveloper(target)
+        guard accept(operationID), services.mode() == .developerTunnel else { return }
+        if let failure {
+            state = wasActive ? .active : .idle
+            enqueue(.developerPushFailed(failure.message))
+        } else {
+            state = .active
+            writtenLatitude = target.latitude
+            writtenLongitude = target.longitude
+            enqueue(.activationSucceeded)
+        }
+        finish(operationID)
+    }
+
+    private func clearDeveloperLocation(operationID: UInt64) async {
+        guard let services else { return }
+        await services.clearDeveloper()
+        guard accept(operationID) else { return }
+        clearWrittenCoordinate()
+        state = .idle
+        enqueue(.deactivationSucceeded)
+        finish(operationID)
     }
 
     private func saveThirdParty(

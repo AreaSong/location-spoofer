@@ -42,6 +42,13 @@ extension SettingsView {
                             .tint(.blue)
                             .disabled(actions.state.isBusy)
                     }
+                } else if runtimeMode.mode == .developerTunnel {
+                    HStack {
+                        Label("本机隧道", systemImage: "network")
+                        Spacer()
+                        Text(routeLocation.readiness == .ready ? "已就绪" : "未就绪")
+                            .foregroundStyle(.secondary)
+                    }
                 } else {
                     HStack {
                         Label("第三方模块", systemImage: thirdPartyStatusIcon)

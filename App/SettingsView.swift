@@ -25,6 +25,7 @@ struct SettingsView: View {
     @ObservedObject var favorites: FavoriteLocationStore
     @ObservedObject var proxy = ProxyManager.shared
     @ObservedObject var runtimeMode = ProxyRuntimeModeStore.shared
+    @ObservedObject var routeLocation = RouteLocationSetupStore.shared
     @ObservedObject var thirdPartyProxy = ThirdPartyProxyManager.shared
     @ObservedObject var thirdPartyClient = ThirdPartyProxyClientStore.shared
     @ObservedObject var motionSimulation = MotionSimulationStore.shared
@@ -149,6 +150,9 @@ struct SettingsView: View {
 
 
     var virtualLocationStatusText: String {
+        if runtimeMode.mode == .developerTunnel {
+            return routeLocation.isSimulating ? "已开启" : "已关闭"
+        }
         if runtimeMode.mode == .localWiFi {
             return actions.virtualLocationEnabled ? "已开启" : "已关闭"
         }
@@ -159,6 +163,9 @@ struct SettingsView: View {
     }
 
     var workflowDescription: String {
+        if runtimeMode.mode == .developerTunnel {
+            return "定点和路线都通过 LocalDevVPN 的本机隧道推进系统定位。不启动本机代理，也不使用小火箭模块。需要隧道已连接，并已导入配对文件。"
+        }
         if runtimeMode.mode == .thirdParty {
             return "App 只负责地图选点、收藏和发送 WGS-84 坐标。第三方代理客户端通过模块拦截 Apple WLOC 请求并持久化当前坐标；本模式不启动本机代理，不使用 App 的 CA，也不需要配置 127.0.0.1:8888。"
         }
@@ -176,6 +183,9 @@ struct SettingsView: View {
 
 
     var virtualLocationIsActive: Bool {
+        if runtimeMode.mode == .developerTunnel {
+            return routeLocation.isSimulating
+        }
         if runtimeMode.mode == .localWiFi {
             return actions.virtualLocationEnabled
         }

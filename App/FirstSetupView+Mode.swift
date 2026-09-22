@@ -5,7 +5,7 @@ extension FirstSetupView {
         VStack(alignment: .leading, spacing: 16) {
             Text("选择运行模式")
                 .font(.title2.bold())
-            Text("后续可在“设置 → 运行模式”中切换。两种模式不要同时拦截 WLOC 请求。")
+            Text("后续可在“设置 → 运行模式”中切换。APP 模式和第三方模式不要同时拦截定位响应。")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
 
@@ -24,6 +24,17 @@ extension FirstSetupView {
                 tint: .blue
             ) {
                 selectMode(.localWiFi)
+            }
+            .disabled(isPreparingMode)
+
+            modeCard(
+                title: "LocalDevVPN 模式",
+                icon: "location.fill.viewfinder",
+                badges: ["定点 + 路线", "系统定位"],
+                description: "通过本机隧道把坐标推进系统定位。定点会停在图钉上，路线会跟着走。需要安装 LocalDevVPN，并导入一次配对文件。",
+                tint: .green
+            ) {
+                selectMode(.developerTunnel)
             }
             .disabled(isPreparingMode)
 
@@ -114,6 +125,11 @@ extension FirstSetupView {
             BackgroundKeepAlive.shared.stop()
             ThirdPartyModuleRuntime.syncServerWithDistribution()
             step = .thirdPartyClient
+        case .developerTunnel:
+            setup.proxy.stop()
+            BackgroundKeepAlive.shared.stop()
+            ThirdPartyModuleRuntime.shutdown()
+            step = .developerTunnel
         }
     }
 

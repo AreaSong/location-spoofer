@@ -75,6 +75,26 @@ final class SpoofSessionTests: XCTestCase {
         XCTAssertEqual(probe.applyCount, 0)
     }
 
+    func testDeveloperTunnelPushActivatesAndClearStops() async {
+        let probe = SpoofServiceProbe()
+        probe.mode = .developerTunnel
+        let session = makeSession(probe)
+
+        session.begin(target: sampleFavorite())
+        await waitUntil(session, leaves: .verifying)
+
+        XCTAssertEqual(session.state, .active)
+        XCTAssertEqual(probe.developerPushes, 1)
+        XCTAssertEqual(probe.applyCount, 0)
+        XCTAssertEqual(probe.verifyCount, 0)
+
+        session.stop()
+        await waitUntil(session, leaves: .verifying)
+        XCTAssertEqual(session.state, .idle)
+        XCTAssertEqual(probe.developerClears, 1)
+        XCTAssertNil(session.writtenLatitude)
+    }
+
     func testRouteWriteUsesTheSameCoordinateEntry() async {
         let probe = SpoofServiceProbe()
         let session = makeSession(probe)
@@ -175,6 +195,9 @@ private final class SpoofServiceProbe {
     )
     var verifyImpl: (() async -> VerificationResult)?
     var saveImpl: (() -> Void)?
+    var developerPushes = 0
+    var developerClears = 0
+    var developerFailure: RouteLocationPushFailure?
 
     func services() -> SpoofSession.Services {
         SpoofSession.Services(
@@ -218,7 +241,15 @@ private final class SpoofServiceProbe {
             },
             clearThirdPartyFailure: {},
             recordThirdPartyFailure: { _ in },
-            recordThirdPartyMessage: { _ in }
+            recordThirdPartyMessage: { _ in },
+            pushDeveloper: { _ in
+                self.developerPushes += 1
+                return self.developerFailure
+            },
+            clearDeveloper: {
+                self.developerClears += 1
+                return ()
+            }
         )
     }
 }

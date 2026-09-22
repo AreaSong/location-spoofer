@@ -82,6 +82,12 @@ final class SetupCoordinator: ObservableObject {
         setupStep = .mode
         needsSetup = true
     }
+    func requestDeveloperOnboarding() {
+        lastVerificationResult = nil
+        message = ""
+        setupStep = .developerTunnel
+        needsSetup = true
+    }
     func requestThirdPartyOnboarding() {
         lastVerificationResult = nil
         message = ""

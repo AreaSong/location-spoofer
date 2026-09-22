@@ -4,6 +4,7 @@ import Foundation
 final class RouteLocationSetupStore: ObservableObject, DeveloperLocationPushing {
     static let shared = RouteLocationSetupStore()
 
+    @Published private(set) var isSimulating = false
     @Published private(set) var status = RouteLocationStatus(
         vpnInstalled: false,
         tunnelConnected: false,
@@ -46,7 +47,7 @@ final class RouteLocationSetupStore: ObservableObject, DeveloperLocationPushing 
         let client = client
         let path = pairingStore.pairingURL.path
         let address = LocalDevVPN.defaultAddress
-        return await Task.detached {
+        let failure = await Task.detached {
             client.set(
                 latitude: latitude,
                 longitude: longitude,
@@ -54,6 +55,10 @@ final class RouteLocationSetupStore: ObservableObject, DeveloperLocationPushing 
                 deviceAddress: address
             )
         }.value
+        if failure == nil {
+            isSimulating = true
+        }
+        return failure
     }
 
     func clear() async {
@@ -61,5 +66,6 @@ final class RouteLocationSetupStore: ObservableObject, DeveloperLocationPushing 
         await Task.detached {
             client.clear()
         }.value
+        isSimulating = false
     }
 }
