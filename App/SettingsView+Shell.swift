@@ -23,10 +23,13 @@ extension SettingsView {
 
             Section("状态") {
                 if let message = signingExpiryStatus.settingsMessage {
+                    let countdown = signingExpiryStatus.expirationDate.flatMap {
+                        SigningExpiryCountdown.text(until: $0, now: Date())
+                    }
                     Button {
                         showSigningResignSheet = true
                     } label: {
-                        Label(message, systemImage: "calendar.badge.exclamationmark")
+                        Label(countdown ?? message, systemImage: "calendar.badge.exclamationmark")
                             .foregroundStyle(signingExpiryStatus.isExpired ? Color.red : Color.orange)
                             .fixedSize(horizontal: false, vertical: true)
                     }

@@ -1,4 +1,5 @@
 import Foundation
+import UserNotifications
 
 enum SigningExpiryKind: Equatable {
     case unknown
@@ -148,5 +149,123 @@ final class SigningExpiryBannerStore: ObservableObject {
     private static func dayString(_ date: Date, calendar: Calendar) -> String {
         let parts = calendar.dateComponents([.year, .month, .day], from: date)
         return String(format: "%04d-%02d-%02d", parts.year ?? 0, parts.month ?? 0, parts.day ?? 0)
+    }
+}
+
+enum SigningExpiryCountdown {
+    /// 按真实剩余时间显示。整天时不补「0 小时」。
+    static func text(until expirationDate: Date, now: Date, calendar: Calendar = .current) -> String? {
+        guard now < expirationDate else { return nil }
+        let parts = calendar.dateComponents([.day, .hour, .minute], from: now, to: expirationDate)
+        let days = max(parts.day ?? 0, 0)
+        let hours = max(parts.hour ?? 0, 0)
+        let minutes = max(parts.minute ?? 0, 0)
+        if days > 0 {
+            return hours > 0 ? "签名还剩 \(days) 天 \(hours) 小时" : "签名还剩 \(days) 天"
+        }
+        if hours > 0 {
+            return minutes > 0 ? "签名还剩 \(hours) 小时 \(minutes) 分" : "签名还剩 \(hours) 小时"
+        }
+        if minutes > 0 {
+            return "签名还剩 \(minutes) 分钟"
+        }
+        return "签名即将到期"
+    }
+}
+
+struct SigningExpiryReminder: Equatable {
+    static let identifiers = ["signing-expiry.2d", "signing-expiry.1d", "signing-expiry.2h"]
+    static let body = "到期后 App 将无法打开。请用电脑重新签名并安装。"
+
+    let identifier: String
+    let fireDate: Date
+    let title: String
+
+    /// 只保留仍在未来的提醒：提前 2 天、1 天、2 小时。
+    static func upcoming(expirationDate: Date, now: Date) -> [SigningExpiryReminder] {
+        let leads: [(String, TimeInterval, String)] = [
+            ("signing-expiry.2d", 2 * 24 * 60 * 60, "免费签名还剩 2 天"),
+            ("signing-expiry.1d", 24 * 60 * 60, "免费签名还剩 1 天"),
+            ("signing-expiry.2h", 2 * 60 * 60, "免费签名即将到期")
+        ]
+        return leads.compactMap { identifier, lead, title in
+            let fireDate = expirationDate.addingTimeInterval(-lead)
+            guard fireDate > now else { return nil }
+            return SigningExpiryReminder(identifier: identifier, fireDate: fireDate, title: title)
+        }
+    }
+}
+
+@MainActor
+enum SigningExpiryReminderScheduler {
+    static func sync(
+        status: SigningExpiryStatus = SigningExpiry.current(),
+        now: Date = Date(),
+        center: UNUserNotificationCenter = .current()
+    ) async {
+        guard case .remaining = status.kind, let expiration = status.expirationDate else {
+            center.removePendingNotificationRequests(withIdentifiers: SigningExpiryReminder.identifiers)
+            return
+        }
+        let reminders = SigningExpiryReminder.upcoming(expirationDate: expiration, now: now)
+        guard !reminders.isEmpty else {
+            center.removePendingNotificationRequests(withIdentifiers: SigningExpiryReminder.identifiers)
+            return
+        }
+        guard await authorizationGranted(center) else { return }
+        await replace(reminders, on: center)
+    }
+
+    private static func authorizationGranted(_ center: UNUserNotificationCenter) async -> Bool {
+        let settings = await notificationSettings(center)
+        switch settings.authorizationStatus {
+        case .authorized, .provisional, .ephemeral:
+            return true
+        case .notDetermined:
+            return await requestAuthorization(center)
+        default:
+            return false
+        }
+    }
+
+    private static func replace(_ reminders: [SigningExpiryReminder], on center: UNUserNotificationCenter) async {
+        center.removePendingNotificationRequests(withIdentifiers: SigningExpiryReminder.identifiers)
+        for reminder in reminders {
+            let content = UNMutableNotificationContent()
+            content.title = reminder.title
+            content.body = SigningExpiryReminder.body
+            content.sound = .default
+            let parts = Calendar.current.dateComponents(
+                [.year, .month, .day, .hour, .minute],
+                from: reminder.fireDate
+            )
+            let trigger = UNCalendarNotificationTrigger(dateMatching: parts, repeats: false)
+            let request = UNNotificationRequest(identifier: reminder.identifier, content: content, trigger: trigger)
+            await add(request, to: center)
+        }
+    }
+
+    private static func notificationSettings(_ center: UNUserNotificationCenter) async -> UNNotificationSettings {
+        await withCheckedContinuation { continuation in
+            center.getNotificationSettings { settings in
+                continuation.resume(returning: settings)
+            }
+        }
+    }
+
+    private static func requestAuthorization(_ center: UNUserNotificationCenter) async -> Bool {
+        await withCheckedContinuation { continuation in
+            center.requestAuthorization(options: [.alert, .sound]) { granted, _ in
+                continuation.resume(returning: granted)
+            }
+        }
+    }
+
+    private static func add(_ request: UNNotificationRequest, to center: UNUserNotificationCenter) async {
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            center.add(request) { _ in
+                continuation.resume()
+            }
+        }
     }
 }

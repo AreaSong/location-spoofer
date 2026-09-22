@@ -86,8 +86,69 @@ final class SigningExpiryTests: XCTestCase {
         XCTAssertNil(SigningExpiry.parseExpirationDate(from: Data("not a profile".utf8)))
     }
 
-    private func date(_ year: Int, _ month: Int, _ day: Int, _ hour: Int) -> Date {
-        calendar.date(from: DateComponents(year: year, month: month, day: day, hour: hour))!
+    func testCountdownUsesRemainingClockTime() {
+        let now = date(2026, 9, 10, 10)
+        let expiration = date(2026, 9, 16, 13)
+        XCTAssertEqual(
+            SigningExpiryCountdown.text(until: expiration, now: now, calendar: calendar),
+            "签名还剩 6 天 3 小时"
+        )
+    }
+
+    func testCountdownDropsZeroHours() {
+        let now = date(2026, 9, 15, 9)
+        let expiration = date(2026, 9, 17, 9)
+        XCTAssertEqual(
+            SigningExpiryCountdown.text(until: expiration, now: now, calendar: calendar),
+            "签名还剩 2 天"
+        )
+    }
+
+    func testCountdownShowsHoursThenMinutes() {
+        let now = date(2026, 9, 17, 10)
+        XCTAssertEqual(
+            SigningExpiryCountdown.text(until: date(2026, 9, 17, 15), now: now, calendar: calendar),
+            "签名还剩 5 小时"
+        )
+        XCTAssertEqual(
+            SigningExpiryCountdown.text(until: date(2026, 9, 17, 15, minute: 20), now: now, calendar: calendar),
+            "签名还剩 5 小时 20 分"
+        )
+        XCTAssertEqual(
+            SigningExpiryCountdown.text(until: date(2026, 9, 17, 10, minute: 12), now: now, calendar: calendar),
+            "签名还剩 12 分钟"
+        )
+    }
+
+    func testCountdownExpiresWithinTheMinute() {
+        let now = date(2026, 9, 17, 10)
+        let expiration = now.addingTimeInterval(30)
+        XCTAssertEqual(
+            SigningExpiryCountdown.text(until: expiration, now: now, calendar: calendar),
+            "签名即将到期"
+        )
+        XCTAssertNil(SigningExpiryCountdown.text(until: now, now: now, calendar: calendar))
+    }
+
+    func testReminderPlanKeepsOnlyFutureLeadTimes() {
+        let expiration = date(2026, 9, 17, 18)
+        let now = date(2026, 9, 16, 10)
+        let reminders = SigningExpiryReminder.upcoming(expirationDate: expiration, now: now)
+        XCTAssertEqual(reminders.map(\.identifier), ["signing-expiry.1d", "signing-expiry.2h"])
+        XCTAssertEqual(reminders.map(\.title), ["免费签名还剩 1 天", "免费签名即将到期"])
+        XCTAssertTrue(reminders.allSatisfy { $0.fireDate > now && $0.fireDate < expiration })
+    }
+
+    func testReminderPlanIsEmptyAfterTheLastLeadTime() {
+        let expiration = date(2026, 9, 17, 18)
+        let now = date(2026, 9, 17, 17)
+        XCTAssertTrue(SigningExpiryReminder.upcoming(expirationDate: expiration, now: now).isEmpty)
+    }
+
+    private func date(_ year: Int, _ month: Int, _ day: Int, _ hour: Int, minute: Int = 0) -> Date {
+        calendar.date(from: DateComponents(
+            year: year, month: month, day: day, hour: hour, minute: minute
+        ))!
     }
 }
 

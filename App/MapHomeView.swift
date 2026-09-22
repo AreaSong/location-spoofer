@@ -248,12 +248,12 @@ struct MapHomeView: View {
 
             VStack(spacing: 10) {
                 topControls
+                if locationUseBlock == nil {
+                    signingExpiryHomeNotice
+                }
                 if let block = locationUseBlock {
                     locationUnavailableOverlay(block)
                         .onAppear { pauseRouteIfLocationBlocked() }
-                }
-                if locationUseBlock == nil, let message = signingExpiryMapMessage {
-                    signingExpiryBannerView(message)
                 }
                 if !searchResults.isEmpty || !searchError.isEmpty { searchResultList }
                 Spacer()

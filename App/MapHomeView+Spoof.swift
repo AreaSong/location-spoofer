@@ -62,17 +62,6 @@ extension MapHomeView {
         return SigningExpiry.current()
     }
 
-    var signingExpiryMapMessage: String? {
-        let status = signingExpiryStatus
-        guard !status.isExpired,
-              let message = status.mapBannerMessage,
-              let expiration = status.expirationDate,
-              !signingExpiryBanner.isBannerDismissed(expirationDate: expiration, now: Date()) else {
-            return nil
-        }
-        return message
-    }
-
     func locationUnavailableOverlay(_ block: LocationUseBlock) -> some View {
         VStack(spacing: 16) {
             Image(systemName: "exclamationmark.triangle.fill")
@@ -94,35 +83,6 @@ extension MapHomeView {
         .padding(24)
         .frame(maxWidth: .infinity)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-    }
-
-    func signingExpiryBannerView(_ message: String) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Button {
-                showSigningResignSheet = true
-            } label: {
-                Label(message, systemImage: "calendar.badge.exclamationmark")
-                    .font(.footnote)
-                    .foregroundStyle(.orange)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            .buttonStyle(.plain)
-            HStack {
-                Button("如何重签") {
-                    showSigningResignSheet = true
-                }
-                .font(.footnote.weight(.semibold))
-                if let expiration = signingExpiryStatus.expirationDate {
-                    Button("今天不再提示") {
-                        signingExpiryBanner.dismissBanner(expirationDate: expiration, now: Date())
-                    }
-                    .font(.footnote.weight(.semibold))
-                }
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(12)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
     }
 
     func beginLocationOperation(target overrideTarget: FavoriteLocation? = nil) {

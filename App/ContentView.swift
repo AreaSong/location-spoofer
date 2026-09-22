@@ -10,7 +10,7 @@ struct ContentView: View {
     @State private var updatePrompt: AppUpdatePrompt?
     @State private var requiredUpdatePrompt: AppUpdatePrompt?
 
-    enum AppPhase { case splash, setup, map }
+    enum AppPhase: Equatable { case splash, setup, map }
 
     var body: some View {
         Group {
@@ -38,8 +38,15 @@ struct ContentView: View {
         }
         .task { await bootstrap() }
         .task { await checkForUpdates() }
+        .onChange(of: phase) { newPhase in
+            guard newPhase == .map else { return }
+            Task { await SigningExpiryReminderScheduler.sync() }
+        }
         .onChange(of: scenePhase) { newPhase in
             if newPhase == .active {
+                if phase == .map {
+                    Task { await SigningExpiryReminderScheduler.sync() }
+                }
                 if ProxyManager.shared.isRunning {
                     BackgroundKeepAlive.shared.start()
                 }
