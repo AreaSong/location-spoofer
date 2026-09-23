@@ -297,20 +297,7 @@ struct MapHomeView: View {
                 }
                 .padding(.trailing, 16)
                 .padding(.bottom, 8)
-                if route.phase != .inactive {
-                    RoutePlaybackPanel(
-                        route: route,
-                        clock: route.clock,
-                        currentPair: currentSelectionPair,
-                        onPlay: playRoute,
-                        onExit: exitRoute,
-                        onSave: promptSaveRoute,
-                        onOpenSaved: openSavedRoutes
-                    )
-                    routePlaybackSpoofControls
-                } else {
-                    bottomControls
-                }
+                bottomControls
             }
             .padding(.horizontal, 16)
             .padding(.top, 12)
@@ -638,6 +625,12 @@ struct MapHomeView: View {
                 }
             },
             allFavoritesButton: { allFavoritesButton },
+            routePanel: { routeCard },
+            showsRoute: route.phase != .inactive,
+            onShowSpot: {
+                if route.phase != .inactive { exitRoute() }
+            },
+            onShowRoute: enterRoute,
             onHelp: {
                 if spoofState == .active {
                     activeTip = .activation

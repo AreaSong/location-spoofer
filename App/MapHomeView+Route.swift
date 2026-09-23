@@ -51,6 +51,22 @@ extension MapHomeView {
         clearRouteLocationIfNeeded(from: previous, to: route.phase)
     }
 
+    var routeCard: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            RoutePlaybackPanel(
+                route: route,
+                clock: route.clock,
+                currentPair: currentSelectionPair,
+                onPlay: playRoute,
+                onExit: exitRoute,
+                onSave: promptSaveRoute,
+                onOpenSaved: openSavedRoutes,
+                embedded: true
+            )
+            routePlaybackSpoofControls
+        }
+    }
+
     @ViewBuilder
     var routePlaybackSpoofControls: some View {
         if spoofState != .idle {

@@ -1,5 +1,27 @@
 import SwiftUI
 
+private struct RouteSpeedPreset {
+    let title: String
+    let kilometersPerHour: Double
+    static let all = [
+        RouteSpeedPreset(title: "3", kilometersPerHour: 3),
+        RouteSpeedPreset(title: "5", kilometersPerHour: 5),
+        RouteSpeedPreset(title: "8", kilometersPerHour: 8),
+        RouteSpeedPreset(title: "15", kilometersPerHour: 15)
+    ]
+}
+
+private struct RouteOffsetPreset {
+    let title: String
+    let meters: Double
+    static let all = [
+        RouteOffsetPreset(title: "贴路", meters: 0),
+        RouteOffsetPreset(title: "15米", meters: 15),
+        RouteOffsetPreset(title: "30米", meters: 30),
+        RouteOffsetPreset(title: "50米", meters: 50)
+    ]
+}
+
 struct RoutePlaybackPanel: View {
     @ObservedObject var route: RoutePlaybackController
     @ObservedObject var clock: RoutePlaybackClock
@@ -8,9 +30,28 @@ struct RoutePlaybackPanel: View {
     let onExit: () -> Void
     let onSave: () -> Void
     let onOpenSaved: () -> Void
+    var embedded = false
     @State private var showsSpeedOffset = false
 
     var body: some View {
+        controls
+            .padding(embedded ? 8 : 10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(panelChrome)
+    }
+
+    @ViewBuilder
+    private var panelChrome: some View {
+        if embedded {
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(Color.secondary.opacity(0.08))
+        } else {
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(.regularMaterial)
+        }
+    }
+
+    private var controls: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
                 Label("走路", systemImage: "figure.walk")
@@ -79,13 +120,34 @@ struct RoutePlaybackPanel: View {
                     .lineLimit(2)
             }
         }
-        .padding(10)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
     }
 
     private var speedOffsetSection: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("速度 km/h").font(.caption2.weight(.semibold)).foregroundStyle(.secondary)
+            HStack(spacing: 6) {
+                ForEach(RouteSpeedPreset.all, id: \.title) { preset in
+                    valueChip(
+                        preset.title,
+                        selected: abs(route.speedKilometersPerHour - preset.kilometersPerHour) < 0.05,
+                        disabled: route.phase == .playing
+                    ) {
+                        route.setSpeedKilometersPerHour(preset.kilometersPerHour)
+                    }
+                }
+            }
+            Text("偏移").font(.caption2.weight(.semibold)).foregroundStyle(.secondary)
+            HStack(spacing: 6) {
+                ForEach(RouteOffsetPreset.all, id: \.title) { preset in
+                    valueChip(
+                        preset.title,
+                        selected: abs(route.offsetMeters - preset.meters) < 0.5,
+                        disabled: false
+                    ) {
+                        route.setOffsetMeters(preset.meters)
+                    }
+                }
+            }
             Button {
                 showsSpeedOffset.toggle()
             } label: {
@@ -112,6 +174,20 @@ struct RoutePlaybackPanel: View {
                 Slider(value: offsetBinding, in: 0...80, step: 5)
             }
         }
+    }
+
+    private func valueChip(_ title: String, selected: Bool, disabled: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title)
+                .font(.caption.weight(.semibold))
+                .lineLimit(1)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 6)
+                .foregroundStyle(selected ? Color.white : Color.primary)
+                .background(selected ? Color.accentColor : Color.secondary.opacity(0.12), in: Capsule())
+        }
+        .buttonStyle(.plain)
+        .disabled(disabled)
     }
 
     private var speedOffsetSummary: String {

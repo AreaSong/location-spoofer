@@ -50,12 +50,23 @@ final class IdeviceLocationClient: @unchecked Sendable {
         _ = deviceAddress
         return .rejected
         #else
-        if let simulation {
+        if simulation != nil {
             if location_simulation_set(simulation, latitude, longitude) == nil {
                 return nil
             }
-            releaseSession()
+            // 旧套接字已死。先清掉本地句柄，等手机放开上一条隧道，再重新连接。
+            discardSession()
+            waitForDeviceToDropTunnel()
         }
+        let failure = openSession(
+            latitude: latitude,
+            longitude: longitude,
+            pairingPath: pairingPath,
+            deviceAddress: deviceAddress
+        )
+        guard failure == .tunnel else { return failure }
+        discardSession()
+        waitForDeviceToDropTunnel()
         return openSession(
             latitude: latitude,
             longitude: longitude,
@@ -67,15 +78,24 @@ final class IdeviceLocationClient: @unchecked Sendable {
 
     private func clearLocked() {
         #if !targetEnvironment(simulator)
-        guard let simulation else { return }
-        if let error = location_simulation_clear(simulation) {
-            idevice_error_free(error)
-        }
-        releaseSession()
+        discardSession()
         #endif
     }
 
     #if !targetEnvironment(simulator)
+    private func discardSession() {
+        if let simulation {
+            if let error = location_simulation_clear(simulation) {
+                idevice_error_free(error)
+            }
+        }
+        releaseSession()
+    }
+
+    private func waitForDeviceToDropTunnel() {
+        Thread.sleep(forTimeInterval: 0.5)
+    }
+
     private func openSession(
         latitude: Double,
         longitude: Double,

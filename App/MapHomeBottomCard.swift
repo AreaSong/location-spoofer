@@ -1,6 +1,6 @@
 import SwiftUI
 
-struct MapHomeBottomCard<CoordinateRows: View, RecentChips: View, FavoriteChips: View, AllFavorites: View>: View {
+struct MapHomeBottomCard<CoordinateRows: View, RecentChips: View, FavoriteChips: View, AllFavorites: View, RoutePanel: View>: View {
     let displayName: String
     let mapSystemName: String
     let spoofState: SpoofState
@@ -21,6 +21,10 @@ struct MapHomeBottomCard<CoordinateRows: View, RecentChips: View, FavoriteChips:
     let onOpenSettings: () -> Void
     let onMainTap: () -> Void
     let onSwitchHere: () -> Void
+    let showsRoute: Bool
+    let onShowSpot: () -> Void
+    let onShowRoute: () -> Void
+    let routePanel: RoutePanel
 
     init(
         displayName: String,
@@ -38,6 +42,10 @@ struct MapHomeBottomCard<CoordinateRows: View, RecentChips: View, FavoriteChips:
         @ViewBuilder recentChips: () -> RecentChips,
         @ViewBuilder favoriteChips: () -> FavoriteChips,
         @ViewBuilder allFavoritesButton: () -> AllFavorites,
+        @ViewBuilder routePanel: () -> RoutePanel,
+        showsRoute: Bool,
+        onShowSpot: @escaping () -> Void,
+        onShowRoute: @escaping () -> Void,
         onHelp: @escaping () -> Void,
         onToggleFavorite: @escaping () -> Void,
         onOpenSettings: @escaping () -> Void,
@@ -59,6 +67,10 @@ struct MapHomeBottomCard<CoordinateRows: View, RecentChips: View, FavoriteChips:
         self.recentChips = recentChips()
         self.favoriteChips = favoriteChips()
         self.allFavoritesButton = allFavoritesButton()
+        self.routePanel = routePanel()
+        self.showsRoute = showsRoute
+        self.onShowSpot = onShowSpot
+        self.onShowRoute = onShowRoute
         self.onHelp = onHelp
         self.onToggleFavorite = onToggleFavorite
         self.onOpenSettings = onOpenSettings
@@ -97,7 +109,7 @@ struct MapHomeBottomCard<CoordinateRows: View, RecentChips: View, FavoriteChips:
                 .disabled(favoriteSaveDisabled)
                 .accessibilityLabel(isFavoriteSelected ? "已收藏，点击取消收藏" : "收藏当前选点")
             }
-            if hasRecents {
+            if !showsRoute && hasRecents {
                 HStack(spacing: 8) {
                     Text("最近")
                         .font(.caption2.weight(.semibold))
@@ -110,18 +122,20 @@ struct MapHomeBottomCard<CoordinateRows: View, RecentChips: View, FavoriteChips:
                     }
                 }
             }
-            if favoritesEmpty {
-                HStack {
-                    Text("搜索或点击地图选点后，保存为收藏。").font(.footnote).foregroundStyle(.secondary)
-                    Spacer()
-                    allFavoritesButton
-                }
-            } else {
-                HStack(spacing: 8) {
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 8) { favoriteChips }.padding(.vertical, 2)
+            if !showsRoute {
+                if favoritesEmpty {
+                    HStack {
+                        Text("搜索或点击地图选点后，保存为收藏。").font(.footnote).foregroundStyle(.secondary)
+                        Spacer()
+                        allFavoritesButton
                     }
-                    allFavoritesButton
+                } else {
+                    HStack(spacing: 8) {
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 8) { favoriteChips }.padding(.vertical, 2)
+                        }
+                        allFavoritesButton
+                    }
                 }
             }
             Button(action: onOpenSettings) {
@@ -133,7 +147,43 @@ struct MapHomeBottomCard<CoordinateRows: View, RecentChips: View, FavoriteChips:
             }
             .buttonStyle(.plain)
             .accessibilityLabel(runtimeStatusText)
-            HStack(spacing: 10) {
+            actionSwitcher
+            if showsRoute {
+                routePanel
+            } else {
+                spotActions
+            }
+        }
+        .padding(16)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .shadow(color: .black.opacity(0.16), radius: 14, y: 6)
+        .animation(.spring(response: 0.35, dampingFraction: 0.86), value: showsRoute)
+    }
+
+    private var actionSwitcher: some View {
+        HStack(spacing: 6) {
+            switchChip(title: "定点", systemImage: "location.fill", selected: !showsRoute, action: onShowSpot)
+            switchChip(title: "走路", systemImage: "figure.walk", selected: showsRoute, action: onShowRoute)
+        }
+        .padding(4)
+        .background(Color.secondary.opacity(0.12), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+    }
+
+    private func switchChip(title: String, systemImage: String, selected: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Label(title, systemImage: systemImage)
+                .font(.subheadline.weight(.semibold))
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 8)
+                .foregroundStyle(selected ? Color.white : Color.primary)
+                .background(selected ? Color.accentColor : Color.clear, in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+
+    private var spotActions: some View {
+        HStack(spacing: 10) {
                 Button(action: onMainTap) {
                     HStack(spacing: 6) {
                         if spoofState == .verifying {
@@ -165,9 +215,5 @@ struct MapHomeBottomCard<CoordinateRows: View, RecentChips: View, FavoriteChips:
             }
             .animation(.spring(response: 0.35, dampingFraction: 0.7), value: needsSwitchButton)
             .padding(.top, 4)
-        }
-        .padding(16)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
-        .shadow(color: .black.opacity(0.16), radius: 14, y: 6)
     }
 }
