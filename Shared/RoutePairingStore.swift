@@ -4,6 +4,7 @@ enum RoutePairingImportError: Error, Equatable {
     case invalidContents
 }
 
+/// 配对文件是设备的开发者信任凭证：只在首次解锁后可读，且不进入 iCloud / 电脑备份。
 final class RoutePairingStore {
     static let fileName = "rp_pairing_file.plist"
 
@@ -21,13 +22,19 @@ final class RoutePairingStore {
         FileManager.default.fileExists(atPath: pairingURL.path)
     }
 
+    var isExcludedFromBackup: Bool {
+        (try? pairingURL.resourceValues(forKeys: [.isExcludedFromBackupKey]))?.isExcludedFromBackup == true
+    }
+
     func install(_ data: Data) throws {
         guard Self.looksLikePairingPlist(data) else {
             throw RoutePairingImportError.invalidContents
         }
         try FileManager.default.createDirectory(at: directoryURL, withIntermediateDirectories: true)
-        try data.write(to: pairingURL, options: .atomic)
+        try data.write(to: pairingURL, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
         try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: pairingURL.path)
+        try Self.excludeFromBackup(directoryURL)
+        try Self.excludeFromBackup(pairingURL)
     }
 
     func remove() throws {
@@ -44,6 +51,13 @@ final class RoutePairingStore {
             return false
         }
         return text.hasPrefix("<?xml") && text.contains("<plist") && text.contains("<dict>")
+    }
+
+    private static func excludeFromBackup(_ url: URL) throws {
+        var url = url
+        var values = URLResourceValues()
+        values.isExcludedFromBackup = true
+        try url.setResourceValues(values)
     }
 
     private static func defaultDirectoryURL() -> URL {

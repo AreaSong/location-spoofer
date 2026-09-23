@@ -1,6 +1,6 @@
 import SwiftUI
 
-private struct RouteSpeedPreset {
+private struct RouteSpeedPreset: Hashable {
     let title: String
     let kilometersPerHour: Double
     static let all = [
@@ -11,7 +11,7 @@ private struct RouteSpeedPreset {
     ]
 }
 
-private struct RouteOffsetPreset {
+private struct RouteOffsetPreset: Hashable {
     let title: String
     let meters: Double
     static let all = [
@@ -20,6 +20,40 @@ private struct RouteOffsetPreset {
         RouteOffsetPreset(title: "30米", meters: 30),
         RouteOffsetPreset(title: "50米", meters: 50)
     ]
+}
+
+private struct RouteChoiceBar<Item: Hashable>: View {
+    let items: [Item]
+    let title: (Item) -> String
+    let isSelected: (Item) -> Bool
+    var isDisabled = false
+    let onSelect: (Item) -> Void
+
+    var body: some View {
+        HStack(spacing: 6) {
+            ForEach(items, id: \.self) { item in
+                Button {
+                    onSelect(item)
+                } label: {
+                    Text(title(item))
+                        .font(.subheadline.weight(.semibold))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.75)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 6)
+                        .foregroundStyle(isSelected(item) ? Color.accentColor : Color.primary)
+                        .background(
+                            isSelected(item) ? Color.accentColor.opacity(0.16) : Color.clear,
+                            in: RoundedRectangle(cornerRadius: 11, style: .continuous)
+                        )
+                }
+                .buttonStyle(.plain)
+                .disabled(isDisabled)
+            }
+        }
+        .padding(4)
+        .background(Color.secondary.opacity(0.12), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+    }
 }
 
 struct RoutePlaybackPanel: View {
@@ -35,184 +69,201 @@ struct RoutePlaybackPanel: View {
 
     var body: some View {
         controls
-            .padding(embedded ? 8 : 10)
+            .padding(embedded ? 0 : 10)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(panelChrome)
     }
 
     @ViewBuilder
     private var panelChrome: some View {
-        if embedded {
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(Color.secondary.opacity(0.08))
-        } else {
+        if !embedded {
             RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .fill(.regularMaterial)
         }
     }
 
     private var controls: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 8) {
-                Label("走路", systemImage: "figure.walk")
-                    .font(.subheadline.weight(.semibold))
-                Picker("方式", selection: travelModeBinding) {
-                    ForEach(RouteTravelMode.allCases) { mode in
-                        Text(mode.displayName).tag(mode)
-                    }
-                }
-                .pickerStyle(.segmented)
-                .disabled(route.phase == .playing || route.isRouting)
-                Button("已存") { onOpenSaved() }
-                    .font(.footnote.weight(.semibold))
-                    .disabled(route.phase == .playing)
-                Button("退出") { onExit() }
-                    .font(.footnote.weight(.semibold))
+        VStack(alignment: .leading, spacing: 10) {
+            actionRow
+            settingsDisclosure
+            if showsSpeedOffset {
+                speedOffsetSection
             }
-            Picker("重复", selection: repeatModeBinding) {
-                ForEach(RouteRepeatMode.allCases) { mode in
-                    Text(mode.displayName).tag(mode)
-                }
-            }
-            .pickerStyle(.segmented)
-            speedOffsetSection
-            switch route.phase {
-            case .playing:
-                HStack(spacing: 8) {
-                    ProgressView(value: clock.progress)
-                    Button("暂停") { route.pause() }
-                        .buttonStyle(.borderedProminent)
-                        .controlSize(.small)
-                }
-            case .paused, .finished:
-                HStack(spacing: 8) {
-                    ProgressView(value: clock.progress)
-                    saveButton
-                    playButton
-                }
-            default:
-                HStack(spacing: 8) {
-                    Button("起点") { route.setStart(currentPair) }
-                        .buttonStyle(.bordered)
-                    Button("终点") { route.setEnd(currentPair) }
-                        .buttonStyle(.bordered)
-                    Button("途经") { route.addVia(currentPair) }
-                        .buttonStyle(.bordered)
-                        .disabled(!route.canEditVias)
-                    if !route.vias.isEmpty {
-                        Button("撤销") { route.removeLastVia() }
-                            .font(.footnote.weight(.semibold))
-                    }
-                }
-                HStack(spacing: 8) {
-                    Button("倒着走") { route.reverseDirection() }
-                        .font(.footnote.weight(.semibold))
-                        .disabled(!route.canReverse)
-                    saveButton
-                    Spacer(minLength: 0)
-                    playButton
-                }
+            if route.phase != .playing {
+                utilityRow
             }
             if !clock.statusMessage.isEmpty {
                 Text(clock.statusMessage)
-                    .font(.caption2)
+                    .font(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(2)
             }
         }
     }
 
-    private var speedOffsetSection: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("速度 km/h").font(.caption2.weight(.semibold)).foregroundStyle(.secondary)
-            HStack(spacing: 6) {
-                ForEach(RouteSpeedPreset.all, id: \.title) { preset in
-                    valueChip(
-                        preset.title,
-                        selected: abs(route.speedKilometersPerHour - preset.kilometersPerHour) < 0.05,
-                        disabled: route.phase == .playing
-                    ) {
-                        route.setSpeedKilometersPerHour(preset.kilometersPerHour)
-                    }
-                }
+    @ViewBuilder
+    private var actionRow: some View {
+        switch route.phase {
+        case .playing:
+            VStack(spacing: 10) {
+                ProgressView(value: clock.progress)
+                primaryButton("暂停", disabled: false) { route.pause() }
             }
-            Text("偏移").font(.caption2.weight(.semibold)).foregroundStyle(.secondary)
-            HStack(spacing: 6) {
-                ForEach(RouteOffsetPreset.all, id: \.title) { preset in
-                    valueChip(
-                        preset.title,
-                        selected: abs(route.offsetMeters - preset.meters) < 0.5,
-                        disabled: false
-                    ) {
-                        route.setOffsetMeters(preset.meters)
-                    }
-                }
+        case .paused, .finished:
+            VStack(spacing: 10) {
+                ProgressView(value: clock.progress)
+                primaryButton(route.phase == .paused ? "继续走" : "开始走", disabled: playDisabled) { onPlay() }
             }
-            Button {
-                showsSpeedOffset.toggle()
-            } label: {
-                HStack(spacing: 6) {
-                    Text(speedOffsetSummary)
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                    Spacer(minLength: 0)
-                    Image(systemName: showsSpeedOffset ? "chevron.up" : "chevron.down")
-                        .font(.caption2.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                }
-            }
-            .buttonStyle(.plain)
-            if showsSpeedOffset {
-                Text("速度 \(RoutePlayback.formattedSpeed(kilometersPerHour: route.speedKilometersPerHour))")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                Slider(value: speedBinding, in: 1...40, step: 0.5)
-                    .disabled(route.phase == .playing)
-                Text(offsetLabel)
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                Slider(value: offsetBinding, in: 0...80, step: 5)
+        default:
+            VStack(spacing: 10) {
+                pinRow
+                primaryButton("开始走", disabled: playDisabled) { onPlay() }
             }
         }
     }
 
-    private func valueChip(_ title: String, selected: Bool, disabled: Bool, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Text(title)
-                .font(.caption.weight(.semibold))
-                .lineLimit(1)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 6)
-                .foregroundStyle(selected ? Color.white : Color.primary)
-                .background(selected ? Color.accentColor : Color.secondary.opacity(0.12), in: Capsule())
+    private var settingsDisclosure: some View {
+        Button {
+            showsSpeedOffset.toggle()
+        } label: {
+            HStack(spacing: 6) {
+                Text(routeSummary)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                Spacer(minLength: 0)
+                Image(systemName: showsSpeedOffset ? "chevron.up" : "chevron.down")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+            }
         }
         .buttonStyle(.plain)
+    }
+
+    private var routeSummary: String {
+        let speed = RoutePlayback.formattedSpeed(kilometersPerHour: route.speedKilometersPerHour)
+        let offset = route.offsetMeters <= 0 ? "贴路" : "偏移 \(Int(route.offsetMeters.rounded())) 米"
+        return "\(route.travelMode.displayName) · \(speed) · \(offset) · \(route.repeatMode.displayName)"
+    }
+
+    private var pinRow: some View {
+        HStack(spacing: 6) {
+            Button("起点") { route.setStart(currentPair) }
+                .font(.subheadline.weight(.semibold))
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 8)
+            Button("终点") { route.setEnd(currentPair) }
+                .font(.subheadline.weight(.semibold))
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 8)
+            Button("途经") { route.addVia(currentPair) }
+                .font(.subheadline.weight(.semibold))
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 8)
+                .disabled(!route.canEditVias)
+                .opacity(route.canEditVias ? 1 : 0.4)
+            if !route.vias.isEmpty {
+                Button("撤销") { route.removeLastVia() }
+                    .font(.subheadline.weight(.semibold))
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 8)
+            }
+        }
+        .padding(4)
+        .background(Color.secondary.opacity(0.12), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+    }
+
+    private var utilityRow: some View {
+        HStack(spacing: 8) {
+            Button("倒着走") { route.reverseDirection() }
+                .font(.system(size: 10, weight: .medium))
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(Color.secondary.opacity(0.1), in: Capsule())
+                .disabled(!route.canReverse)
+                .opacity(route.canReverse ? 1 : 0.4)
+            Button("保存") { onSave() }
+                .font(.system(size: 10, weight: .medium))
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(Color.secondary.opacity(0.1), in: Capsule())
+                .disabled(!route.canPlay || route.isRouting || route.waitingForActivation)
+            Button("已存") { onOpenSaved() }
+                .font(.system(size: 10, weight: .medium))
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(Color.secondary.opacity(0.1), in: Capsule())
+                .disabled(route.phase == .playing)
+            if !embedded {
+                Button("退出") { onExit() }
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Color.secondary.opacity(0.1), in: Capsule())
+            }
+            Spacer(minLength: 0)
+        }
+    }
+
+    private var speedOffsetSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            RouteChoiceBar(
+                items: Array(RouteTravelMode.allCases),
+                title: \.displayName,
+                isSelected: { $0 == route.travelMode },
+                isDisabled: route.phase == .playing || route.isRouting,
+                onSelect: { route.applyTravelMode($0) }
+            )
+            RouteChoiceBar(
+                items: Array(RouteRepeatMode.allCases),
+                title: \.displayName,
+                isSelected: { $0 == route.repeatMode },
+                onSelect: { route.applyRepeatMode($0) }
+            )
+            Text("速度 km/h")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            RouteChoiceBar(
+                items: RouteSpeedPreset.all,
+                title: \.title,
+                isSelected: { abs(route.speedKilometersPerHour - $0.kilometersPerHour) < 0.05 },
+                isDisabled: route.phase == .playing,
+                onSelect: { route.setSpeedKilometersPerHour($0.kilometersPerHour) }
+            )
+            Slider(value: speedBinding, in: 1...40, step: 0.5)
+                .disabled(route.phase == .playing)
+            Text("偏移")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            RouteChoiceBar(
+                items: RouteOffsetPreset.all,
+                title: \.title,
+                isSelected: { abs(route.offsetMeters - $0.meters) < 0.5 },
+                onSelect: { route.setOffsetMeters($0.meters) }
+            )
+            Slider(value: offsetBinding, in: 0...80, step: 5)
+        }
+    }
+
+    private func primaryButton(_ title: String, disabled: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Label(title, systemImage: "figure.walk")
+                .font(.headline)
+                .lineLimit(1)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 14)
+        }
+        .background(Color.accentColor.opacity(disabled ? 0.45 : 1), in: RoundedRectangle(cornerRadius: 14))
+        .foregroundStyle(.white)
         .disabled(disabled)
     }
 
-    private var speedOffsetSummary: String {
-        "\(RoutePlayback.formattedSpeed(kilometersPerHour: route.speedKilometersPerHour)) · \(offsetLabel)"
-    }
-
-    private var offsetLabel: String {
-        if route.offsetMeters <= 0 {
-            return "偏移 0 米，贴着路走"
-        }
-        return "偏移 \(Int(route.offsetMeters.rounded())) 米"
-    }
-
-    private var travelModeBinding: Binding<RouteTravelMode> {
-        Binding(
-            get: { route.travelMode },
-            set: { route.applyTravelMode($0) }
-        )
-    }
-
-    private var repeatModeBinding: Binding<RouteRepeatMode> {
-        Binding(
-            get: { route.repeatMode },
-            set: { route.applyRepeatMode($0) }
-        )
+    private var playDisabled: Bool {
+        !route.canPlay || route.waitingForActivation || route.isRouting
     }
 
     private var speedBinding: Binding<Double> {
@@ -227,18 +278,5 @@ struct RoutePlaybackPanel: View {
             get: { route.offsetMeters },
             set: { route.setOffsetMeters($0) }
         )
-    }
-
-    private var saveButton: some View {
-        Button("保存") { onSave() }
-            .font(.footnote.weight(.semibold))
-            .disabled(!route.canPlay || route.isRouting || route.waitingForActivation)
-    }
-
-    private var playButton: some View {
-        Button(route.phase == .paused ? "继续走" : "开始走") { onPlay() }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.small)
-            .disabled(!route.canPlay || route.waitingForActivation || route.isRouting)
     }
 }

@@ -61,6 +61,9 @@ protocol DeveloperLocationPushing: AnyObject {
 }
 
 enum RouteLocationLaunch {
+    static let spoofSessionFailureMessage = "坐标写入失败，路线已暂停。"
+
+    /// 开发者隧道：就绪后每个采样都推送。
     @MainActor
     static func prepare(
         _ route: RoutePlaybackController,
@@ -73,6 +76,13 @@ enum RouteLocationLaunch {
         route.ignoresWriteGate = true
         route.pushFailureMessage = RouteLocationPushFailure.rejected.message
         return nil
+    }
+
+    /// 本机代理和第三方模式：经代理写入，沿用 8 米 / 5 秒的写入节流。
+    @MainActor
+    static func prepareForSpoofSession(_ route: RoutePlaybackController) {
+        route.ignoresWriteGate = false
+        route.pushFailureMessage = spoofSessionFailureMessage
     }
 }
 

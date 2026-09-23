@@ -171,7 +171,8 @@ for obsolete in \
   ! grep -q "$obsolete" "$SETUP" \
     || fail "setup footer must not retain dynamic label: $obsolete"
 done
-test "$(grep -c 'actionLabel("完成")' "$SETUP")" -eq 4 \
+# proxy, cert, developerTunnel, thirdPartyClient, thirdPartyImport
+test "$(grep -c 'actionLabel("完成")' "$SETUP")" -eq 5 \
   || fail "all setup footer primary actions must use the fixed 完成 label"
 
 application_line="$(grep -n 'Section("应用")' "$SETTINGS" | head -n 1 | cut -d: -f1)"

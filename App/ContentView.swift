@@ -102,7 +102,7 @@ struct ContentView: View {
             RuntimeLogger.info("APP", "Startup", "第三方代理测试模式：跳过本地 CA、代理和环境检测")
         case .developerTunnel:
             stopNetworkSpoofing()
-            RuntimeLogger.info("APP", "Startup", "LocalDevVPN 模式：跳过本地 CA、代理和第三方模块")
+            RuntimeLogger.info("APP", "Startup", "开发者隧道模式：跳过本地 CA、代理和第三方模块")
         }
         do {
             try CoordinateStorageMigration.migrateIfNeeded(favorites: FavoriteLocationStore())

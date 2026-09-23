@@ -4,6 +4,11 @@ import UIKit
 import CoreLocation
 
 extension MapHomeView {
+    /// 开发者隧道模式把路线直接推进系统定位；其余模式和定点一样，经本机代理或第三方客户端写入。
+    var routeUsesDeveloperTunnel: Bool {
+        runtimeMode.mode == .developerTunnel
+    }
+
     @MainActor
     func bindRoutePlayback() {
         route.applyCoordinate = { pair in
@@ -113,6 +118,16 @@ extension MapHomeView {
 
     func playRoute() {
         bindRoutePlayback()
+        if locationUseBlock != nil { return }
+        if routeUsesDeveloperTunnel {
+            playRouteThroughDeveloperTunnel()
+        } else {
+            playRouteThroughSpoofSession()
+        }
+    }
+
+    /// 开发者隧道：先确认隧道和配对文件就绪，再把起点推进系统定位。
+    private func playRouteThroughDeveloperTunnel() {
         routeLocation.refresh()
         if route.phase == .paused {
             guard beginRouteLocation() else { return }
@@ -123,13 +138,42 @@ extension MapHomeView {
         guard beginRouteLocation() else { return }
         route.requestPlay()
         Task { @MainActor in
-            let applied = await applyRouteCoordinate(route.current ?? start)
-            if applied {
-                route.noteActivated()
-            } else {
-                route.cancelWaiting()
-                route.statusMessage = route.pushFailureMessage
+            await activateRouteStart(route.current ?? start)
+        }
+    }
+
+    /// 本机代理和第三方模式：路线和定点走同一条写入通道。
+    /// 虚拟定位尚未开启时先用起点开启，开启成功后由 handleRouteSpoofStateChange 启动播放。
+    private func playRouteThroughSpoofSession() {
+        if spoofState == .verifying { return }
+        RouteLocationLaunch.prepareForSpoofSession(route)
+        if route.phase == .paused {
+            route.resume()
+            return
+        }
+        guard let start = route.start, route.canPlay else { return }
+        route.requestPlay()
+        if spoofState == .active {
+            Task { @MainActor in
+                await activateRouteStart(route.current ?? start)
             }
+            return
+        }
+        let startFavorite = FavoriteLocation(
+            name: "路线",
+            coordinatePair: start,
+            accuracy: LocationAccuracyStore.shared.meters
+        )
+        beginLocationOperation(target: startFavorite)
+    }
+
+    private func activateRouteStart(_ pair: CoordinatePair) async {
+        let applied = await applyRouteCoordinate(pair)
+        if applied {
+            route.noteActivated()
+        } else {
+            route.cancelWaiting()
+            route.statusMessage = route.pushFailureMessage
         }
     }
 
@@ -142,7 +186,10 @@ extension MapHomeView {
     }
 
     func applyRouteCoordinate(_ pair: CoordinatePair) async -> Bool {
-        let coordinate = pair.wgs84
+        guard routeUsesDeveloperTunnel else {
+            return await session.writeRoute(pair, offsetMeters: route.offsetMeters)
+        }
+        let coordinate = RoutePlayback.offset(pair, radiusMeters: route.offsetMeters).wgs84
         if let failure = await routeLocation.set(latitude: coordinate.latitude, longitude: coordinate.longitude) {
             route.pushFailureMessage = failure.message
             return false
@@ -150,14 +197,36 @@ extension MapHomeView {
         return true
     }
 
+    /// 只有开发者隧道会占用系统定位。路线结束后，定点仍开启就回到定点，否则清掉模拟。
     func clearRouteLocationIfNeeded(from previous: RoutePhase, to next: RoutePhase) {
-        guard RouteLocationStop.shouldClearSimulation(from: previous, to: next) else { return }
+        guard routeUsesDeveloperTunnel,
+              RouteLocationStop.shouldClearSimulation(from: previous, to: next) else { return }
+        if spoofState == .active, let latitude = activeSpoofLat, let longitude = activeSpoofLon {
+            Task { _ = await routeLocation.set(latitude: latitude, longitude: longitude) }
+            return
+        }
         Task { await routeLocation.clear() }
     }
 
     func handleRouteSpoofStateChange(_ state: SpoofState) {
-        if state == .idle, route.waitingForActivation {
-            route.cancelWaiting()
+        if routeUsesDeveloperTunnel {
+            if state == .idle, route.waitingForActivation {
+                route.cancelWaiting()
+            }
+            return
+        }
+        switch state {
+        case .active:
+            if route.waitingForActivation {
+                route.noteActivated()
+            }
+        case .idle:
+            if route.waitingForActivation {
+                route.cancelWaiting()
+            }
+            route.pause()
+        case .verifying:
+            break
         }
     }
 

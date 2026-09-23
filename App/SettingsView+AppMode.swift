@@ -70,7 +70,7 @@ extension SettingsView {
                 runtimeMode.setMode(.developerTunnel)
                 if runtimeMode.isInitialized(.developerTunnel) {
                     proxyOperationAlertTitle = "模式已切换"
-                    proxyOperationError = "已改用 LocalDevVPN。请确认隧道已连接，并已导入配对文件。"
+                    proxyOperationError = "已切换到开发者隧道模式。请确认 LocalDevVPN 隧道已连接，并已导入配对文件。"
                 } else {
                     setup.requestDeveloperOnboarding()
                     dismiss()

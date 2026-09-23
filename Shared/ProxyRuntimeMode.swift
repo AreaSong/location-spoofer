@@ -11,7 +11,7 @@ enum ProxyRuntimeMode: String, CaseIterable, Codable, Identifiable {
         switch self {
         case .localWiFi: return "APP模式"
         case .thirdParty: return "第三方代理模式"
-        case .developerTunnel: return "LocalDevVPN 模式"
+        case .developerTunnel: return "开发者隧道模式"
         }
     }
 }

@@ -34,6 +34,10 @@ dist/PaopaoLocationSpoofer-unsigned.ipa
 
 IPA 始终保持未签名。用 [Impactor](https://github.com/claration/Impactor) 签名安装即可。
 
+## 预编译依赖
+
+开发者隧道模式链接 `Vendor/idevice/libidevice_ffi.a`（约 95 MB，MIT 许可）。该文件只在 iOS 真机目标下链接，模拟器构建和单元测试不需要它。来源、用到的接口和重新构建步骤见 [Vendor/idevice/README.md](../Vendor/idevice/README.md)。
+
 ## 发布验收
 
 1. `./build.sh` 通过并输出未签名 IPA
@@ -41,7 +45,8 @@ IPA 始终保持未签名。用 [Impactor](https://github.com/claration/Impactor
 3. 真机安装后，先配置 WiFi HTTP 代理 `127.0.0.1:8888`，再按检测结果完成 CA 下载、安装和信任
 4. 环境检测通过后，选点开启虚拟定位
 5. 打开 Apple 地图验证定位是否变为虚拟位置
-6. 若失败，查看诊断页的日志信息
+6. 切换到开发者隧道模式：连上 LocalDevVPN、导入配对文件，验证定点推送和路线播放，并确认停止后真实位置立即恢复
+7. 若失败，查看诊断页的日志信息
 
 ## 发布版本
 

@@ -42,10 +42,11 @@ It provides:
 
 - Native map selection and location-scenario switching;
 - Controlled simulation of selected Apple location-service responses;
-- App Mode and Third-party Proxy Mode;
+- App Mode, Third-party Proxy Mode, and Developer Tunnel Mode;
+- Route playback: move along a road between a start, via points, and an end, with saved routes;
 - Map coordinate detection with paired WGS-84 and GCJ-02 values;
 - Recent selection history, favorite sorting, and favorite backup import/export;
-- Home runtime status (on-device proxy/keep-alive, or third-party module connection);
+- Home runtime status (on-device proxy/keep-alive, third-party module connection, or developer tunnel readiness);
 - Random perturbation, location accuracy, and App Mode motion simulation;
 - Environment checks, runtime logs, and diagnostics.
 
@@ -67,19 +68,30 @@ collection services.
 - **Location-service response simulation**
   - Processes only the Apple location-service requests defined by the project;
   - Returns the selected coordinates in a controlled test environment;
-  - Both modes can configure a random perturbation radius and reported accuracy so a test point is not always identical;
+  - App Mode and Third-party Proxy Mode can configure a random perturbation radius and reported accuracy so a test
+    point is not always identical;
   - Motion simulation is available only in App Mode;
   - Does not require changes to the target app.
 
-- **Two runtime modes**
+- **Route playback**
+  - Drop a start pin, up to five via pins, and an end pin; the path follows roads for walking or cycling;
+  - Configure speed, offset distance, and once / round-trip / loop repeat;
+  - Routes can be saved, overwritten, and reversed, up to 20 entries;
+  - Playback writes coordinates through the current runtime mode: App Mode and Third-party Proxy Mode write through
+    the proxy with an 8 m / 5 s write gate; Developer Tunnel Mode pushes every second directly into system location.
+
+- **Three runtime modes**
   - App Mode: runs the Go proxy on-device and covers only the current Wi-Fi network. After a test location is enabled,
     a background keep-alive prevents the on-device proxy from stopping after about two minutes;
-  - Third-party Proxy Mode: uses a supported proxy client and may cover Wi-Fi, 4G, or 5G depending on that client.
+  - Third-party Proxy Mode: uses a supported proxy client and may cover Wi-Fi, 4G, or 5G depending on that client;
+  - Developer Tunnel Mode: intercepts no network traffic. It calls the system's developer location-simulation service
+    through an on-device tunnel and requires iOS 18 or newer, LocalDevVPN, and a one-time pairing from a computer.
 
 - **Environment checks**
   - App Mode checks the local proxy, CA trust, and request path;
   - The home screen shows mode-specific runtime status: App Mode reports proxy and keep-alive health; Third-party Proxy
-    Mode reports module connection. Tapping the status line opens Settings;
+    Mode reports module connection; Developer Tunnel Mode reports tunnel and pairing readiness. Tapping the status line
+    opens Settings;
   - Third-party Proxy Mode checks the WLOC configuration API and module response;
   - Failures route to the relevant setup or diagnostics screen.
 
@@ -204,6 +216,44 @@ manage the third-party client's certificate, MITM, VPN, or proxy state.
 
 Do not enable App Mode interception and Third-party Proxy Mode interception at the same time.
 
+### Developer Tunnel Mode
+
+Developer Tunnel Mode intercepts no network traffic and needs no proxy, CA, or third-party module. It uses a tunnel on
+the device itself to call the location-simulation service that iOS exposes to developer tools, and pushes coordinates
+straight into system location.
+
+```text
+Map selection / route sample
+  │
+  │ WGS-84 coordinates
+  ▼
+LocalDevVPN on-device tunnel (10.7.0.1)
+  │
+  │ RemotePairing + RSD handshake
+  ▼
+iOS developer location-simulation service
+  │
+  ▼
+The system and apps read the location result
+```
+
+In this mode:
+
+- iOS 18 or newer is required;
+- The third-party app [LocalDevVPN](https://apps.apple.com/us/app/localdevvpn/id6755608044) must be installed and its
+  tunnel connected;
+- A RemotePairing file (`.plist`) is generated once on a computer and imported into the app; no computer is needed
+  afterwards;
+- The pairing file lives in the app sandbox, is readable only after first unlock, and is excluded from iCloud and
+  computer backups;
+- Both single points and route playback use this channel; playback pushes one sample per second;
+- Stopping the test location or leaving a route clears the simulation immediately, so the real location returns
+  without toggling Location Services;
+- Random perturbation and accuracy settings do not apply in this mode; route offset still applies;
+- If the tunnel drops, the app asks you to reconnect and pauses any playing route.
+
+LocalDevVPN provides the tunnel and iOS performs the simulation. The app only pairs, connects, and pushes coordinates.
+
 ## Runtime Modes
 
 ### App Mode
@@ -251,6 +301,21 @@ Module snapshots and provenance:
 The selected client owns its certificates, MITM configuration, and proxy switches. Review third-party modules and
 scripts before importing them.
 
+### Developer Tunnel Mode
+
+Suitable for:
+
+- iOS 18 and newer systems where Apple location-service MITM is no longer possible;
+- Tests that need continuous route movement without toggling Location Services;
+- Cases where changing the Wi-Fi proxy or installing a certificate is not acceptable.
+
+Requirements:
+
+- An iOS device running iOS 18 or newer;
+- LocalDevVPN installed with its on-device tunnel connected;
+- A RemotePairing file generated once on a computer and imported into the app;
+- Completion of the in-app developer tunnel guide.
+
 ## Quick Start
 
 ### 1. Install the App
@@ -288,12 +353,13 @@ corresponding developer app. A free Apple ID signature normally expires after se
 
 ### 2. First Launch
 
-1. Choose App Mode or Third-party Proxy Mode;
+1. Choose App Mode, Third-party Proxy Mode, or Developer Tunnel Mode;
 2. Complete the corresponding in-app setup;
 3. Run the environment check;
 4. Search, paste a map link, type coordinates, or tap or drag on the map to select a test location. Recent selections
    and favorites can restore a previous point;
-5. Enable the test location and verify the result in the authorized test environment.
+5. Enable the test location and verify the result in the authorized test environment;
+6. To move, switch the bottom card to “Walk”, drop a start and an end pin, and start playback.
 
 ### 3. Restore the Real Location
 
@@ -308,6 +374,11 @@ Third-party Proxy Mode:
 1. Clear the WLOC coordinates from the app;
 2. Disable the corresponding module or proxy in the third-party client;
 3. Restore HTTPS decryption and proxy settings according to the client documentation.
+
+Developer Tunnel Mode:
+
+1. Stop the test location or leave the route; the app clears the system simulation immediately;
+2. To disconnect completely, turn the tunnel off in LocalDevVPN.
 
 Location caches may take time to refresh. Restart the device if the system or target app continues to show an old
 location.
@@ -336,7 +407,8 @@ representation instead of repeatedly converting an already typed value.
 ```text
 App/        SwiftUI interface, MapKit, location, and runtime flow
 Core/       Go proxy, certificate server, and location-response handling
-Shared/     Coordinates, favorites, recent selections, logs, configuration, and shared models
+Shared/     Coordinates, favorites, recent selections, routes, logs, configuration, and shared models
+Vendor/     Prebuilt idevice static library used by Developer Tunnel Mode, with provenance notes
 Resources/  Info.plist, Entitlements, and resources
 Config/     Build configuration
 Scripts/    Build, packaging, and validation scripts
@@ -375,6 +447,9 @@ The build script generates an unsigned IPA:
 dist/PaopaoLocationSpoofer-unsigned.ipa
 ```
 
+The idevice static library linked by Developer Tunnel Mode is checked in as a prebuilt file under `Vendor/idevice/`;
+its provenance and rebuild steps are documented in that directory.
+
 Deploy it to a test device using your own signing and installation process.
 
 ## Privacy and Security Boundaries
@@ -385,14 +460,20 @@ Deploy it to a test device using your own signing and installation process.
 - Issue reports are copied by the user before being submitted to GitHub;
 - App Mode accesses the local proxy and the environment-verification URL;
 - Third-party Proxy Mode may access the upstream module URL and the WLOC configuration endpoint;
+- Developer Tunnel Mode connects only to the on-device tunnel address (10.7.0.1); the pairing file is file-protected
+  and excluded from backups;
 - The CA private key generated by the app is stored in the device Keychain;
 - Third-party MITM, certificates, and proxy behavior are owned by the selected client.
 
-Do not post real locations, authentication information, CA private keys, or complete sensitive logs in public issues.
+Do not post real locations, authentication information, CA private keys, pairing files, or complete sensitive logs in
+public issues.
 
 ## Limitations
 
 - iOS updates may change location-service behavior;
+- Starting with iOS 27 beta 6 the system blocks MITM of `gs-loc.apple.com`, so App Mode and Third-party Proxy Mode do
+  not work on those builds;
+- Developer Tunnel Mode requires iOS 18 or newer and depends on the third-party app LocalDevVPN for the tunnel;
 - MapKit coordinate output can vary with the system, region, and location environment;
 - System location caches may delay visible changes;
 - Each third-party proxy client requires separate compatibility testing;

@@ -60,8 +60,9 @@ struct MapHomeView: View {
     @ObservedObject var recentSelections = RecentSelectionStore.shared
     @ObservedObject var runtimeMode = ProxyRuntimeModeStore.shared
     @ObservedObject var thirdPartyProxy = ThirdPartyProxyManager.shared
-    @ObservedObject var thirdPartyClient = ThirdPartyProxyClientStore.shared
-    @ObservedObject var remoteConfiguration = AppRemoteConfigurationStore.shared
+    // 只在效果处理和社区提示里读取，不参与 body，不必观察。
+    let thirdPartyClient = ThirdPartyProxyClientStore.shared
+    let remoteConfiguration = AppRemoteConfigurationStore.shared
     @StateObject var realtime = RealtimeLocationManager.shared
     @StateObject var mapState: MapLocationState
     @ObservedObject var net = NetworkMonitor.shared
@@ -604,29 +605,33 @@ struct MapHomeView: View {
             spoofState: spoofState,
             isFavoriteSelected: favorites.selectedFavoriteID != nil,
             favoriteSaveDisabled: favoriteSaveTask != nil,
-            hasRecents: !recentSelections.items.isEmpty,
-            favoritesEmpty: favorites.favorites.isEmpty,
             runtimeStatusText: homeRuntimeStatusText,
             needsSwitchButton: needsSwitchButton,
             buttonTitle: buttonTitle,
             buttonColor: buttonColor,
+            showsRoute: route.phase != .inactive,
             coordinateRows: {
                 coordinateRow(label: "GCJ-02(国内)", system: .gcj02)
                 coordinateRow(label: "WGS-84(国际)", system: .wgs84)
             },
-            recentChips: {
-                ForEach(recentSelections.items) { item in
-                    recentChip(item)
-                }
+            spotContent: {
+                MapHomeSelectionChips(
+                    hasRecents: !recentSelections.items.isEmpty,
+                    favoritesEmpty: favorites.favorites.isEmpty,
+                    recentChips: {
+                        ForEach(recentSelections.items) { item in
+                            recentChip(item)
+                        }
+                    },
+                    favoriteChips: {
+                        ForEach(favorites.displayedFavorites) { favorite in
+                            favoriteChip(favorite)
+                        }
+                    },
+                    allFavoritesButton: { allFavoritesButton }
+                )
             },
-            favoriteChips: {
-                ForEach(favorites.displayedFavorites) { favorite in
-                    favoriteChip(favorite)
-                }
-            },
-            allFavoritesButton: { allFavoritesButton },
             routePanel: { routeCard },
-            showsRoute: route.phase != .inactive,
             onShowSpot: {
                 if route.phase != .inactive { exitRoute() }
             },

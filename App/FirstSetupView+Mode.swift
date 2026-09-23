@@ -28,10 +28,10 @@ extension FirstSetupView {
             .disabled(isPreparingMode)
 
             modeCard(
-                title: "LocalDevVPN 模式",
+                title: "开发者隧道模式",
                 icon: "location.fill.viewfinder",
-                badges: ["定点 + 路线", "系统定位"],
-                description: "通过本机隧道把坐标推进系统定位。定点会停在图钉上，路线会跟着走。需要安装 LocalDevVPN，并导入一次配对文件。",
+                badges: ["定点 + 路线", "系统定位", "iOS 18+"],
+                description: "通过本机隧道把坐标推进系统定位，不拦截网络请求。定点会停在图钉上，路线会跟着走。需要安装 LocalDevVPN 建立隧道，并用电脑生成一次配对文件。",
                 tint: .green
             ) {
                 selectMode(.developerTunnel)
