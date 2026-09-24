@@ -13,6 +13,7 @@ struct RouteActivityAttributes: ActivityAttributes {
         var showsProgress: Bool
         var symbolName: String
         var isWarning: Bool
+        var showsRoute: Bool
         var action: String
         var actionTitle: String
     }
@@ -21,11 +22,9 @@ struct RouteActivityAttributes: ActivityAttributes {
 }
 
 enum RouteActivityBridge {
-    @MainActor static var pause: (() -> Void)?
-    @MainActor static var resume: (() -> Void)?
-    @MainActor static var stop: (() -> Void)?
-    @MainActor static var switchHere: (() -> Void)?
-    @MainActor static var retry: (() -> Void)?
+    @MainActor static var showSpot: (() -> Void)?
+    @MainActor static var showRoute: (() -> Void)?
+    @MainActor static var primary: (() -> Void)?
 }
 
 @available(iOS 17.0, *)
@@ -48,16 +47,12 @@ struct IslandActionIntent: LiveActivityIntent {
         let name = action
         await MainActor.run {
             switch name {
-            case "pause":
-                RouteActivityBridge.pause?()
-            case "resume":
-                RouteActivityBridge.resume?()
-            case "stop":
-                RouteActivityBridge.stop?()
-            case "switch":
-                RouteActivityBridge.switchHere?()
-            case "retry":
-                RouteActivityBridge.retry?()
+            case "spot":
+                RouteActivityBridge.showSpot?()
+            case "route":
+                RouteActivityBridge.showRoute?()
+            case "primary":
+                RouteActivityBridge.primary?()
             default:
                 break
             }

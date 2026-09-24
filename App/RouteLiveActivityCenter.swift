@@ -101,9 +101,10 @@ final class RouteLiveActivityCenter {
             statusText: snapshot.statusText,
             detailText: snapshot.detailText,
             progress: snapshot.progress,
-            showsProgress: true,
+            showsProgress: snapshot.statusText.hasSuffix("分") || snapshot.statusText == "暂停" || snapshot.statusText == "异常" || snapshot.statusText == "完成",
             symbolName: snapshot.symbolName,
             isWarning: snapshot.isWarning,
+            showsRoute: true,
             action: snapshot.action,
             actionTitle: snapshot.actionTitle
         )
@@ -114,11 +115,12 @@ final class RouteLiveActivityCenter {
             kind: "spot",
             title: snapshot.placeName,
             statusText: snapshot.statusText,
-            detailText: "",
+            detailText: snapshot.caption,
             progress: 0,
             showsProgress: false,
             symbolName: snapshot.symbolName,
             isWarning: snapshot.isWarning,
+            showsRoute: false,
             action: snapshot.action,
             actionTitle: snapshot.actionTitle
         )

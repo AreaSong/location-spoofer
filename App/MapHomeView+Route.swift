@@ -11,43 +11,52 @@ extension MapHomeView {
 
     @MainActor
     func registerRouteActivityToggle() {
-        RouteActivityBridge.pause = { [weak route] in
-            guard route?.phase == .playing else { return }
-            route?.pause()
+        RouteActivityBridge.showSpot = {
+            showsRoutePanel = false
         }
-        RouteActivityBridge.resume = { [weak route] in
-            guard let route, route.phase == .paused, route.statusMessage == RouteActivitySync.userPauseMessage else { return }
-            playRoute()
+        RouteActivityBridge.showRoute = {
+            enterRoute()
+            showsRoutePanel = true
         }
-        RouteActivityBridge.stop = {
-            stopSpoofing()
+        RouteActivityBridge.primary = {
+            handlePeekTap()
         }
-        RouteActivityBridge.switchHere = {
-            beginLocationOperation()
-        }
-        RouteActivityBridge.retry = {
-            beginLocationOperation()
-        }
+        syncRouteActivity(clearStale: true)
     }
 
     func syncRouteActivity(clearStale: Bool = false) {
         guard #available(iOS 16.2, *) else { return }
-        let routeSnapshot = RouteActivitySync.snapshot(
+        let travelSymbol = route.travelMode == .bike ? "bicycle" : "figure.walk"
+        let routeName = route.editingSavedRoute?.name ?? route.travelMode.displayName
+        let liveRoute = RouteActivitySync.snapshot(
             phase: route.phase,
             statusMessage: route.statusMessage,
-            routeName: route.editingSavedRoute?.name ?? route.travelMode.displayName,
+            routeName: routeName,
             remainingMeters: route.remainingMeters,
             speedMetersPerSecond: route.speedMetersPerSecond,
             progress: route.progress,
-            symbolName: route.travelMode == .bike ? "bicycle" : "figure.walk"
+            symbolName: travelSymbol
         )
-        let spotSnapshot = SpotActivitySync.snapshot(
+        let preparingRoute = showsRoutePanel && (route.phase == .preparing || route.phase == .inactive)
+            ? RouteActivitySync.preparingSnapshot(
+                routeName: routeName,
+                hasStart: route.start != nil,
+                hasEnd: route.end != nil,
+                canPlay: route.canPlay,
+                isRouting: route.isRouting,
+                distanceMeters: route.distanceMeters,
+                symbolName: travelSymbol
+            )
+            : nil
+        let routeSnapshot = liveRoute ?? preparingRoute
+        let spotSnapshot = routeSnapshot == nil ? SpotActivitySync.snapshot(
             isVerifying: spoofState == .verifying,
             isActive: spoofState == .active,
             needsSwitch: needsSwitchButton,
             failed: spotIslandFailed,
-            placeName: mapState.displayName ?? "当前选点"
-        )
+            placeName: mapState.displayName ?? "当前选点",
+            buttonTitle: spotPeekTitle
+        ) : nil
         Task {
             if clearStale {
                 await RouteLiveActivityCenter.shared.endStaleActivities()

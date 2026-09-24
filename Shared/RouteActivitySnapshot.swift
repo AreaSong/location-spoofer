@@ -16,6 +16,7 @@ struct RouteActivitySnapshot: Equatable {
     var detailText: String
     var symbolName: String
     var isWarning: Bool
+    var showsRoute: Bool
     var action: String
     var actionTitle: String
 }
@@ -47,7 +48,7 @@ enum RouteActivitySync {
                 detailText: detail,
                 symbolName: symbolName,
                 isWarning: false,
-                action: "pause",
+                action: "primary",
                 actionTitle: "暂停"
             )
         case .paused:
@@ -75,7 +76,7 @@ enum RouteActivitySync {
                 detailText: detail,
                 symbolName: "pause.fill",
                 isWarning: false,
-                action: "resume",
+                action: "primary",
                 actionTitle: "继续"
             )
         case .finished:
@@ -100,6 +101,50 @@ enum RouteActivitySync {
             || previous.statusText != next.statusText
             || previous.routeName != next.routeName
             || previous.symbolName != next.symbolName
+            || previous.actionTitle != next.actionTitle
+    }
+
+    static func preparingSnapshot(
+        routeName: String,
+        hasStart: Bool,
+        hasEnd: Bool,
+        canPlay: Bool,
+        isRouting: Bool,
+        distanceMeters: Double,
+        symbolName: String
+    ) -> RouteActivitySnapshot {
+        let statusText: String
+        let actionTitle: String
+        let detailText: String
+        if isRouting {
+            statusText = "规划中"
+            actionTitle = ""
+            detailText = "正在规划路线"
+        } else if !hasStart {
+            statusText = "设起点"
+            actionTitle = "设为起点"
+            detailText = "先设起点"
+        } else if !hasEnd || !canPlay {
+            statusText = "设终点"
+            actionTitle = "设为终点"
+            detailText = "再设终点"
+        } else {
+            statusText = "开始走"
+            actionTitle = "开始走"
+            detailText = RoutePlayback.formattedDistance(distanceMeters)
+        }
+        return routeSnapshot(
+            phaseKey: .playing,
+            statusText: statusText,
+            minutes: 0,
+            routeName: routeName,
+            progress: 0,
+            detailText: detailText,
+            symbolName: symbolName,
+            isWarning: false,
+            action: actionTitle.isEmpty ? "" : "primary",
+            actionTitle: actionTitle
+        )
     }
 
     private static func routeSnapshot(
@@ -123,6 +168,7 @@ enum RouteActivitySync {
             detailText: detailText,
             symbolName: symbolName,
             isWarning: isWarning,
+            showsRoute: true,
             action: action,
             actionTitle: actionTitle
         )
@@ -147,6 +193,8 @@ struct SpotActivitySnapshot: Equatable {
     var statusText: String
     var symbolName: String
     var isWarning: Bool
+    var showsRoute: Bool
+    var caption: String
     var action: String
     var actionTitle: String
 }
@@ -157,19 +205,20 @@ enum SpotActivitySync {
         isActive: Bool,
         needsSwitch: Bool,
         failed: Bool,
-        placeName: String
+        placeName: String,
+        buttonTitle: String
     ) -> SpotActivitySnapshot? {
         if isVerifying {
-            return spot(.verifying, placeName: placeName, statusText: "验证中", symbolName: "location", isWarning: false, action: "", actionTitle: "")
+            return spot(.verifying, placeName: placeName, statusText: "验证中", symbolName: "location", isWarning: false, caption: "正在检测", action: "", actionTitle: "")
         }
         if isActive && needsSwitch {
-            return spot(.needsSwitch, placeName: placeName, statusText: "待切换", symbolName: "arrow.triangle.swap", isWarning: false, action: "switch", actionTitle: "切换到此处")
+            return spot(.needsSwitch, placeName: placeName, statusText: "待切换", symbolName: "arrow.triangle.swap", isWarning: false, caption: "地图已挪开", action: "primary", actionTitle: buttonTitle)
         }
         if isActive {
-            return spot(.locating, placeName: placeName, statusText: "定位中", symbolName: "location.fill", isWarning: false, action: "stop", actionTitle: "停止")
+            return spot(.locating, placeName: placeName, statusText: "定位中", symbolName: "location.fill", isWarning: false, caption: "定位已写在这里", action: "primary", actionTitle: buttonTitle)
         }
         if failed {
-            return spot(.failed, placeName: placeName, statusText: "未生效", symbolName: "exclamationmark.triangle.fill", isWarning: true, action: "retry", actionTitle: "重试")
+            return spot(.failed, placeName: placeName, statusText: "未生效", symbolName: "exclamationmark.triangle.fill", isWarning: true, caption: "没有写成", action: "primary", actionTitle: buttonTitle)
         }
         return nil
     }
@@ -184,6 +233,7 @@ enum SpotActivitySync {
         statusText: String,
         symbolName: String,
         isWarning: Bool,
+        caption: String,
         action: String,
         actionTitle: String
     ) -> SpotActivitySnapshot {
@@ -193,6 +243,8 @@ enum SpotActivitySync {
             statusText: statusText,
             symbolName: symbolName,
             isWarning: isWarning,
+            showsRoute: false,
+            caption: caption,
             action: action,
             actionTitle: actionTitle
         )

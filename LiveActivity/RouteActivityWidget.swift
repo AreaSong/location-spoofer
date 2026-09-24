@@ -19,7 +19,7 @@ struct RouteActivityWidget: Widget {
                     statusLabel(context.state)
                 }
                 DynamicIslandExpandedRegion(.bottom) {
-                    expandedBody(context.state)
+                    expandedControls(context.state)
                 }
             } compactLeading: {
                 statusIcon(context.state)
@@ -32,15 +32,49 @@ struct RouteActivityWidget: Widget {
     }
 
     private func expandedBody(_ state: RouteActivityAttributes.ContentState) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
+        expandedControls(state)
+    }
+
+    private func expandedControls(_ state: RouteActivityAttributes.ContentState) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                modeChip("定点", selected: !state.showsRoute, action: "spot")
+                modeChip("走路", selected: state.showsRoute, action: "route")
+            }
             if state.showsProgress {
-                Text(state.detailText)
-                    .font(.subheadline)
                 ProgressView(value: min(max(state.progress, 0), 1))
                     .tint(state.isWarning ? Color.orange : Color.accentColor)
             }
             actionButton(state)
+            if !state.detailText.isEmpty {
+                Text(state.detailText)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    @ViewBuilder
+    private func modeChip(_ title: String, selected: Bool, action: String) -> some View {
+        if #available(iOS 17.0, *) {
+            Button(intent: IslandActionIntent(action: action)) {
+                chipLabel(title, selected: selected)
+            }
+            .buttonStyle(.plain)
+        } else {
+            chipLabel(title, selected: selected)
+        }
+    }
+
+    private func chipLabel(_ title: String, selected: Bool) -> some View {
+        Text(title)
+            .font(.subheadline.weight(.semibold))
+            .frame(maxWidth: .infinity)
+            .frame(height: 36)
+            .foregroundStyle(selected ? Color.white : Color.primary)
+            .background(selected ? Color.accentColor : Color.white.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
     }
 
     private func statusIcon(_ state: RouteActivityAttributes.ContentState) -> some View {
@@ -56,10 +90,12 @@ struct RouteActivityWidget: Widget {
     @ViewBuilder
     private func actionButton(_ state: RouteActivityAttributes.ContentState) -> some View {
         if #available(iOS 17.0, *), !state.action.isEmpty {
-            Button(intent: IslandActionIntent(action: state.action)) {
+            Button(intent: IslandActionIntent(action: "primary")) {
                 Text(state.actionTitle)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 36)
             }
-            .buttonStyle(.bordered)
+            .buttonStyle(.borderedProminent)
         }
     }
 }

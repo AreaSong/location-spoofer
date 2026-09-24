@@ -15,7 +15,8 @@ final class RouteActivitySyncTests: XCTestCase {
         XCTAssertEqual(snapshot?.phaseKey, .paused)
         XCTAssertEqual(snapshot?.statusText, "暂停")
         XCTAssertEqual(snapshot?.symbolName, "pause.fill")
-        XCTAssertEqual(snapshot?.action, "resume")
+        XCTAssertEqual(snapshot?.action, "primary")
+        XCTAssertEqual(snapshot?.actionTitle, "继续")
     }
 
     func testPushFailurePauseIsAWarning() {
@@ -65,10 +66,12 @@ final class RouteActivitySyncTests: XCTestCase {
             isActive: true,
             needsSwitch: false,
             failed: false,
-            placeName: "深圳湾"
+            placeName: "深圳湾",
+            buttonTitle: "停止"
         )
         XCTAssertEqual(locating?.statusText, "定位中")
         XCTAssertEqual(locating?.symbolName, "location.fill")
+        XCTAssertEqual(locating?.action, "primary")
         XCTAssertEqual(locating?.actionTitle, "停止")
 
         let moved = SpotActivitySync.snapshot(
@@ -76,7 +79,8 @@ final class RouteActivitySyncTests: XCTestCase {
             isActive: true,
             needsSwitch: true,
             failed: false,
-            placeName: "深圳湾"
+            placeName: "深圳湾",
+            buttonTitle: "切换到此处"
         )
         XCTAssertEqual(moved?.statusText, "待切换")
         XCTAssertEqual(moved?.actionTitle, "切换到此处")
@@ -86,7 +90,8 @@ final class RouteActivitySyncTests: XCTestCase {
             isActive: false,
             needsSwitch: false,
             failed: false,
-            placeName: "深圳湾"
+            placeName: "深圳湾",
+            buttonTitle: "验证中"
         )
         XCTAssertEqual(verifying?.statusText, "验证中")
         XCTAssertEqual(verifying?.action, "")
@@ -96,7 +101,8 @@ final class RouteActivitySyncTests: XCTestCase {
             isActive: false,
             needsSwitch: false,
             failed: true,
-            placeName: "深圳湾"
+            placeName: "深圳湾",
+            buttonTitle: "重试"
         )
         XCTAssertEqual(failed?.statusText, "未生效")
         XCTAssertEqual(failed?.isWarning, true)
@@ -106,7 +112,8 @@ final class RouteActivitySyncTests: XCTestCase {
             isActive: false,
             needsSwitch: false,
             failed: false,
-            placeName: "深圳湾"
+            placeName: "深圳湾",
+            buttonTitle: "开始"
         ))
     }
 

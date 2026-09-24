@@ -420,7 +420,6 @@ struct MapHomeView: View {
             startMapRuntimeOnce()
             bindRoutePlayback()
             registerRouteActivityToggle()
-            syncRouteActivity(clearStale: true)
             if runtimeMode.mode == .localWiFi {
                 registerWiFiChangeObserver()
             } else if runtimeMode.mode == .thirdParty {
