@@ -160,9 +160,13 @@ extension MapHomeView {
                 queueCommunityContributionPrompt(for: thirdPartyClient.selectedClient)
             case .developerPushFailed(let message):
                 developerLocationError = message
+                spotIslandFailed = true
+                syncRouteActivity()
             case .localVerificationFailed(let result):
                 activeTip = nil
+                spotIslandFailed = true
                 setup.applyVerificationResult(result, presentSetup: false)
+                syncRouteActivity()
             case .resetLocalDiagnosis:
                 lastSpoofDiagnosisSystem = nil
                 hasLoggedSpoofDiagnosis = false

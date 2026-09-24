@@ -6,57 +6,58 @@ import WidgetKit
 struct RouteActivityWidget: Widget {
     var body: some WidgetConfiguration {
         ActivityConfiguration(for: RouteActivityAttributes.self) { context in
-            lockScreen(context.state)
+            expandedBody(context.state)
+                .padding()
         } dynamicIsland: { context in
             DynamicIsland {
+                DynamicIslandExpandedRegion(.leading) {
+                    Text(context.state.title)
+                        .font(.headline)
+                        .lineLimit(1)
+                }
+                DynamicIslandExpandedRegion(.trailing) {
+                    statusLabel(context.state)
+                }
                 DynamicIslandExpandedRegion(.bottom) {
-                    expanded(context.state)
+                    expandedBody(context.state)
                 }
             } compactLeading: {
-                Image(systemName: context.state.symbolName)
-                    .foregroundStyle(context.state.isWarning ? Color.orange : Color.accentColor)
+                statusIcon(context.state)
             } compactTrailing: {
-                Text(context.state.compactTrailing)
-                    .foregroundStyle(context.state.isWarning ? Color.orange : Color.primary)
+                statusLabel(context.state)
             } minimal: {
-                Image(systemName: context.state.symbolName)
+                statusIcon(context.state)
             }
         }
     }
 
-    private func lockScreen(_ state: RouteActivityAttributes.ContentState) -> some View {
+    private func expandedBody(_ state: RouteActivityAttributes.ContentState) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(state.routeName)
-                .font(.headline)
-            Text(state.statusText)
-                .font(.subheadline)
-                .foregroundStyle(state.isWarning ? Color.orange : Color.secondary)
-            progressBar(state)
-            toggleButton(state)
-        }
-        .padding()
-    }
-
-    private func expanded(_ state: RouteActivityAttributes.ContentState) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(state.remainingText)
-                .font(.headline)
-                .foregroundStyle(state.isWarning ? Color.orange : Color.primary)
-            progressBar(state)
-            toggleButton(state)
+            if state.showsProgress {
+                Text(state.detailText)
+                    .font(.subheadline)
+                ProgressView(value: min(max(state.progress, 0), 1))
+                    .tint(state.isWarning ? Color.orange : Color.accentColor)
+            }
+            actionButton(state)
         }
     }
 
-    private func progressBar(_ state: RouteActivityAttributes.ContentState) -> some View {
-        ProgressView(value: min(max(state.progress, 0), 1))
-            .tint(state.isWarning ? Color.orange : Color.accentColor)
+    private func statusIcon(_ state: RouteActivityAttributes.ContentState) -> some View {
+        Image(systemName: state.symbolName)
+            .foregroundStyle(state.isWarning ? Color.orange : Color.primary)
+    }
+
+    private func statusLabel(_ state: RouteActivityAttributes.ContentState) -> some View {
+        Text(state.statusText)
+            .foregroundStyle(state.isWarning ? Color.orange : Color.primary)
     }
 
     @ViewBuilder
-    private func toggleButton(_ state: RouteActivityAttributes.ContentState) -> some View {
-        if #available(iOS 17.0, *), state.canToggle {
-            Button(intent: ToggleRoutePlaybackIntent()) {
-                Text(state.phaseKey == "paused" ? "继续" : "暂停")
+    private func actionButton(_ state: RouteActivityAttributes.ContentState) -> some View {
+        if #available(iOS 17.0, *), !state.action.isEmpty {
+            Button(intent: IslandActionIntent(action: state.action)) {
+                Text(state.actionTitle)
             }
             .buttonStyle(.bordered)
         }

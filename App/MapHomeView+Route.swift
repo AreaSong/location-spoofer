@@ -11,25 +11,48 @@ extension MapHomeView {
 
     @MainActor
     func registerRouteActivityToggle() {
-        RouteActivityBridge.toggle = { [weak route] in
-            guard let route else { return }
-            if route.phase == .playing {
-                route.pause()
-                return
-            }
-            guard route.phase == .paused, route.statusMessage == RouteActivitySync.userPauseMessage else { return }
+        RouteActivityBridge.pause = { [weak route] in
+            guard route?.phase == .playing else { return }
+            route?.pause()
+        }
+        RouteActivityBridge.resume = { [weak route] in
+            guard let route, route.phase == .paused, route.statusMessage == RouteActivitySync.userPauseMessage else { return }
             playRoute()
+        }
+        RouteActivityBridge.stop = {
+            stopSpoofing()
+        }
+        RouteActivityBridge.switchHere = {
+            beginLocationOperation()
+        }
+        RouteActivityBridge.retry = {
+            beginLocationOperation()
         }
     }
 
     func syncRouteActivity(clearStale: Bool = false) {
         guard #available(iOS 16.2, *) else { return }
-        let playback = route
+        let routeSnapshot = RouteActivitySync.snapshot(
+            phase: route.phase,
+            statusMessage: route.statusMessage,
+            routeName: route.editingSavedRoute?.name ?? route.travelMode.displayName,
+            remainingMeters: route.remainingMeters,
+            speedMetersPerSecond: route.speedMetersPerSecond,
+            progress: route.progress,
+            symbolName: route.travelMode == .bike ? "bicycle" : "figure.walk"
+        )
+        let spotSnapshot = SpotActivitySync.snapshot(
+            isVerifying: spoofState == .verifying,
+            isActive: spoofState == .active,
+            needsSwitch: needsSwitchButton,
+            failed: spotIslandFailed,
+            placeName: mapState.displayName ?? "当前选点"
+        )
         Task {
             if clearStale {
                 await RouteLiveActivityCenter.shared.endStaleActivities()
             }
-            await RouteLiveActivityCenter.shared.sync(route: playback)
+            await RouteLiveActivityCenter.shared.sync(route: routeSnapshot, spot: spotSnapshot)
         }
     }
 

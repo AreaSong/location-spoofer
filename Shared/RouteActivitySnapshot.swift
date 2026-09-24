@@ -11,13 +11,13 @@ struct RouteActivitySnapshot: Equatable {
     var phaseKey: RouteActivityPhaseKey
     var statusText: String
     var remainingMinutes: Int
-    var speedTenths: Int
     var routeName: String
     var progress: Double
-    var remainingText: String
+    var detailText: String
     var symbolName: String
     var isWarning: Bool
-    var canToggle: Bool
+    var action: String
+    var actionTitle: String
 }
 
 enum RouteActivitySync {
@@ -33,56 +33,63 @@ enum RouteActivitySync {
         symbolName: String
     ) -> RouteActivitySnapshot? {
         let minutes = remainingMinutes(meters: remainingMeters, speedMetersPerSecond: speedMetersPerSecond)
-        let remaining = RoutePlayback.formattedRemaining(
-            meters: remainingMeters,
-            speedMetersPerSecond: speedMetersPerSecond
-        )
-        let speedTenths = Int((max(speedMetersPerSecond, 0.1) * 3.6 * 10).rounded())
+        let detail = "还剩 \(RoutePlayback.formattedDistance(remainingMeters))"
         switch phase {
         case .inactive, .preparing:
             return nil
         case .playing:
-            return RouteActivitySnapshot(
+            return routeSnapshot(
                 phaseKey: .playing,
-                statusText: RoutePlayback.formattedDuration(
-                    meters: remainingMeters,
-                    speedMetersPerSecond: speedMetersPerSecond
-                ),
-                remainingMinutes: minutes,
-                speedTenths: speedTenths,
+                statusText: "\(minutes)分",
+                minutes: minutes,
                 routeName: routeName,
                 progress: progress,
-                remainingText: remaining,
+                detailText: detail,
                 symbolName: symbolName,
                 isWarning: false,
-                canToggle: true
+                action: "pause",
+                actionTitle: "暂停"
             )
         case .paused:
             let warning = statusMessage != userPauseMessage && !statusMessage.isEmpty
-            return RouteActivitySnapshot(
-                phaseKey: warning ? .warning : .paused,
-                statusText: warning ? statusMessage : userPauseMessage,
-                remainingMinutes: minutes,
-                speedTenths: speedTenths,
+            if warning {
+                return routeSnapshot(
+                    phaseKey: .warning,
+                    statusText: "异常",
+                    minutes: minutes,
+                    routeName: routeName,
+                    progress: progress,
+                    detailText: detail,
+                    symbolName: "exclamationmark.triangle.fill",
+                    isWarning: true,
+                    action: "",
+                    actionTitle: ""
+                )
+            }
+            return routeSnapshot(
+                phaseKey: .paused,
+                statusText: "暂停",
+                minutes: minutes,
                 routeName: routeName,
                 progress: progress,
-                remainingText: remaining,
-                symbolName: symbolName,
-                isWarning: warning,
-                canToggle: !warning
+                detailText: detail,
+                symbolName: "pause.fill",
+                isWarning: false,
+                action: "resume",
+                actionTitle: "继续"
             )
         case .finished:
-            return RouteActivitySnapshot(
+            return routeSnapshot(
                 phaseKey: .finished,
-                statusText: statusMessage,
-                remainingMinutes: 0,
-                speedTenths: speedTenths,
+                statusText: "完成",
+                minutes: 0,
                 routeName: routeName,
                 progress: 1,
-                remainingText: statusMessage,
-                symbolName: symbolName,
+                detailText: detail,
+                symbolName: "checkmark.circle.fill",
                 isWarning: false,
-                canToggle: false
+                action: "",
+                actionTitle: ""
             )
         }
     }
@@ -91,12 +98,103 @@ enum RouteActivitySync {
         guard let previous else { return true }
         return previous.phaseKey != next.phaseKey
             || previous.statusText != next.statusText
-            || previous.remainingMinutes != next.remainingMinutes
-            || previous.speedTenths != next.speedTenths
+            || previous.routeName != next.routeName
+            || previous.symbolName != next.symbolName
+    }
+
+    private static func routeSnapshot(
+        phaseKey: RouteActivityPhaseKey,
+        statusText: String,
+        minutes: Int,
+        routeName: String,
+        progress: Double,
+        detailText: String,
+        symbolName: String,
+        isWarning: Bool,
+        action: String,
+        actionTitle: String
+    ) -> RouteActivitySnapshot {
+        RouteActivitySnapshot(
+            phaseKey: phaseKey,
+            statusText: statusText,
+            remainingMinutes: minutes,
+            routeName: routeName,
+            progress: progress,
+            detailText: detailText,
+            symbolName: symbolName,
+            isWarning: isWarning,
+            action: action,
+            actionTitle: actionTitle
+        )
     }
 
     static func remainingMinutes(meters: Double, speedMetersPerSecond: Double) -> Int {
         let seconds = max(meters / max(speedMetersPerSecond, 0.1), 0)
         return max(1, Int((seconds / 60).rounded(.up)))
+    }
+}
+
+enum SpotActivityStatus: String, Equatable {
+    case locating
+    case needsSwitch
+    case verifying
+    case failed
+}
+
+struct SpotActivitySnapshot: Equatable {
+    var status: SpotActivityStatus
+    var placeName: String
+    var statusText: String
+    var symbolName: String
+    var isWarning: Bool
+    var action: String
+    var actionTitle: String
+}
+
+enum SpotActivitySync {
+    static func snapshot(
+        isVerifying: Bool,
+        isActive: Bool,
+        needsSwitch: Bool,
+        failed: Bool,
+        placeName: String
+    ) -> SpotActivitySnapshot? {
+        if isVerifying {
+            return spot(.verifying, placeName: placeName, statusText: "验证中", symbolName: "location", isWarning: false, action: "", actionTitle: "")
+        }
+        if isActive && needsSwitch {
+            return spot(.needsSwitch, placeName: placeName, statusText: "待切换", symbolName: "arrow.triangle.swap", isWarning: false, action: "switch", actionTitle: "切换到此处")
+        }
+        if isActive {
+            return spot(.locating, placeName: placeName, statusText: "定位中", symbolName: "location.fill", isWarning: false, action: "stop", actionTitle: "停止")
+        }
+        if failed {
+            return spot(.failed, placeName: placeName, statusText: "未生效", symbolName: "exclamationmark.triangle.fill", isWarning: true, action: "retry", actionTitle: "重试")
+        }
+        return nil
+    }
+
+    static func shouldUpdate(_ previous: SpotActivitySnapshot?, to next: SpotActivitySnapshot) -> Bool {
+        previous != next
+    }
+
+    private static func spot(
+        _ status: SpotActivityStatus,
+        placeName: String,
+        statusText: String,
+        symbolName: String,
+        isWarning: Bool,
+        action: String,
+        actionTitle: String
+    ) -> SpotActivitySnapshot {
+        SpotActivitySnapshot(
+            status: status,
+            placeName: placeName,
+            statusText: statusText,
+            symbolName: symbolName,
+            isWarning: isWarning,
+            action: action,
+            actionTitle: actionTitle
+        )
     }
 }

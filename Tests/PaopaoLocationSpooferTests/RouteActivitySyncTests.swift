@@ -13,8 +13,9 @@ final class RouteActivitySyncTests: XCTestCase {
             symbolName: "figure.walk"
         )
         XCTAssertEqual(snapshot?.phaseKey, .paused)
-        XCTAssertEqual(snapshot?.isWarning, false)
-        XCTAssertEqual(snapshot?.canToggle, true)
+        XCTAssertEqual(snapshot?.statusText, "暂停")
+        XCTAssertEqual(snapshot?.symbolName, "pause.fill")
+        XCTAssertEqual(snapshot?.action, "resume")
     }
 
     func testPushFailurePauseIsAWarning() {
@@ -28,8 +29,9 @@ final class RouteActivitySyncTests: XCTestCase {
             symbolName: "figure.walk"
         )
         XCTAssertEqual(snapshot?.phaseKey, .warning)
-        XCTAssertEqual(snapshot?.statusText, "系统定位推送失败，已暂停。")
-        XCTAssertEqual(snapshot?.canToggle, false)
+        XCTAssertEqual(snapshot?.statusText, "异常")
+        XCTAssertEqual(snapshot?.symbolName, "exclamationmark.triangle.fill")
+        XCTAssertEqual(snapshot?.action, "")
     }
 
     func testSameMinuteDoesNotPushAgain() {
@@ -55,6 +57,57 @@ final class RouteActivitySyncTests: XCTestCase {
             symbolName: "figure.walk"
         )
         XCTAssertNil(snapshot)
+    }
+
+    func testSpotIslandUsesStatusWithoutCoordinates() {
+        let locating = SpotActivitySync.snapshot(
+            isVerifying: false,
+            isActive: true,
+            needsSwitch: false,
+            failed: false,
+            placeName: "深圳湾"
+        )
+        XCTAssertEqual(locating?.statusText, "定位中")
+        XCTAssertEqual(locating?.symbolName, "location.fill")
+        XCTAssertEqual(locating?.actionTitle, "停止")
+
+        let moved = SpotActivitySync.snapshot(
+            isVerifying: false,
+            isActive: true,
+            needsSwitch: true,
+            failed: false,
+            placeName: "深圳湾"
+        )
+        XCTAssertEqual(moved?.statusText, "待切换")
+        XCTAssertEqual(moved?.actionTitle, "切换到此处")
+
+        let verifying = SpotActivitySync.snapshot(
+            isVerifying: true,
+            isActive: false,
+            needsSwitch: false,
+            failed: false,
+            placeName: "深圳湾"
+        )
+        XCTAssertEqual(verifying?.statusText, "验证中")
+        XCTAssertEqual(verifying?.action, "")
+
+        let failed = SpotActivitySync.snapshot(
+            isVerifying: false,
+            isActive: false,
+            needsSwitch: false,
+            failed: true,
+            placeName: "深圳湾"
+        )
+        XCTAssertEqual(failed?.statusText, "未生效")
+        XCTAssertEqual(failed?.isWarning, true)
+        XCTAssertEqual(failed?.actionTitle, "重试")
+        XCTAssertNil(SpotActivitySync.snapshot(
+            isVerifying: false,
+            isActive: false,
+            needsSwitch: false,
+            failed: false,
+            placeName: "深圳湾"
+        ))
     }
 
     func testChangingSpeedKeepsProgress() {

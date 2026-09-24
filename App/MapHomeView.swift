@@ -81,6 +81,7 @@ struct MapHomeView: View {
     @State var showDisableTip = false
     @State var activeTip: TipKind?
     @State var manualHint = ""
+    @State var spotIslandFailed = false
     let tipPreferences = VirtualLocationTipPreferences()
     let communityPromptPreferences = ThirdPartyCommunityPromptPreferences()
     @State var pendingCommunityContributionClient: ThirdPartyProxyClient?
@@ -406,6 +407,12 @@ struct MapHomeView: View {
             syncRouteActivity()
         }
         .onReceive(route.clock.$statusMessage) { _ in
+            syncRouteActivity()
+        }
+        .onChange(of: session.state) { _ in
+            if session.state == .active || session.state == .verifying {
+                spotIslandFailed = false
+            }
             syncRouteActivity()
         }
         .onAppear {
