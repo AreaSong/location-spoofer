@@ -175,7 +175,8 @@ grep -q 'rememberDiscreteSelection' "$MAP_HOME" || fail "discrete map selections
 ! grep -A20 'onUserCenterChanged:' "$MAP_HOME" | grep -q 'rememberDiscreteSelection' \
   || fail "panning the map must not record recent selection history"
 grep -q 'Text("最近")' "$MAP_HOME" || fail "map home must show a recent-selection chip row"
-grep -q '保活正常' "$MAP_HOME" || fail "map home must show keep-alive healthy status"
+grep -q '代理正常' "$MAP_HOME" || fail "map home must show keep-alive healthy status"
+grep -q '保活中断' "$MAP_HOME" || fail "map home must show keep-alive interruption"
 grep -q '代理未运行' "$MAP_HOME" || fail "map home must show proxy stopped status"
 grep -q '模块已连接' "$MAP_HOME" || fail "map home must show third-party module connection status"
 grep -q '@Published private(set) var isHealthy' "$KEEP_ALIVE" || fail "keep-alive must publish health on the main object"
@@ -229,7 +230,7 @@ grep -q 'return "循环"' "$ROOT/Shared/RoutePlayback.swift" || fail "loop mode 
 grep -q 'RouteRepeatMode' "$ROOT/App/RoutePlaybackPanel.swift" || fail "route panel must expose repeat modes"
 grep -q 'Button("保存")' "$ROOT/App/RoutePlaybackPanel.swift" || fail "route panel must let the user save a route"
 grep -q 'case .savedRoutes' "$MAP_HOME" || fail "map home must present the saved route list sheet"
-grep -q 'origin = Date()' "$ROOT/Shared/RoutePlaybackController.swift" \
+grep -q 'playbackOrigin = Date()' "$ROOT/Shared/RoutePlaybackController.swift" \
   || fail "reversing a route leg must reset the playback clock"
 grep -q 'headingForward' "$ROOT/Shared/RoutePlaybackController.swift" \
   || fail "round-trip and loop playback must track heading"

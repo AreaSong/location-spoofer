@@ -397,11 +397,23 @@ struct MapHomeView: View {
         .onChange(of: route.phase) { phase in
             clearRouteLocationIfNeeded(from: lastRoutePhase, to: phase)
             lastRoutePhase = phase
+            syncRouteActivity()
+        }
+        .onChange(of: route.speedKilometersPerHour) { _ in
+            syncRouteActivity()
+        }
+        .onReceive(route.clock.$progress) { _ in
+            syncRouteActivity()
+        }
+        .onReceive(route.clock.$statusMessage) { _ in
+            syncRouteActivity()
         }
         .onAppear {
             displayedMapCoordinateSystem = CoordinateConverter.currentMapCoordinateSystem
             startMapRuntimeOnce()
             bindRoutePlayback()
+            registerRouteActivityToggle()
+            syncRouteActivity(clearStale: true)
             if runtimeMode.mode == .localWiFi {
                 registerWiFiChangeObserver()
             } else if runtimeMode.mode == .thirdParty {

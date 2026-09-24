@@ -171,7 +171,7 @@ struct MapHomeBottomCard<CoordinateRows: View, SpotContent: View, RoutePanel: Vi
             Circle()
                 .fill(runtimeStatusTone.color)
                 .frame(width: 8, height: 8)
-                .frame(width: 32, height: 32)
+                .frame(width: 44, height: 44)
         }
         .buttonStyle(.plain)
         .accessibilityLabel(runtimeStatusText)
@@ -182,7 +182,7 @@ struct MapHomeBottomCard<CoordinateRows: View, SpotContent: View, RoutePanel: Vi
         Button(action: onToggleFavorite) {
             Image(systemName: isFavoriteSelected ? "star.fill" : "star")
                 .font(.system(size: 16, weight: .semibold))
-                .frame(width: 32, height: 32)
+                .frame(width: 44, height: 44)
                 .background((isFavoriteSelected ? Color.yellow : Color.gray).opacity(0.18), in: Circle())
         }
         .buttonStyle(.plain)
@@ -196,7 +196,7 @@ struct MapHomeBottomCard<CoordinateRows: View, SpotContent: View, RoutePanel: Vi
             Image(systemName: isExpanded ? "chevron.down" : "chevron.up")
                 .font(.system(size: 14, weight: .semibold))
                 .foregroundStyle(.secondary)
-                .frame(width: 32, height: 32)
+                .frame(width: 44, height: 44)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -222,9 +222,9 @@ struct MapHomeBottomCard<CoordinateRows: View, SpotContent: View, RoutePanel: Vi
             }
             .font(.subheadline.weight(.semibold))
             .foregroundStyle(.white)
-            .frame(minWidth: 96)
-            .padding(.horizontal, 10)
-            .frame(height: 34)
+                .frame(minWidth: 96)
+                .padding(.horizontal, 10)
+                .frame(height: 44)
             .background(
                 peekColor.opacity(peekDisabled ? 0.45 : 1),
                 in: RoundedRectangle(cornerRadius: AppRadius.control, style: .continuous)
@@ -239,10 +239,9 @@ struct MapHomeBottomCard<CoordinateRows: View, SpotContent: View, RoutePanel: Vi
     private var actionSwitcher: some View {
         HStack(spacing: 6) {
             switchChip(title: "定点", systemImage: "location.fill", selected: !showsRoute, action: onShowSpot)
-            switchChip(
-                title: "走路",
+            switchChip(title: "走路",
                 systemImage: "figure.walk",
-                subtitle: isExpanded && !showsRoute ? routeChipSubtitle : nil,
+                subtitle: showsRoute ? nil : routeChipSubtitle,
                 selected: showsRoute,
                 action: onShowRoute
             )
@@ -271,7 +270,7 @@ struct MapHomeBottomCard<CoordinateRows: View, SpotContent: View, RoutePanel: Vi
                 }
             }
             .frame(maxWidth: .infinity)
-            .frame(height: subtitle == nil ? 30 : 36)
+            .frame(height: 44)
             .foregroundStyle(selected ? Color.white : Color.primary)
             .background(
                 selected ? Color.accentColor : Color.clear,

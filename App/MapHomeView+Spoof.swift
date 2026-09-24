@@ -310,7 +310,7 @@ extension MapHomeView {
         if !proxy.isRunning {
             return "代理未运行"
         }
-        return keepAlive.isHealthy ? "代理运行中 · 保活正常" : "代理运行中 · 保活中断"
+        return keepAlive.isHealthy ? "代理正常" : "保活中断"
     }
 
     func registerWiFiChangeObserver() {

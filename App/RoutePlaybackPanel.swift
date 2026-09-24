@@ -284,7 +284,6 @@ struct RoutePlaybackPanel: View {
                 items: RouteSpeedPreset.all,
                 title: \.title,
                 isSelected: { abs(route.speedKilometersPerHour - $0.kilometersPerHour) < 0.05 },
-                isDisabled: route.phase == .playing,
                 onSelect: {
                     customSpeed = false
                     route.setSpeedKilometersPerHour($0.kilometersPerHour)
@@ -292,7 +291,6 @@ struct RoutePlaybackPanel: View {
             )
             if customSpeed || !speedMatchesPreset {
                 Slider(value: speedBinding, in: 1...40, step: 0.5)
-                    .disabled(route.phase == .playing)
             }
             metricHeader("偏移", showsCustom: !customOffset && offsetMatchesPreset) {
                 customOffset = true

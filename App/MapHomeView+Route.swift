@@ -10,6 +10,29 @@ extension MapHomeView {
     }
 
     @MainActor
+    func registerRouteActivityToggle() {
+        RouteActivityBridge.toggle = { [weak route] in
+            guard let route else { return }
+            if route.phase == .playing {
+                route.pause()
+                return
+            }
+            guard route.phase == .paused, route.statusMessage == RouteActivitySync.userPauseMessage else { return }
+            playRoute()
+        }
+    }
+
+    func syncRouteActivity(clearStale: Bool = false) {
+        guard #available(iOS 16.2, *) else { return }
+        let playback = route
+        Task {
+            if clearStale {
+                await RouteLiveActivityCenter.shared.endStaleActivities()
+            }
+            await RouteLiveActivityCenter.shared.sync(route: playback)
+        }
+    }
+
     func bindRoutePlayback() {
         route.applyCoordinate = { pair in
             await applyRouteCoordinate(pair)
@@ -104,17 +127,19 @@ extension MapHomeView {
         switch route.phase {
         case .playing: return "暂停"
         case .paused: return "继续"
-        case .preparing where !route.canPlay: return "设置路线"
+        case .preparing where route.start == nil: return "设为起点"
+        case .preparing: return "设为终点"
         default: return "开始走"
         }
     }
 
-    var routePeekOpensDetail: Bool {
-        route.phase == .preparing && !route.canPlay
-    }
+    var routePeekOpensDetail: Bool { false }
 
     var routePeekDisabled: Bool {
-        if route.phase == .playing || routePeekOpensDetail { return false }
+        if route.phase == .playing { return false }
+        if route.phase == .preparing, route.start == nil || route.end == nil || !route.canPlay {
+            return route.isRouting
+        }
         return !route.canPlay || route.waitingForActivation || route.isRouting
     }
 
@@ -127,11 +152,16 @@ extension MapHomeView {
             }
             return
         }
-        if route.phase == .playing {
+        switch route.phase {
+        case .playing:
             route.pause()
-            return
+        case .preparing where route.start == nil:
+            route.setStart(currentSelectionPair)
+        case .preparing where route.end == nil || !route.canPlay:
+            route.setEnd(currentSelectionPair)
+        default:
+            playRoute()
         }
-        playRoute()
     }
 
     /// 面板收起时在“走路”切换条上提示路线还在。
@@ -139,7 +169,7 @@ extension MapHomeView {
         switch route.phase {
         case .inactive: return nil
         case .preparing: return "已设路线"
-        case .playing: return "播放中"
+        case .playing: return "进行中"
         case .paused: return "已暂停"
         case .finished: return "已走完"
         }
@@ -357,7 +387,7 @@ struct HomePeekCaption: View {
         switch route.phase {
         case .inactive: return nil
         case .preparing: return "已设路线"
-        case .playing: return "播放中"
+        case .playing: return "进行中"
         case .paused: return "已暂停"
         case .finished: return "已走完"
         }

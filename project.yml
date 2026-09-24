@@ -18,13 +18,6 @@ targets:
   PaopaoLocationSpoofer:
     type: application
     platform: iOS
-    sources:
-      - path: App
-      - path: Shared
-      - path: Resources
-      - path: ThirdParty/WlocScripts
-        type: folder
-        buildPhase: resources
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.paopaolabs.location-spoofer
@@ -38,6 +31,39 @@ targets:
         OTHER_LDFLAGS: "$(inherited) -lwloccore"
         "OTHER_LDFLAGS[sdk=iphoneos*]": "$(inherited) -lidevice_ffi -lc++ -lz"
         LIBRARY_SEARCH_PATHS: "$(PROJECT_DIR)/Core/build/$(PLATFORM_NAME) $(PROJECT_DIR)/Vendor/idevice"
+    dependencies:
+      - target: RouteLiveActivity
+        embed: true
+    sources:
+      - path: App
+      - path: Shared
+      - path: Resources
+      - path: LiveActivity/RouteActivityAttributes.swift
+      - path: ThirdParty/WlocScripts
+        type: folder
+        buildPhase: resources
+
+  RouteLiveActivity:
+    type: app-extension
+    platform: iOS
+    deploymentTarget:
+      iOS: "16.2"
+    sources:
+      - path: LiveActivity
+        excludes:
+          - Info.plist
+    info:
+      path: LiveActivity/Info.plist
+      properties:
+        CFBundleDisplayName: 路线
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.paopaolabs.location-spoofer.route-activity
+        CODE_SIGNING_ALLOWED: "NO"
+        CODE_SIGNING_REQUIRED: "NO"
+        SKIP_INSTALL: "YES"
 
   PaopaoLocationSpooferTests:
     type: bundle.unit-test

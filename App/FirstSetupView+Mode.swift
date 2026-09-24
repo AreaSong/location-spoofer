@@ -5,6 +5,7 @@ extension FirstSetupView {
         let title: String
         let icon: String
         let badges: [String]
+        let outcome: String
         let description: String
         let tint: Color
     }
@@ -74,6 +75,7 @@ extension FirstSetupView {
                 title: "APP模式",
                 icon: "iphone.and.arrow.forward",
                 badges: ["仅 Wi-Fi", "无外部依赖"],
+                outcome: "只覆盖当前 Wi-Fi。",
                 description: "App 在设备本地启动代理，通过当前 Wi-Fi 的手动 HTTP 代理改写定位响应。免费自签应用无法使用系统 VPN 的 Network Extension 能力，因此 APP模式不支持蜂窝网络，需要配置 Wi-Fi 代理并安装 App 生成的 CA。",
                 tint: .blue
             )
@@ -82,6 +84,7 @@ extension FirstSetupView {
                 title: "开发者隧道模式",
                 icon: "location.fill.viewfinder",
                 badges: ["定点 + 路线", "系统定位", "iOS 18+"],
+                outcome: "不改网络，直接写系统定位。",
                 description: "通过本机隧道把坐标推进系统定位，不拦截网络请求。定点会停在图钉上，路线会跟着走。需要安装 LocalDevVPN 建立隧道，并用电脑生成一次配对文件。",
                 tint: .green
             )
@@ -90,6 +93,7 @@ extension FirstSetupView {
                 title: "第三方代理模式",
                 icon: "network.badge.shield.half.filled",
                 badges: ["Wi-Fi + 4G/5G", "测试模式"],
+                outcome: "手机网络也能用。",
                 description: "App 负责选点，并通过 WLOC 配置接口查询和同步坐标；第三方代理客户端负责网络代理、模块拦截、MITM 和持久化。证书、VPN 与代理连接均由第三方客户端处理。",
                 tint: .orange
             )
@@ -101,65 +105,75 @@ extension FirstSetupView {
         let isRecommended = status == .recommended
         var isUnavailable = false
         if case .unavailable = status { isUnavailable = true }
-        return Button {
-            selectMode(mode)
-        } label: {
-            VStack(alignment: .leading, spacing: 12) {
-                HStack(spacing: 8) {
-                    Label(content.title, systemImage: content.icon)
-                        .font(.headline)
-                        .foregroundStyle(content.tint)
-                    if isRecommended {
-                        Text("推荐")
-                            .font(.caption2.weight(.bold))
-                            .foregroundStyle(.white)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 3)
-                            .background(content.tint, in: Capsule())
+        return VStack(alignment: .leading, spacing: 8) {
+            Button {
+                selectMode(mode)
+            } label: {
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack(spacing: 8) {
+                        Label(content.title, systemImage: content.icon)
+                            .font(.headline)
+                            .foregroundStyle(content.tint)
+                        if isRecommended {
+                            Text("推荐")
+                                .font(.caption2.weight(.bold))
+                                .foregroundStyle(.white)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 3)
+                                .background(content.tint, in: Capsule())
+                        }
+                        Spacer(minLength: 0)
                     }
-                    Spacer(minLength: 0)
-                }
-                HStack(spacing: 6) {
-                    ForEach(content.badges, id: \.self) { badge in
-                        Text(badge)
-                            .font(.caption2.weight(.semibold))
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 4)
-                            .background(content.tint.opacity(0.12), in: Capsule())
+                    HStack(spacing: 6) {
+                        ForEach(content.badges, id: \.self) { badge in
+                            Text(badge)
+                                .font(.caption2.weight(.semibold))
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 4)
+                                .background(content.tint.opacity(0.12), in: Capsule())
+                        }
                     }
+                    Text(content.outcome)
+                        .font(.subheadline)
+                        .foregroundStyle(.primary)
+                        .multilineTextAlignment(.leading)
+                    statusNote(status)
                 }
-                Text(content.description)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.leading)
-                switch status {
-                case .limited(let reason):
-                    Label(reason, systemImage: "exclamationmark.triangle.fill")
-                        .font(.caption.weight(.medium))
-                        .foregroundStyle(.orange)
-                case .unavailable(let reason):
-                    Label(reason, systemImage: "xmark.circle.fill")
-                        .font(.caption.weight(.medium))
-                        .foregroundStyle(.secondary)
-                case .recommended, .available:
-                    EmptyView()
-                }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(16)
-            .background(
-                Color(uiColor: .secondarySystemGroupedBackground),
-                in: RoundedRectangle(cornerRadius: AppRadius.control)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: AppRadius.control)
-                    .stroke(content.tint.opacity(isRecommended ? 0.6 : 0.25), lineWidth: isRecommended ? 1.5 : 1)
-            )
+            .buttonStyle(.plain)
+            .disabled(isUnavailable)
+            ModeRequirementDisclosure(text: content.description)
         }
-        .buttonStyle(.plain)
-        .disabled(isUnavailable)
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            Color(uiColor: .secondarySystemGroupedBackground),
+            in: RoundedRectangle(cornerRadius: AppRadius.control)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: AppRadius.control)
+                .stroke(content.tint.opacity(isRecommended ? 0.6 : 0.25), lineWidth: isRecommended ? 1.5 : 1)
+        )
         .opacity(isUnavailable ? 0.55 : 1)
+        .accessibilityElement(children: .contain)
         .accessibilityLabel(isRecommended ? "\(content.title)，推荐" : content.title)
+    }
+
+    @ViewBuilder
+    private func statusNote(_ status: RuntimeModeAvailability.Status) -> some View {
+        switch status {
+        case .limited(let reason):
+            Label(reason, systemImage: "exclamationmark.triangle.fill")
+                .font(.caption.weight(.medium))
+                .foregroundStyle(.orange)
+        case .unavailable(let reason):
+            Label(reason, systemImage: "xmark.circle.fill")
+                .font(.caption.weight(.medium))
+                .foregroundStyle(.secondary)
+        case .recommended, .available:
+            EmptyView()
+        }
     }
 
     var appModeNetworkBlockedMessage: String? {
@@ -199,4 +213,31 @@ extension FirstSetupView {
         }
     }
 
+}
+
+private struct ModeRequirementDisclosure: View {
+    let text: String
+    @State private var isExpanded = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Button {
+                isExpanded.toggle()
+            } label: {
+                HStack(spacing: 4) {
+                    Text(isExpanded ? "收起配置说明" : "查看配置说明")
+                    Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                }
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+            if isExpanded {
+                Text(text)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.leading)
+            }
+        }
+    }
 }

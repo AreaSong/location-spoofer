@@ -51,6 +51,7 @@ final class RoutePlaybackController: ObservableObject {
 
     private(set) var headingForward = true
     private var elapsed: TimeInterval = 0
+    private var playbackOrigin = Date()
     private var playbackTask: Task<Void, Never>?
     private var pathGeneration: UInt64 = 0
     private var writeGate = RouteWriteGate()
@@ -358,9 +359,27 @@ final class RoutePlaybackController: ObservableObject {
     }
 
     func setSpeedKilometersPerHour(_ value: Double) {
-        speedKilometersPerHour = min(40, max(1, value))
+        let next = min(40, max(1, value))
+        if phase == .playing || phase == .paused {
+            rebaseElapsed(toSpeedKilometersPerHour: next)
+        }
+        speedKilometersPerHour = next
         persistPreferences()
-        refreshReadyMessage()
+        if phase == .playing || phase == .paused {
+            statusMessage = playbackStatusMessage()
+        } else {
+            refreshReadyMessage()
+        }
+    }
+
+    private func rebaseElapsed(toSpeedKilometersPerHour kmh: Double) {
+        guard let path, path.totalMeters > 0 else { return }
+        elapsed = RoutePlayback.elapsed(
+            progress: progress,
+            totalMeters: path.totalMeters,
+            speedMetersPerSecond: max(kmh / 3.6, 0.1)
+        )
+        playbackOrigin = Date().addingTimeInterval(-elapsed)
     }
 
     func setOffsetMeters(_ value: Double) {
@@ -425,17 +444,17 @@ final class RoutePlaybackController: ObservableObject {
         BackgroundKeepAlive.shared.start()
         phase = .playing
         statusMessage = playbackStatusMessage()
+        playbackOrigin = Date().addingTimeInterval(-elapsed)
         playbackTask = Task { [weak self] in
             await self?.runLoop()
         }
     }
 
     private func runLoop() async {
-        var origin = Date().addingTimeInterval(-elapsed)
         while !Task.isCancelled, phase == .playing {
             guard let basePath = path, basePath.points.count >= 2 else { break }
             let activePath = headingForward ? basePath : basePath.reversed()
-            elapsed = Date().timeIntervalSince(origin)
+            elapsed = Date().timeIntervalSince(playbackOrigin)
             let tick = RoutePlayback.tick(
                 path: activePath,
                 speedMetersPerSecond: speedMetersPerSecond,
@@ -461,7 +480,7 @@ final class RoutePlaybackController: ObservableObject {
                     statusMessage = finishedStatusMessage()
                     return
                 }
-                origin = Date()
+                playbackOrigin = Date()
                 elapsed = 0
                 progress = 0
                 statusMessage = playbackStatusMessage()

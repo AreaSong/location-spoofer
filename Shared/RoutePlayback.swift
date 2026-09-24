@@ -131,6 +131,12 @@ enum RoutePlayback {
         return interpolate(from: path.points[index], to: path.points[index + 1], progress: local)
     }
 
+    /// 中途改速时按当前进度重算已走时间，避免下一次 tick 把位置跳到新速度对应的远处。
+    static func elapsed(progress: Double, totalMeters: Double, speedMetersPerSecond: Double) -> TimeInterval {
+        let duration = max(totalMeters / max(speedMetersPerSecond, 0.1), 0.1)
+        return min(max(progress, 0), 1) * duration
+    }
+
     static func tick(path: RoutePath, speedMetersPerSecond: Double, elapsed: TimeInterval) -> RouteTick {
         let distance = path.totalMeters
         let speed = max(speedMetersPerSecond, 0.1)
