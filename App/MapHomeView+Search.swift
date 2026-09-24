@@ -39,25 +39,17 @@ extension MapHomeView {
     }
 
     func favoriteChip(_ f: FavoriteLocation) -> some View {
-        HStack(spacing: 0) {
-            Button { select(f) } label: {
-                Label(f.name, systemImage: favorites.selectedFavoriteID == f.id ? "checkmark.circle.fill" : "mappin")
-                    .lineLimit(1).padding(.leading, 10).padding(.vertical, 8).padding(.trailing, 7).contentShape(Rectangle())
-            }.buttonStyle(.plain)
-            Divider().frame(height: 22)
-            Button {
-                editingFavorite = f
-                editName = f.name
-            } label: {
-                Image(systemName: "pencil").font(.caption2).frame(width: 32, height: 36).contentShape(Rectangle())
-            }.buttonStyle(.plain).foregroundStyle(.primary.opacity(0.55))
-            Divider().frame(height: 22)
-            Button(role: .destructive) { favorites.delete(f) } label: {
-                Image(systemName: "trash").font(.caption.weight(.semibold)).frame(width: 36, height: 36).contentShape(Rectangle())
-            }.buttonStyle(.plain).foregroundStyle(.red)
+        let selected = favorites.selectedFavoriteID == f.id
+        return Button { select(f) } label: {
+            Label(f.name, systemImage: selected ? "checkmark.circle.fill" : "mappin")
+                .lineLimit(1)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 8)
         }
-        .background((favorites.selectedFavoriteID == f.id ? Color.red.opacity(0.14) : Color.secondary.opacity(0.12)), in: Capsule())
-        .overlay(Capsule().stroke(favorites.selectedFavoriteID == f.id ? Color.red.opacity(0.7) : Color.clear))
+        .buttonStyle(.plain)
+        .background((selected ? Color.accentColor.opacity(0.16) : Color.secondary.opacity(0.12)), in: Capsule())
+        .overlay(Capsule().stroke(selected ? Color.accentColor.opacity(0.7) : Color.clear))
+        .accessibilityLabel(selected ? "\(f.name)，已选中" : f.name)
     }
 
     func recentChip(_ item: RecentSelection) -> some View {

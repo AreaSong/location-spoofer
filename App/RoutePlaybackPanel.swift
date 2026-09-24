@@ -61,12 +61,13 @@ struct RoutePlaybackPanel: View {
     @ObservedObject var route: RoutePlaybackController
     @ObservedObject var clock: RoutePlaybackClock
     let currentPair: CoordinatePair
-    let onPlay: () -> Void
     let onExit: () -> Void
     let onSave: () -> Void
     let onOpenSaved: () -> Void
     var embedded = false
     @State private var showsSpeedOffset = false
+    @State private var customSpeed = false
+    @State private var customOffset = false
 
     var body: some View {
         controls
@@ -85,48 +86,89 @@ struct RoutePlaybackPanel: View {
 
     private var controls: some View {
         VStack(alignment: .leading, spacing: 6) {
+            if let movementSummary {
+                Text(movementSummary)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
             actionRow
             settingsDisclosure
             if showsSpeedOffset {
                 speedOffsetSection
             }
             utilityRow
-            // 长引导只出现在展开区。收起态用卡片上的一行摘要，这里不再重复。
-            if route.phase != .preparing {
-                statusMessage
+            if let exceptionStatus {
+                Text(exceptionStatus)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
             }
         }
     }
 
-    @ViewBuilder
-    private var statusMessage: some View {
-        if !clock.statusMessage.isEmpty {
-            Text(clock.statusMessage)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .lineLimit(2)
+    private var movementSummary: String? {
+        switch route.phase {
+        case .playing, .paused:
+            return RoutePlayback.formattedRemaining(
+                meters: route.remainingMeters,
+                speedMetersPerSecond: route.speedMetersPerSecond
+            )
+        default:
+            return nil
+        }
+    }
+
+    private var exceptionStatus: String? {
+        let text = clock.statusMessage
+        guard !text.isEmpty else { return nil }
+        switch route.phase {
+        case .finished:
+            return text
+        case .playing, .paused:
+            if text == "已暂停。" || text == route.playbackStatusMessage() { return nil }
+            return text
+        default:
+            return nil
         }
     }
 
     @ViewBuilder
     private var actionRow: some View {
-        switch route.phase {
-        case .playing:
-            VStack(spacing: 6) {
-                ProgressView(value: clock.progress)
-                primaryButton("暂停", disabled: false) { route.pause() }
-            }
-        case .paused, .finished:
-            VStack(spacing: 6) {
-                ProgressView(value: clock.progress)
-                primaryButton(route.phase == .paused ? "继续走" : "开始走", disabled: playDisabled) { onPlay() }
-            }
-        default:
+        if route.phase == .preparing {
             VStack(alignment: .leading, spacing: 6) {
-                statusMessage
+                Text(preparingSummary)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
                 pinRow
-                primaryButton("开始走", disabled: playDisabled) { onPlay() }
             }
+        }
+    }
+
+    private var preparingSummary: String {
+        if route.isRouting { return "正在规划路线" }
+        if route.start == nil { return "先设起点" }
+        if route.end == nil {
+            return route.vias.isEmpty ? "再设终点" : "已加 \(route.vias.count) 个途经，再设终点"
+        }
+        if !route.canPlay { return "起点和终点太近" }
+        return distanceLine
+    }
+
+    private var distanceLine: String {
+        let meters = route.distanceMeters
+        let duration = RoutePlayback.formattedDuration(
+            meters: route.repeatMode == .roundTrip ? meters * 2 : meters,
+            speedMetersPerSecond: route.speedMetersPerSecond
+        )
+        switch route.repeatMode {
+        case .once:
+            return "\(RoutePlayback.formattedDistance(meters))，\(duration)"
+        case .roundTrip:
+            return "往返 \(RoutePlayback.formattedDistance(meters * 2))，\(duration)"
+        case .loop:
+            return "\(RoutePlayback.formattedDistance(meters))，循环，\(duration)"
         }
     }
 
@@ -160,29 +202,46 @@ struct RoutePlaybackPanel: View {
 
     private var pinRow: some View {
         HStack(spacing: 6) {
-            Button("起点") { route.setStart(currentPair) }
-                .font(.subheadline.weight(.semibold))
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 5)
-            Button("终点") { route.setEnd(currentPair) }
-                .font(.subheadline.weight(.semibold))
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 5)
-            Button("途经") { route.addVia(currentPair) }
-                .font(.subheadline.weight(.semibold))
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 5)
-                .disabled(!route.canEditVias)
-                .opacity(route.canEditVias ? 1 : 0.4)
+            pinButton(route.start == nil ? "起点" : "起点已设", isSet: route.start != nil) {
+                route.setStart(currentPair)
+            }
+            pinButton(route.end == nil ? "终点" : "终点已设", isSet: route.end != nil) {
+                route.setEnd(currentPair)
+            }
+            pinButton(route.vias.isEmpty ? "途经" : "途经 \(route.vias.count)", isSet: !route.vias.isEmpty, enabled: route.canEditVias) {
+                route.addVia(currentPair)
+            }
             if !route.vias.isEmpty {
-                Button("撤销") { route.removeLastVia() }
-                    .font(.subheadline.weight(.semibold))
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 5)
+                pinButton("撤销", isSet: false) { route.removeLastVia() }
             }
         }
         .padding(2)
         .background(Color.secondary.opacity(0.12), in: RoundedRectangle(cornerRadius: AppRadius.control, style: .continuous))
+    }
+
+    private func pinButton(
+        _ title: String,
+        isSet: Bool,
+        enabled: Bool = true,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Text(title)
+                .font(.subheadline.weight(.semibold))
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 5)
+                .foregroundStyle(isSet ? Color.accentColor : Color.primary)
+                .background(
+                    isSet ? Color.accentColor.opacity(0.16) : Color.clear,
+                    in: RoundedRectangle(cornerRadius: AppRadius.inset, style: .continuous)
+                )
+        }
+        .buttonStyle(.plain)
+        .disabled(!enabled)
+        .opacity(enabled ? 1 : 0.4)
+        .accessibilityLabel(title)
     }
 
     private var utilityRow: some View {
@@ -194,7 +253,7 @@ struct RoutePlaybackPanel: View {
                 Button("保存") { onSave() }
                     .buttonStyle(CapsuleChipStyle())
                     .disabled(!route.canPlay || route.isRouting || route.waitingForActivation)
-                Button("已存") { onOpenSaved() }
+                Button("已存路线") { onOpenSaved() }
                     .buttonStyle(CapsuleChipStyle())
             }
             Button("退出路线") { onExit() }
@@ -218,42 +277,62 @@ struct RoutePlaybackPanel: View {
                 isSelected: { $0 == route.repeatMode },
                 onSelect: { route.applyRepeatMode($0) }
             )
-            Text("速度 km/h")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+            metricHeader("速度 km/h", showsCustom: !customSpeed && speedMatchesPreset) {
+                customSpeed = true
+            }
             RouteChoiceBar(
                 items: RouteSpeedPreset.all,
                 title: \.title,
                 isSelected: { abs(route.speedKilometersPerHour - $0.kilometersPerHour) < 0.05 },
                 isDisabled: route.phase == .playing,
-                onSelect: { route.setSpeedKilometersPerHour($0.kilometersPerHour) }
+                onSelect: {
+                    customSpeed = false
+                    route.setSpeedKilometersPerHour($0.kilometersPerHour)
+                }
             )
-            Slider(value: speedBinding, in: 1...40, step: 0.5)
-                .disabled(route.phase == .playing)
-            Text("偏移")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+            if customSpeed || !speedMatchesPreset {
+                Slider(value: speedBinding, in: 1...40, step: 0.5)
+                    .disabled(route.phase == .playing)
+            }
+            metricHeader("偏移", showsCustom: !customOffset && offsetMatchesPreset) {
+                customOffset = true
+            }
             RouteChoiceBar(
                 items: RouteOffsetPreset.all,
                 title: \.title,
                 isSelected: { abs(route.offsetMeters - $0.meters) < 0.5 },
-                onSelect: { route.setOffsetMeters($0.meters) }
+                onSelect: {
+                    customOffset = false
+                    route.setOffsetMeters($0.meters)
+                }
             )
-            Slider(value: offsetBinding, in: 0...80, step: 5)
+            if customOffset || !offsetMatchesPreset {
+                Slider(value: offsetBinding, in: 0...80, step: 5)
+            }
         }
     }
 
-    private func primaryButton(_ title: String, disabled: Bool, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Label(title, systemImage: "figure.walk")
-                .frame(maxWidth: .infinity)
-        }
-        .buttonStyle(PrimaryActionStyle(compact: true))
-        .disabled(disabled)
+    private var speedMatchesPreset: Bool {
+        RouteSpeedPreset.all.contains { abs(route.speedKilometersPerHour - $0.kilometersPerHour) < 0.05 }
     }
 
-    private var playDisabled: Bool {
-        !route.canPlay || route.waitingForActivation || route.isRouting
+    private var offsetMatchesPreset: Bool {
+        RouteOffsetPreset.all.contains { abs(route.offsetMeters - $0.meters) < 0.5 }
+    }
+
+    private func metricHeader(_ title: String, showsCustom: Bool, onCustom: @escaping () -> Void) -> some View {
+        HStack {
+            Text(title)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Spacer(minLength: 0)
+            if showsCustom {
+                Button("自定义", action: onCustom)
+                    .font(.caption.weight(.semibold))
+                    .buttonStyle(.plain)
+                    .foregroundStyle(Color.accentColor)
+            }
+        }
     }
 
     private var speedBinding: Binding<Double> {

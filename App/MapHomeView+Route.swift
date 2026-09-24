@@ -151,7 +151,6 @@ extension MapHomeView {
                 route: route,
                 clock: route.clock,
                 currentPair: currentSelectionPair,
-                onPlay: playRoute,
                 onExit: requestExitRoute,
                 onSave: promptSaveRoute,
                 onOpenSaved: openSavedRoutes,
@@ -338,7 +337,11 @@ struct HomePeekCaption: View {
     private var routeCaption: String? {
         switch route.phase {
         case .playing, .paused:
-            return "\(Int((clock.progress * 100).rounded()))%"
+            _ = clock.progress
+            return RoutePlayback.formattedRemaining(
+                meters: route.remainingMeters,
+                speedMetersPerSecond: route.speedMetersPerSecond
+            )
         case .finished:
             return "已走完"
         case .preparing:
