@@ -231,14 +231,28 @@ extension MapHomeView {
     }
 
     func playRoute() {
-        if refuseUIPreviewLocationChange() { return }
         bindRoutePlayback()
+        if UIPreview.isEnabled() {
+            playRouteInPreview()
+            return
+        }
         if locationUseBlock != nil { return }
         if routeUsesDeveloperTunnel {
             playRouteThroughDeveloperTunnel()
         } else {
             playRouteThroughSpoofSession()
         }
+    }
+
+    /// 测试模式只推进本地播放和灵动岛，不写系统定位。
+    private func playRouteInPreview() {
+        if route.phase == .paused {
+            route.resume()
+            return
+        }
+        guard route.start != nil, route.canPlay else { return }
+        route.requestPlay()
+        route.noteActivated()
     }
 
     /// 开发者隧道：先确认隧道和配对文件就绪，再把起点推进系统定位。
@@ -301,6 +315,7 @@ extension MapHomeView {
     }
 
     func applyRouteCoordinate(_ pair: CoordinatePair) async -> Bool {
+        if UIPreview.isEnabled() { return true }
         guard routeUsesDeveloperTunnel else {
             return await session.writeRoute(pair, offsetMeters: route.offsetMeters)
         }
@@ -314,7 +329,8 @@ extension MapHomeView {
 
     /// 只有开发者隧道会占用系统定位。路线结束后，定点仍开启就回到定点，否则清掉模拟。
     func clearRouteLocationIfNeeded(from previous: RoutePhase, to next: RoutePhase) {
-        guard routeUsesDeveloperTunnel,
+        guard !UIPreview.isEnabled(),
+              routeUsesDeveloperTunnel,
               RouteLocationStop.shouldClearSimulation(from: previous, to: next) else { return }
         if spoofState == .active, let latitude = activeSpoofLat, let longitude = activeSpoofLon {
             Task { _ = await routeLocation.set(latitude: latitude, longitude: longitude) }

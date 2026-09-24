@@ -50,11 +50,14 @@ extension FirstSetupView {
             }
 
             if UIPreview.isAvailable {
-                Button(action: onPreview) {
+                Button {
+                    previewArmed = true
+                    onPreview()
+                } label: {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("只看界面")
+                        Text(previewArmed ? "测试模式已打开" : "测试模式")
                             .font(.headline)
-                        Text("打开地图看定点、走路和底栏。开始和走路不会改系统定位。")
+                        Text("先选一种运行模式。引导、设置和地图都能点。走路只在本地播放，不改系统定位。")
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                     }
@@ -185,6 +188,15 @@ extension FirstSetupView {
 
     func selectMode(_ mode: ProxyRuntimeMode) {
         guard !isPreparingMode else { return }
+        if previewArmed || UIPreview.isEnabled() {
+            runtimeMode.setMode(mode, disablesPreview: false)
+            switch mode {
+            case .localWiFi: step = .proxy
+            case .thirdParty: step = .thirdPartyClient
+            case .developerTunnel: step = .developerTunnel
+            }
+            return
+        }
         if mode == .localWiFi, appModeNetworkBlockedMessage != nil {
             showAppModeNetworkAlert = true
             return

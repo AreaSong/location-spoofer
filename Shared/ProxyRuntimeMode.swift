@@ -53,8 +53,10 @@ final class ProxyRuntimeModeStore: ObservableObject {
         migrateLegacyInitializationIfNeeded()
     }
 
-    func setMode(_ mode: ProxyRuntimeMode) {
-        UIPreview.disable()
+    func setMode(_ mode: ProxyRuntimeMode, disablesPreview: Bool = true) {
+        if disablesPreview {
+            UIPreview.disable()
+        }
         let changed = self.mode != mode
         self.mode = mode
         hasSelectedMode = true

@@ -65,6 +65,7 @@ struct FirstSetupView: View {
     @State var showThirdPartyRepairReason: Bool
     @State var showsVerificationResult: Bool
     @State var showsThirdPartyFailureLog: Bool
+    @State var previewArmed = false
 
     init(
         setup: SetupCoordinator,
@@ -313,7 +314,11 @@ struct FirstSetupView: View {
             EmptyView()
         } else if step == .proxy {
             Button {
-                verifyAfterProxyConfirmation()
+                if previewArmed || UIPreview.isEnabled() {
+                    step = .cert
+                } else {
+                    verifyAfterProxyConfirmation()
+                }
             } label: {
                 actionLabel("完成")
             }
@@ -322,7 +327,11 @@ struct FirstSetupView: View {
         } else if step == .cert {
             // 三个勾选只是进度提示；真正的门是下面的环境检测。
             Button {
-                verifyAfterCertificateConfirmation()
+                if previewArmed || UIPreview.isEnabled() {
+                    onComplete()
+                } else {
+                    verifyAfterCertificateConfirmation()
+                }
             } label: {
                 actionLabel("完成")
             }
@@ -335,7 +344,7 @@ struct FirstSetupView: View {
                 actionLabel("完成")
             }
             .buttonStyle(.borderedProminent)
-            .disabled(routeLocation.readiness != .ready)
+            .disabled(!(previewArmed || UIPreview.isEnabled()) && routeLocation.readiness != .ready)
         } else if step == .thirdPartyClient {
             Button {
                 step = .thirdPartyImport
@@ -345,7 +354,11 @@ struct FirstSetupView: View {
                 .buttonStyle(.borderedProminent)
         } else {
             Button {
-                verifyThirdPartyConnection()
+                if previewArmed || UIPreview.isEnabled() {
+                    onComplete()
+                } else {
+                    verifyThirdPartyConnection()
+                }
             } label: {
                 actionLabel("完成")
             }

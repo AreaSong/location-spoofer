@@ -1,6 +1,6 @@
 import Foundation
 
-/// 模拟器里跳过代理、证书和隧道，只打开地图看界面。
+/// 模拟器里的测试模式。引导、设置和地图都能点，路线只在本地播放，不写系统定位。
 enum UIPreview {
     static let storageKey = "uiPreviewEnabled"
 

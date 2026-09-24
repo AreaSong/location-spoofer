@@ -66,7 +66,7 @@ struct ContentView: View {
     private func bootstrap() async {
         if UIPreview.isEnabled() {
             stopNetworkSpoofing()
-            RuntimeLogger.info("APP", "Startup", "界面预览：跳过运行模式和本地服务")
+            RuntimeLogger.info("APP", "Startup", "测试模式：跳过代理、证书和隧道")
             await presentMap()
             return
         }
@@ -114,7 +114,7 @@ struct ContentView: View {
         await presentMap()
     }
 
-    /// 模式已经确定，或模拟器选择了界面预览。此后才创建地图。
+    /// 模式已经确定，或模拟器处于测试模式。此后才创建地图。
     private func presentMap() async {
         do {
             try CoordinateStorageMigration.migrateIfNeeded(favorites: FavoriteLocationStore())
@@ -178,12 +178,16 @@ struct ContentView: View {
     private func finishUIPreview() {
         UIPreview.enable()
         stopNetworkSpoofing()
-        setup.completeSetup()
-        phase = .splash
-        Task { await bootstrap() }
     }
 
     private func finishInitialSetup() {
+        if UIPreview.isEnabled() {
+            stopNetworkSpoofing()
+            setup.completeSetup()
+            phase = .splash
+            Task { await bootstrap() }
+            return
+        }
         let completedMode = runtimeMode.mode
         runtimeMode.markInitialized(completedMode)
         if completedMode == .thirdParty {
@@ -195,6 +199,10 @@ struct ContentView: View {
     }
 
     private func finishPresentedSetup() {
+        if UIPreview.isEnabled() {
+            setup.completeSetup()
+            return
+        }
         runtimeMode.markInitialized(runtimeMode.mode)
         if runtimeMode.mode == .thirdParty {
             ThirdPartyModuleRuntime.endImportKeepAlive()

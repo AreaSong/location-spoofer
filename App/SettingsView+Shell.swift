@@ -31,7 +31,7 @@ extension SettingsView {
 
             Section("状态") {
                 if UIPreview.isEnabled() {
-                    Text("界面预览不会修改定位。在上面换成一种运行模式后，下次启动会进入对应引导。")
+                    Text("测试模式不会修改定位，路线只在本地播放。在上面换成一种运行模式后，下次启动会进入对应引导。")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
@@ -53,7 +53,7 @@ extension SettingsView {
                         Spacer()
                         Toggle("", isOn: proxyBinding).labelsHidden()
                             .tint(.blue)
-                            .disabled(actions.state.isBusy)
+                            .disabled(actions.state.isBusy || UIPreview.isEnabled())
                     }
                 } else if runtimeMode.mode == .developerTunnel {
                     HStack {
@@ -77,7 +77,7 @@ extension SettingsView {
                             Label("检测连接", systemImage: "network")
                         }
                     }
-                    .disabled(thirdPartyProxy.isRequesting)
+                    .disabled(thirdPartyProxy.isRequesting || UIPreview.isEnabled())
                 }
                 HStack {
                     Label("虚拟定位", systemImage: virtualLocationIsActive ? "location.fill" : "location.slash")

@@ -72,7 +72,14 @@ extension MapHomeView {
     }
 
     func handleMainButtonTap() {
-        if refuseUIPreviewLocationChange() { return }
+        if UIPreview.isEnabled() {
+            if spoofState == .active, !needsSwitchButton {
+                session.setPreviewActive(false, latitude: nil, longitude: nil)
+            } else {
+                beginLocationOperation()
+            }
+            return
+        }
         if runtimeMode.mode == .developerTunnel, spoofState != .active {
             routeLocation.refresh()
             if routeLocation.readiness != .ready {
@@ -130,14 +137,12 @@ extension MapHomeView {
     }
 
     func beginLocationOperation(target overrideTarget: FavoriteLocation? = nil) {
-        if refuseUIPreviewLocationChange() { return }
+        if UIPreview.isEnabled() {
+            let coordinate = (overrideTarget?.coordinatePair ?? currentSelectionPair).wgs84
+            session.setPreviewActive(true, latitude: coordinate.latitude, longitude: coordinate.longitude)
+            return
+        }
         session.begin(target: overrideTarget ?? currentSelectionFavorite)
-    }
-
-    func refuseUIPreviewLocationChange() -> Bool {
-        guard UIPreview.isEnabled() else { return false }
-        manualHint = "界面预览不会修改定位。"
-        return true
     }
 
     func stopSpoofing() {
@@ -296,7 +301,7 @@ extension MapHomeView {
     }
 
     var homeRuntimeStatusText: String {
-        if UIPreview.isEnabled() { return "界面预览" }
+        if UIPreview.isEnabled() { return "测试模式" }
         if runtimeMode.mode == .developerTunnel {
             return routeLocation.readiness == .ready ? "隧道已连接" : "隧道未就绪"
         }

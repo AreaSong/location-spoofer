@@ -69,6 +69,15 @@ final class SpoofSession: ObservableObject {
         return effects
     }
 
+    func setPreviewActive(_ active: Bool, latitude: Double?, longitude: Double?) {
+        operationTask?.cancel()
+        operationTask = nil
+        state = active ? .active : .idle
+        writtenLatitude = active ? latitude : nil
+        writtenLongitude = active ? longitude : nil
+        effectRevision &+= 1
+    }
+
     func begin(target: FavoriteLocation) {
         guard let services else { return }
         if services.isUseBlocked() { return }
