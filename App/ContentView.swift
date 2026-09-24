@@ -66,7 +66,7 @@ struct ContentView: View {
     private func bootstrap() async {
         if UIPreview.isEnabled() {
             stopNetworkSpoofing()
-            RuntimeLogger.info("APP", "Startup", "测试模式：跳过代理、证书和隧道")
+            RuntimeLogger.info("APP", "Startup", "开发者模式：不写入代理、证书和隧道")
             await presentMap()
             return
         }
@@ -114,7 +114,7 @@ struct ContentView: View {
         await presentMap()
     }
 
-    /// 模式已经确定，或模拟器处于测试模式。此后才创建地图。
+    /// 模式已经确定，或模拟器处于开发者模式。此后才创建地图。开发者模式不标记引导完成。
     private func presentMap() async {
         do {
             try CoordinateStorageMigration.migrateIfNeeded(favorites: FavoriteLocationStore())

@@ -66,6 +66,7 @@ struct FirstSetupView: View {
     @State var showsVerificationResult: Bool
     @State var showsThirdPartyFailureLog: Bool
     @State var previewArmed = false
+    @State var showsDeveloperModeConfirm = false
 
     init(
         setup: SetupCoordinator,
@@ -146,7 +147,7 @@ struct FirstSetupView: View {
                             primaryAction
                         }
                         // “完成”灰着的时候，直接说清楚还差什么。
-                        if step == .developerTunnel, let message = routeLocation.readiness.blockingMessage {
+                        if step == .developerTunnel, !developerMode, let message = routeLocation.readiness.blockingMessage {
                             Text(message)
                                 .font(.footnote)
                                 .foregroundStyle(.secondary)
@@ -314,8 +315,8 @@ struct FirstSetupView: View {
             EmptyView()
         } else if step == .proxy {
             Button {
-                if previewArmed || UIPreview.isEnabled() {
-                    step = .cert
+                if developerMode {
+                    finishDeveloperCheck { step = .cert }
                 } else {
                     verifyAfterProxyConfirmation()
                 }
@@ -327,8 +328,8 @@ struct FirstSetupView: View {
         } else if step == .cert {
             // 三个勾选只是进度提示；真正的门是下面的环境检测。
             Button {
-                if previewArmed || UIPreview.isEnabled() {
-                    onComplete()
+                if developerMode {
+                    finishDeveloperCheck { onComplete() }
                 } else {
                     verifyAfterCertificateConfirmation()
                 }
@@ -344,7 +345,7 @@ struct FirstSetupView: View {
                 actionLabel("完成")
             }
             .buttonStyle(.borderedProminent)
-            .disabled(!(previewArmed || UIPreview.isEnabled()) && routeLocation.readiness != .ready)
+            .disabled(!developerMode && routeLocation.readiness != .ready)
         } else if step == .thirdPartyClient {
             Button {
                 step = .thirdPartyImport
@@ -354,8 +355,8 @@ struct FirstSetupView: View {
                 .buttonStyle(.borderedProminent)
         } else {
             Button {
-                if previewArmed || UIPreview.isEnabled() {
-                    onComplete()
+                if developerMode {
+                    finishDeveloperCheck { onComplete() }
                 } else {
                     verifyThirdPartyConnection()
                 }
@@ -367,6 +368,24 @@ struct FirstSetupView: View {
         }
     }
 
+
+    var developerMode: Bool { previewArmed || UIPreview.isEnabled() }
+
+    /// 开发者模式只回放成功结果，不调用真实检测，也不写入引导完成状态。
+    func finishDeveloperCheck(_ advance: @escaping () -> Void) {
+        guard !isVerifying else { return }
+        isVerifying = true
+        result = nil
+        showsVerificationResult = false
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 350_000_000)
+            result = .success
+            showsVerificationResult = true
+            isVerifying = false
+            try? await Task.sleep(nanoseconds: 450_000_000)
+            advance()
+        }
+    }
 
     private func actionLabel(_ title: String) -> some View {
         HStack {

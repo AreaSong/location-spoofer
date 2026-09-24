@@ -51,13 +51,12 @@ extension FirstSetupView {
 
             if UIPreview.isAvailable {
                 Button {
-                    previewArmed = true
-                    onPreview()
+                    showsDeveloperModeConfirm = true
                 } label: {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text(previewArmed ? "测试模式已打开" : "测试模式")
+                        Text(developerMode ? "开发者模式已打开" : "开发者模式")
                             .font(.headline)
-                        Text("先选一种运行模式。引导、设置和地图都能点。走路只在本地播放，不改系统定位。")
+                        Text("需要再次确认。确认后检测和走路都会给出成功反馈，但不会修改系统定位、证书、代理或隧道。")
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                     }
@@ -66,7 +65,16 @@ extension FirstSetupView {
                     .background(Color.secondary.opacity(0.12), in: RoundedRectangle(cornerRadius: AppRadius.control, style: .continuous))
                 }
                 .buttonStyle(.plain)
-                .disabled(isPreparingMode)
+                .disabled(isPreparingMode || developerMode)
+                .alert("进入开发者模式？", isPresented: $showsDeveloperModeConfirm) {
+                    Button("进入") {
+                        previewArmed = true
+                        onPreview()
+                    }
+                    Button("取消", role: .cancel) {}
+                } message: {
+                    Text("里面的检测、连接、定位和走路都会按成功来显示，但全部是虚拟的。这不会记成正常使用已经配置完成。")
+                }
             }
         }
     }
@@ -188,7 +196,7 @@ extension FirstSetupView {
 
     func selectMode(_ mode: ProxyRuntimeMode) {
         guard !isPreparingMode else { return }
-        if previewArmed || UIPreview.isEnabled() {
+        if developerMode {
             runtimeMode.setMode(mode, disablesPreview: false)
             switch mode {
             case .localWiFi: step = .proxy

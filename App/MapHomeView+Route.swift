@@ -244,7 +244,7 @@ extension MapHomeView {
         }
     }
 
-    /// 测试模式只推进本地播放和灵动岛，不写系统定位。
+    /// 开发者模式只推进本地播放和灵动岛，不写系统定位。
     private func playRouteInPreview() {
         if route.phase == .paused {
             route.resume()

@@ -301,7 +301,7 @@ extension MapHomeView {
     }
 
     var homeRuntimeStatusText: String {
-        if UIPreview.isEnabled() { return "测试模式" }
+        if UIPreview.isEnabled() { return "开发者模式" }
         if runtimeMode.mode == .developerTunnel {
             return routeLocation.readiness == .ready ? "隧道已连接" : "隧道未就绪"
         }

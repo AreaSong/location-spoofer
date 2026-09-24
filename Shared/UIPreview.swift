@@ -1,6 +1,6 @@
 import Foundation
 
-/// 模拟器里的测试模式。引导、设置和地图都能点，路线只在本地播放，不写系统定位。
+/// 模拟器里的开发者模式。反馈走正常成功路径，但不写入系统定位、证书、代理或隧道，也不记成正常模式已完成引导。
 enum UIPreview {
     static let storageKey = "uiPreviewEnabled"
 

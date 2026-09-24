@@ -8,6 +8,11 @@ extension FirstSetupView {
             Text("定点和路线都通过这条通道推进系统定位。不用小火箭，也不用反复开关定位服务。三项都打勾后，点完成。")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
+            if developerMode {
+                Label("开发者模式：隧道按已就绪显示，不会连接本机隧道。", systemImage: "checkmark.circle.fill")
+                    .font(.footnote)
+                    .foregroundStyle(.green)
+            }
 
             GroupBox(label: Label("就绪清单", systemImage: "checklist")) {
                 RouteLocationChecklist()

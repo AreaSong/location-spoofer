@@ -31,7 +31,7 @@ extension SettingsView {
 
             Section("状态") {
                 if UIPreview.isEnabled() {
-                    Text("测试模式不会修改定位，路线只在本地播放。在上面换成一种运行模式后，下次启动会进入对应引导。")
+                    Text("当前是开发者模式，下面的成功状态不会写入正常使用。换成一种运行模式后，下次启动进入真实引导。")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
