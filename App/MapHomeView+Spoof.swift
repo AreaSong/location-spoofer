@@ -13,7 +13,21 @@ extension MapHomeView {
         )
     }
 
+    /// 隧道还没连上时，主按钮先引导去连隧道，点击行为不变（打开路线定位）。
+    var needsTunnelBeforeStart: Bool {
+        runtimeMode.mode == .developerTunnel
+            && routeLocation.readiness != .ready
+            && spoofState == .idle
+    }
+
+    var buttonSystemImage: String? {
+        needsTunnelBeforeStart ? "network" : nil
+    }
+
     var buttonTitle: String {
+        if needsTunnelBeforeStart {
+            return "先连接隧道"
+        }
         if runtimeMode.mode == .thirdParty {
             switch spoofState {
             case .idle: return "同步到第三方代理"
@@ -89,7 +103,7 @@ extension MapHomeView {
         }
         .padding(24)
         .frame(maxWidth: .infinity)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: AppRadius.card, style: .continuous))
     }
 
     func beginLocationOperation(target overrideTarget: FavoriteLocation? = nil) {
@@ -231,6 +245,23 @@ extension MapHomeView {
 
     func openCommunityContributionPage() {
         githubDestination = SafariDestination(url: GitHubSubmission.communityContributionURL)
+    }
+
+    var homeRuntimeStatusTone: StatusPill.Tone {
+        if runtimeMode.mode == .developerTunnel {
+            return routeLocation.readiness == .ready ? .ok : .warn
+        }
+        if runtimeMode.mode == .thirdParty {
+            switch thirdPartyProxy.connectionState {
+            case .unknown: return .neutral
+            case .connected: return .ok
+            case .failed: return .error
+            }
+        }
+        if !proxy.isRunning {
+            return .error
+        }
+        return keepAlive.isHealthy ? .ok : .warn
     }
 
     var homeRuntimeStatusText: String {

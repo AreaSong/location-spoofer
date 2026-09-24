@@ -29,7 +29,7 @@ extension FirstSetupView {
         .foregroundStyle(.orange)
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(10)
-        .background(.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
+        .background(.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: AppRadius.inset))
     }
 
     var thirdPartyClientStep: some View {
@@ -129,13 +129,9 @@ extension FirstSetupView {
             GroupBox(label: Label("第 1 步：导入 \(client.name) 模块", systemImage: "square.and.arrow.down")) {
                 VStack(alignment: .leading, spacing: 12) {
                     instructionRow(1, "复制 \(client.name) 的模块订阅地址。本机地址导入或更新时请保持本 App 打开，不要杀掉。")
-                    Button {
+                    CopyButton("复制模块订阅地址", copiedTitle: "已复制模块订阅地址", fillsWidth: true) {
                         ThirdPartyModuleRuntime.prepareForImport()
-                        UIPasteboard.general.string = client.subscriptionURL.absoluteString
-                        copiedSubscriptionURL = true
-                    } label: {
-                        Label(copiedSubscriptionURL ? "已复制模块订阅地址" : "复制模块订阅地址", systemImage: "doc.on.doc")
-                            .frame(maxWidth: .infinity)
+                        return client.subscriptionURL.absoluteString
                     }
                     .buttonStyle(.borderedProminent)
                     Text("当前来源：\(moduleSource.distribution.displayName)")
@@ -264,15 +260,8 @@ extension FirstSetupView {
     }
 
     var mitmHostnameCopyButton: some View {
-        Button {
-            UIPasteboard.general.string = ThirdPartyProxyManager.interceptionHostnamesText
-            copiedMITMHostname = true
-        } label: {
-            Label(
-                copiedMITMHostname ? "已复制解密域名" : "复制解密域名",
-                systemImage: "doc.on.doc"
-            )
-            .frame(maxWidth: .infinity)
+        CopyButton("复制解密域名", copiedTitle: "已复制解密域名", fillsWidth: true) {
+            ThirdPartyProxyManager.interceptionHostnamesText
         }
         .buttonStyle(.borderedProminent)
     }

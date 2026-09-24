@@ -44,15 +44,16 @@ private struct RouteChoiceBar<Item: Hashable>: View {
                         .foregroundStyle(isSelected(item) ? Color.accentColor : Color.primary)
                         .background(
                             isSelected(item) ? Color.accentColor.opacity(0.16) : Color.clear,
-                            in: RoundedRectangle(cornerRadius: 11, style: .continuous)
+                            in: RoundedRectangle(cornerRadius: AppRadius.inset, style: .continuous)
                         )
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .disabled(isDisabled)
             }
         }
         .padding(4)
-        .background(Color.secondary.opacity(0.12), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .background(Color.secondary.opacity(0.12), in: RoundedRectangle(cornerRadius: AppRadius.control, style: .continuous))
     }
 }
 
@@ -77,7 +78,7 @@ struct RoutePlaybackPanel: View {
     @ViewBuilder
     private var panelChrome: some View {
         if !embedded {
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
+            RoundedRectangle(cornerRadius: AppRadius.control, style: .continuous)
                 .fill(.regularMaterial)
         }
     }
@@ -89,15 +90,21 @@ struct RoutePlaybackPanel: View {
             if showsSpeedOffset {
                 speedOffsetSection
             }
-            if route.phase != .playing {
-                utilityRow
+            utilityRow
+            // 准备阶段的引导文案已经放在图钉行上方；播放中把进度说明留在下方。
+            if route.phase != .preparing {
+                statusMessage
             }
-            if !clock.statusMessage.isEmpty {
-                Text(clock.statusMessage)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(2)
-            }
+        }
+    }
+
+    @ViewBuilder
+    private var statusMessage: some View {
+        if !clock.statusMessage.isEmpty {
+            Text(clock.statusMessage)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(2)
         }
     }
 
@@ -115,7 +122,8 @@ struct RoutePlaybackPanel: View {
                 primaryButton(route.phase == .paused ? "继续走" : "开始走", disabled: playDisabled) { onPlay() }
             }
         default:
-            VStack(spacing: 10) {
+            VStack(alignment: .leading, spacing: 10) {
+                statusMessage
                 pinRow
                 primaryButton("开始走", disabled: playDisabled) { onPlay() }
             }
@@ -136,8 +144,12 @@ struct RoutePlaybackPanel: View {
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
             }
+            .frame(minHeight: 32)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .accessibilityLabel("速度与偏移设置")
+        .accessibilityValue(routeSummary)
     }
 
     private var routeSummary: String {
@@ -170,41 +182,23 @@ struct RoutePlaybackPanel: View {
             }
         }
         .padding(4)
-        .background(Color.secondary.opacity(0.12), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .background(Color.secondary.opacity(0.12), in: RoundedRectangle(cornerRadius: AppRadius.control, style: .continuous))
     }
 
     private var utilityRow: some View {
         HStack(spacing: 8) {
-            Button("倒着走") { route.reverseDirection() }
-                .font(.system(size: 10, weight: .medium))
-                .foregroundStyle(.secondary)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
-                .background(Color.secondary.opacity(0.1), in: Capsule())
-                .disabled(!route.canReverse)
-                .opacity(route.canReverse ? 1 : 0.4)
-            Button("保存") { onSave() }
-                .font(.system(size: 10, weight: .medium))
-                .foregroundStyle(.secondary)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
-                .background(Color.secondary.opacity(0.1), in: Capsule())
-                .disabled(!route.canPlay || route.isRouting || route.waitingForActivation)
-            Button("已存") { onOpenSaved() }
-                .font(.system(size: 10, weight: .medium))
-                .foregroundStyle(.secondary)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
-                .background(Color.secondary.opacity(0.1), in: Capsule())
-                .disabled(route.phase == .playing)
-            if !embedded {
-                Button("退出") { onExit() }
-                    .font(.system(size: 10, weight: .medium))
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(Color.secondary.opacity(0.1), in: Capsule())
+            if route.phase != .playing {
+                Button("倒着走") { route.reverseDirection() }
+                    .buttonStyle(CapsuleChipStyle())
+                    .disabled(!route.canReverse)
+                Button("保存") { onSave() }
+                    .buttonStyle(CapsuleChipStyle())
+                    .disabled(!route.canPlay || route.isRouting || route.waitingForActivation)
+                Button("已存") { onOpenSaved() }
+                    .buttonStyle(CapsuleChipStyle())
             }
+            Button("退出路线") { onExit() }
+                .buttonStyle(CapsuleChipStyle(tint: .red))
             Spacer(minLength: 0)
         }
     }
@@ -252,13 +246,9 @@ struct RoutePlaybackPanel: View {
     private func primaryButton(_ title: String, disabled: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Label(title, systemImage: "figure.walk")
-                .font(.headline)
-                .lineLimit(1)
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 14)
         }
-        .background(Color.accentColor.opacity(disabled ? 0.45 : 1), in: RoundedRectangle(cornerRadius: 14))
-        .foregroundStyle(.white)
+        .buttonStyle(PrimaryActionStyle())
         .disabled(disabled)
     }
 

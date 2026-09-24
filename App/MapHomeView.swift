@@ -96,6 +96,8 @@ struct MapHomeView: View {
     @State var showLocationAlert = false
     @State var showSigningResignSheet = false
     @State var showRouteLocationSetup = false
+    @State var showsRoutePanel = false
+    @State var showExitRouteConfirm = false
     @State var developerLocationError = ""
     @State var lastRoutePhase = RoutePhase.inactive
     @State var realtimeRequestTask: Task<Void, Never>?
@@ -103,7 +105,6 @@ struct MapHomeView: View {
     @State var wifiChangeObserverToken: UUID?
     @State var wifiVerificationTask: Task<Void, Never>?
     @State var wifiVerificationID: UUID?
-    @State var copiedCoordinateSystem: CoordinateConverter.MapCoordinateSystem?
     @State var mapCoordinateSystemRefreshTask: Task<Void, Never>?
     @State var mapCoordinateSystemRefreshID: UInt64 = 0
     @State var bluePointRefreshPending = false
@@ -548,6 +549,14 @@ struct MapHomeView: View {
                 Text("保存起点、终点、途经点和沿路折线，下次可以直接走。")
             }
         }
+        .confirmationDialog(
+            "退出会停止播放并清除路线",
+            isPresented: $showExitRouteConfirm,
+            titleVisibility: .visible
+        ) {
+            Button("退出路线", role: .destructive) { exitRoute() }
+            Button("取消", role: .cancel) {}
+        }
     }
 
     var topControls: some View {
@@ -575,16 +584,6 @@ struct MapHomeView: View {
             .background(.regularMaterial, in: Capsule())
             .shadow(color: .black.opacity(0.13), radius: 9, y: 4)
             Menu {
-                Button {
-                    enterRoute()
-                } label: {
-                    Label("走路", systemImage: "figure.walk")
-                }
-                Button {
-                    openSavedRoutes()
-                } label: {
-                    Label("已存路线", systemImage: "folder")
-                }
                 Button { activeSheet = .logs } label: { Label("日志", systemImage: "list.bullet.rectangle") }
                 Button { activeSheet = .settings } label: { Label("设置", systemImage: "gearshape") }
             } label: {
@@ -606,10 +605,13 @@ struct MapHomeView: View {
             isFavoriteSelected: favorites.selectedFavoriteID != nil,
             favoriteSaveDisabled: favoriteSaveTask != nil,
             runtimeStatusText: homeRuntimeStatusText,
+            runtimeStatusTone: homeRuntimeStatusTone,
             needsSwitchButton: needsSwitchButton,
             buttonTitle: buttonTitle,
+            buttonSystemImage: buttonSystemImage,
             buttonColor: buttonColor,
-            showsRoute: route.phase != .inactive,
+            showsRoute: route.phase != .inactive && showsRoutePanel,
+            routeChipSubtitle: routeChipSubtitle,
             coordinateRows: {
                 coordinateRow(label: "GCJ-02(国内)", system: .gcj02)
                 coordinateRow(label: "WGS-84(国际)", system: .wgs84)
@@ -633,9 +635,13 @@ struct MapHomeView: View {
             },
             routePanel: { routeCard },
             onShowSpot: {
-                if route.phase != .inactive { exitRoute() }
+                // 切回定点只收起面板，路线、图钉和播放状态都保留。
+                showsRoutePanel = false
             },
-            onShowRoute: enterRoute,
+            onShowRoute: {
+                enterRoute()
+                showsRoutePanel = true
+            },
             onHelp: {
                 if spoofState == .active {
                     activeTip = .activation
@@ -699,51 +705,50 @@ struct MapHomeView: View {
         let coordinate = currentSelectionPair.coordinate(for: system)
         let text = String(format: "%.6f, %.6f", coordinate.latitude, coordinate.longitude)
         let isCurrent = displayedMapCoordinateSystem == system
-        let valueColor: Color = copiedCoordinateSystem == system ? .green : (isCurrent ? .primary : .secondary)
-        return HStack(spacing: 6) {
-            Text(label)
-                .font(.caption2.weight(.medium))
-                .foregroundStyle(isCurrent ? .primary : .secondary)
-                .lineLimit(1)
-                .fixedSize(horizontal: true, vertical: false)
-            Text(text)
-                .font(.caption.monospaced())
-                .foregroundStyle(valueColor)
-                .lineLimit(1)
-                .minimumScaleFactor(0.72)
-                .allowsTightening(true)
-                .layoutPriority(1)
-            if isCurrent {
-                Text("当前")
-                    .font(.caption2.weight(.semibold))
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 1)
-                    .background(Color.accentColor, in: Capsule())
-            }
-        }
-        .contentShape(Rectangle())
-        .onTapGesture {
-            UIPasteboard.general.string = text
-            copiedCoordinateSystem = system
+        return CopyButton(value: {
             RuntimeLogger.info("APP", "地图", "已复制坐标", details: [
                 "坐标标准": system.diagnosticName
             ])
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
-                if copiedCoordinateSystem == system { copiedCoordinateSystem = nil }
+            return text
+        }) { copied in
+            HStack(spacing: 6) {
+                Text(label)
+                    .font(.caption2.weight(.medium))
+                    .foregroundStyle(isCurrent ? .primary : .secondary)
+                    .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
+                Text(text)
+                    .font(.caption.monospaced())
+                    .foregroundStyle(copied ? .green : (isCurrent ? .primary : .secondary))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.72)
+                    .allowsTightening(true)
+                    .layoutPriority(1)
+                if isCurrent {
+                    Text("当前")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 1)
+                        .background(Color.accentColor, in: Capsule())
+                }
+            }
+            .contentShape(Rectangle())
+            .overlay(alignment: .topTrailing) {
+                if copied {
+                    Text("已复制")
+                        .font(.caption2.bold())
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 2)
+                        .background(.green, in: Capsule())
+                        .offset(y: -24)
+                }
             }
         }
-        .overlay(alignment: .topTrailing) {
-            if copiedCoordinateSystem == system {
-                Text("已复制")
-                    .font(.caption2.bold())
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 2)
-                    .background(.green, in: Capsule())
-                    .offset(y: -24)
-            }
-        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("\(label) \(text)")
+        .accessibilityHint("点击复制")
     }
 
     var testFavorite: FavoriteLocation { currentSelectionFavorite }

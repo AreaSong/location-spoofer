@@ -19,6 +19,14 @@ extension SettingsView {
                         .font(.footnote)
                         .foregroundStyle(.orange)
                 }
+
+                DisclosureGroup("工作原理") {
+                    Text(workflowDescription)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.vertical, 4)
+                }
             }
 
             Section("状态") {
@@ -84,7 +92,9 @@ extension SettingsView {
             }
 
             locationSimulationSection
-            RouteLocationSettingsSection()
+            if runtimeMode.mode == .developerTunnel {
+                RouteLocationSettingsSection()
+            }
             favoriteBackupSection
 
             if runtimeMode.mode == .thirdParty {
@@ -101,25 +111,28 @@ extension SettingsView {
                     } label: {
                         Label("失效说明", systemImage: "arrow.uturn.backward.circle")
                     }
-                    Button {
-                        activeTip = .removeProxy
-                    } label: {
-                        Label("关闭 WiFi 代理", systemImage: "wifi.slash")
+                    if runtimeMode.mode == .localWiFi {
+                        Button {
+                            activeTip = .removeProxy
+                        } label: {
+                            Label("关闭 WiFi 代理", systemImage: "wifi.slash")
+                        }
                     }
                 }
 
-            }
-
-            Section("工作原理") {
-                Text(workflowDescription)
-                .font(.footnote)
-                .foregroundStyle(.secondary)
             }
 
             Section("应用") {
                 if runtimeMode.mode == .localWiFi {
                     Button {
                         setup.requestSetup()
+                    } label: {
+                        Label("进入引导页", systemImage: "arrow.clockwise.circle")
+                    }
+                } else if runtimeMode.mode == .developerTunnel {
+                    Button {
+                        setup.requestDeveloperOnboarding()
+                        dismiss()
                     } label: {
                         Label("进入引导页", systemImage: "arrow.clockwise.circle")
                     }
@@ -200,9 +213,6 @@ extension SettingsView {
                 Text("如果觉得好用，欢迎去 GitHub 给项目点个 Star")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
-            }
-
-            Section("致谢") {
                 Button {
                     if let url = URL(string: "https://github.com/Yu9191/wloc") {
                         UIApplication.shared.open(url)

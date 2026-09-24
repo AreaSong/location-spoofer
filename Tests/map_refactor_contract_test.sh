@@ -183,8 +183,9 @@ grep -q 'Label("排序"' "$ROOT/App/FavoriteListView.swift" || fail "favorite li
 grep -q 'displayedFavorites' "$MAP_HOME" || fail "home favorite chips must share the sorted favorite order"
 grep -q 'displayedFavorites' "$ROOT/App/FavoriteListView.swift" || fail "favorite list must share the sorted favorite order"
 grep -q 'setSortOrder' "$ROOT/Shared/FavoriteLocationStore.swift" || fail "favorite sort preference must be persistable"
-grep -q 'Label("走路"' "$MAP_HOME" || fail "map home must expose route walking"
-grep -q 'Label("已存路线"' "$MAP_HOME" || fail "map home must expose saved routes"
+grep -q 'switchChip(title: "走路"' "$MAP_HOME" || fail "map home must expose route walking from the bottom switcher"
+grep -q 'Button("已存")' "$ROOT/App/RoutePlaybackPanel.swift" || fail "route panel must expose saved routes"
+! grep -q 'Label("走路"' "$MAP_HOME" || fail "route walking must not have a second entry in the top menu"
 grep -q 'route.enter()' "$MAP_HOME" || fail "opening a route must not use the current real or spoofed location as the start"
 grep -q 'route.load(saved)' "$MAP_HOME" || fail "saved routes must restore into the playback controller"
 ! grep -A8 'func load' "$ROOT/Shared/RoutePlaybackController.swift" | grep -q 'enter(' \

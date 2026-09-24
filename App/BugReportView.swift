@@ -40,7 +40,7 @@ struct BugReportView: View {
                             .font(.caption)
                             .frame(minHeight: 120)
                             .padding(6)
-                            .background(Color(.systemGray6), in: RoundedRectangle(cornerRadius: 8))
+                            .background(Color(.systemGray6), in: RoundedRectangle(cornerRadius: AppRadius.image))
                     }
                 }
                 .padding(16)

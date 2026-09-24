@@ -58,8 +58,6 @@ struct FirstSetupView: View {
     @ObservedObject var moduleSource = ThirdPartyModuleSourceStore.shared
     @ObservedObject var net = NetworkMonitor.shared
     @State var showAppModeNetworkAlert = false
-    @State var copiedSubscriptionURL = false
-    @State var copiedMITMHostname = false
     @State var screenshotPreview: SetupScreenshotPreview?
     @State var certificateDownloadDestination: CertificateDownloadDestination?
     @State var thirdPartyTestFailure: ThirdPartyConnectionTestFailure?
@@ -83,7 +81,6 @@ struct FirstSetupView: View {
         )
     }
 
-    private var certificateStepsComplete: Bool { downloadedDone && installedDone && trustedDone }
     private var diagnosticFavorite: FavoriteLocation {
         FavoriteLocation(name: "诊断位置", latitude: 22.544577, longitude: 113.94114, accuracy: 25)
     }
@@ -129,16 +126,25 @@ struct FirstSetupView: View {
                 }
                 Divider()
                 if step != .mode {
-                    HStack(spacing: 12) {
-                        Button {
-                            returnToPreviousStep()
-                        } label: {
-                            Label("上一步", systemImage: "chevron.left")
+                    VStack(spacing: 6) {
+                        HStack(spacing: 12) {
+                            Button {
+                                returnToPreviousStep()
+                            } label: {
+                                Label("上一步", systemImage: "chevron.left")
+                            }
+                            .buttonStyle(.bordered)
+                            .disabled(isVerifying || thirdPartyProxy.isRequesting)
+                            Spacer(minLength: 12)
+                            primaryAction
                         }
-                        .buttonStyle(.bordered)
-                        .disabled(isVerifying || thirdPartyProxy.isRequesting)
-                        Spacer(minLength: 12)
-                        primaryAction
+                        // “完成”灰着的时候，直接说清楚还差什么。
+                        if step == .developerTunnel, let message = routeLocation.readiness.blockingMessage {
+                            Text(message)
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
                     }
                     .padding(.horizontal, 20)
                     .padding(.vertical, 12)
@@ -161,7 +167,7 @@ struct FirstSetupView: View {
                         Image(uiImage: preview.image)
                             .resizable()
                             .scaledToFit()
-                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                            .clipShape(RoundedRectangle(cornerRadius: AppRadius.image))
                             .padding()
                     }
                     .navigationTitle(preview.title)
@@ -292,7 +298,7 @@ struct FirstSetupView: View {
             }
         }
         .padding(12)
-        .background((success ? Color.green : Color.red).opacity(0.1), in: RoundedRectangle(cornerRadius: 10))
+        .background((success ? Color.green : Color.red).opacity(0.1), in: RoundedRectangle(cornerRadius: AppRadius.inset))
     }
 
     @ViewBuilder
@@ -308,13 +314,14 @@ struct FirstSetupView: View {
             .buttonStyle(.borderedProminent)
             .disabled(isVerifying)
         } else if step == .cert {
+            // 三个勾选只是进度提示；真正的门是下面的环境检测。
             Button {
                 verifyAfterCertificateConfirmation()
             } label: {
                 actionLabel("完成")
             }
             .buttonStyle(.borderedProminent)
-            .disabled(!certificateStepsComplete || isVerifying)
+            .disabled(isVerifying)
         } else if step == .developerTunnel {
             Button {
                 onComplete()

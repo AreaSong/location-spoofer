@@ -115,9 +115,9 @@ extension FirstSetupView {
                 }
                 .padding(8)
                 .background(Color(uiColor: .secondarySystemGroupedBackground))
-                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .clipShape(RoundedRectangle(cornerRadius: AppRadius.image))
                 .overlay(
-                    RoundedRectangle(cornerRadius: 8)
+                    RoundedRectangle(cornerRadius: AppRadius.image)
                         .stroke(Color.secondary.opacity(0.18))
                 )
             }

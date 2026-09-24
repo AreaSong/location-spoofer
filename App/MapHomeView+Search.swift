@@ -33,9 +33,9 @@ extension MapHomeView {
                 if r.id != searchResults.last?.id { Divider().padding(.leading, 46) }
             }
         }
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: AppRadius.control, style: .continuous))
         .shadow(color: .black.opacity(0.12), radius: 8, y: 4)
-        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: AppRadius.control, style: .continuous))
     }
 
     func favoriteChip(_ f: FavoriteLocation) -> some View {
@@ -110,16 +110,10 @@ extension MapHomeView {
     }
 
     var allFavoritesButton: some View {
-        Button {
+        Button("全部") {
             activeSheet = .favorites
-        } label: {
-            Text("全部")
-                .font(.caption.weight(.semibold))
-                .padding(.horizontal, 10)
-                .padding(.vertical, 8)
         }
-        .buttonStyle(.plain)
-        .background(Color.secondary.opacity(0.12), in: Capsule())
+        .buttonStyle(CapsuleChipStyle(tint: .primary))
         .accessibilityLabel("打开收藏列表")
     }
 

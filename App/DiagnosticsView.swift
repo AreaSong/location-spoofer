@@ -1,6 +1,23 @@
 import SwiftUI
 import UIKit
 
+/// 日志级别筛选，和文本过滤叠加。
+enum RuntimeLogLevelFilter: String, CaseIterable, Identifiable {
+    case all = "全部"
+    case warning = "警告"
+    case error = "错误"
+
+    var id: String { rawValue }
+
+    func includes(_ level: RuntimeLogEntry.Level) -> Bool {
+        switch self {
+        case .all: return true
+        case .warning: return level == .warning || level == .error
+        case .error: return level == .error
+        }
+    }
+}
+
 struct RuntimeLogsView: View {
     @ObservedObject var setup: SetupCoordinator
     @ObservedObject var actions: LocationActionCoordinator
@@ -14,15 +31,16 @@ struct RuntimeLogsView: View {
     @State private var testResult = ""
     @State private var testMessage = ""
     @State private var showClearConfirm = false
-    @State private var copiedEntryID: UUID?
     @State private var copyLogsConfirmed = false
-    @State private var testLogCopied = false
     @State private var logFilter = ""
+    @State private var levelFilter = RuntimeLogLevelFilter.all
 
     private var filteredEntries: [RuntimeLogEntry] {
         let q = logFilter.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !q.isEmpty else { return entries }
-        return entries.filter { $0.message.localizedCaseInsensitiveContains(q) }
+        return entries.filter { entry in
+            guard levelFilter.includes(entry.level) else { return false }
+            return q.isEmpty || entry.message.localizedCaseInsensitiveContains(q)
+        }
     }
 
     var body: some View {
@@ -37,6 +55,7 @@ struct RuntimeLogsView: View {
                         Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary).font(.caption)
                     }
                 }
+                levelFilterChips
             }.padding(.horizontal, 12).padding(.vertical, 6)
             Divider()
             if filteredEntries.isEmpty {
@@ -94,14 +113,44 @@ struct RuntimeLogsView: View {
         }
     }
 
+    private var levelFilterChips: some View {
+        HStack(spacing: 4) {
+            ForEach(RuntimeLogLevelFilter.allCases) { filter in
+                Button(filter.rawValue) {
+                    levelFilter = filter
+                }
+                .buttonStyle(CapsuleChipStyle(tint: levelFilter == filter ? Color.accentColor : nil))
+                .accessibilityAddTraits(levelFilter == filter ? .isSelected : [])
+            }
+        }
+    }
+
+    private var testDescription: String {
+        switch runtimeMode.mode {
+        case .thirdParty:
+            return "检查第三方模块能否拦截并响应 query 请求；不会写入测试坐标。"
+        case .developerTunnel:
+            return "检查 LocalDevVPN、本机隧道和配对文件是否就绪。"
+        case .localWiFi:
+            return "依次检查：本地代理 → CA 证书信任 → Wi-Fi 代理链路。"
+        }
+    }
+
+    private var testPassed: Bool {
+        testResult.contains("通过") || testResult.contains("已就绪")
+    }
+
     private var testPanel: some View {
         VStack(alignment: .leading, spacing: 10) {
             Button {
-                isTesting = true; testResult = ""; testLogCopied = false
+                isTesting = true; testResult = ""
                 Task {
-                    if runtimeMode.mode == .thirdParty {
+                    switch runtimeMode.mode {
+                    case .thirdParty:
                         await runThirdPartyConnectionTest()
-                    } else {
+                    case .developerTunnel:
+                        await runDeveloperTunnelCheck()
+                    case .localWiFi:
                         let result = await setup.runVerificationTest()
                         testResult = result.isSuccess ? "环境检测通过" : "环境检测失败: \(result.id)"
                         if !result.isSuccess { testResult += "，查看下方日志" }
@@ -120,53 +169,31 @@ struct RuntimeLogsView: View {
                     Spacer()
                     Image(systemName: "chevron.right").font(.system(size: 12, weight: .semibold)).opacity(0.5)
                 }
-                .foregroundStyle(.white)
                 .frame(maxWidth: .infinity)
                 .padding(.horizontal, 14)
-                .padding(.vertical, 12)
             }
-            .buttonStyle(.plain)
-            .background(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(isTesting ? Color.gray : Color.blue)
-            )
+            .buttonStyle(PrimaryActionStyle(tint: isTesting ? .gray : .blue))
             .disabled(isTesting || actions.state.isBusy)
-            Text(runtimeMode.mode == .thirdParty
-                 ? "检查第三方模块能否拦截并响应 query 请求；不会写入测试坐标。"
-                 : "依次检查：本地代理 → CA 证书信任 → Wi-Fi 代理链路。")
+            Text(testDescription)
                 .font(.caption).foregroundStyle(.secondary)
             if !testMessage.isEmpty {
                 VStack(alignment: .leading, spacing: 6) {
                     HStack {
                         Text("测试日志").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
                         Spacer()
-                        Button {
-                            UIPasteboard.general.string = testMessage
-                            testLogCopied = true
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { testLogCopied = false }
-                        } label: {
-                            HStack(spacing: 4) {
-                                if testLogCopied {
-                                    Image(systemName: "checkmark").font(.system(size: 11, weight: .bold))
-                                    Text("已复制").font(.system(size: 11))
-                                } else {
-                                    Image(systemName: "doc.on.doc").font(.system(size: 11))
-                                }
-                            }
-                            .foregroundStyle(testLogCopied ? .green : .secondary)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 4)
-                            .background(testLogCopied ? Color.green.opacity(0.1) : Color.secondary.opacity(0.08), in: Capsule())
-                        }
-                        .buttonStyle(.plain)
+                        CopyButton("复制", value: { testMessage })
+                            .buttonStyle(CapsuleChipStyle())
                         Button {
                             withAnimation(.easeInOut(duration: 0.2)) { testMessage = "" }
                         } label: {
                             Image(systemName: "xmark.circle.fill")
                                 .font(.system(size: 15))
                                 .foregroundStyle(.secondary)
+                                .frame(width: 32, height: 32)
+                                .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
+                        .accessibilityLabel("关闭测试日志")
                     }
                     ScrollView {
                         Text(testMessage)
@@ -174,7 +201,7 @@ struct RuntimeLogsView: View {
                             .textSelection(.enabled)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .padding(10)
-                            .background(Color(.systemBackground), in: RoundedRectangle(cornerRadius: 8))
+                            .background(Color(.systemBackground), in: RoundedRectangle(cornerRadius: AppRadius.image))
                     }.frame(maxHeight: 180)
                 }
             }
@@ -186,7 +213,7 @@ struct RuntimeLogsView: View {
             }
             if !testResult.isEmpty {
                 Text(testResult).font(.footnote.weight(.medium))
-                    .foregroundStyle(testResult.contains("通过") ? .green : .red)
+                    .foregroundStyle(testPassed ? .green : .red)
             }
         }.padding(14).background(Color(.secondarySystemBackground))
     }
@@ -199,27 +226,8 @@ struct RuntimeLogsView: View {
                 HStack {
                     Text("\(entry.source) \(entry.category)").font(.caption.weight(.semibold))
                     Spacer()
-                    Button {
-                        UIPasteboard.general.string = entry.renderedText
-                        copiedEntryID = entry.id
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
-                            if copiedEntryID == entry.id { copiedEntryID = nil }
-                        }
-                    } label: {
-                        HStack(spacing: 4) {
-                            if copiedEntryID == entry.id {
-                                Image(systemName: "checkmark").font(.system(size: 11, weight: .bold))
-                                Text("已复制").font(.system(size: 11))
-                            } else {
-                                Image(systemName: "doc.on.doc").font(.system(size: 11))
-                            }
-                        }
-                        .foregroundStyle(copiedEntryID == entry.id ? .green : .secondary)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                        .background(copiedEntryID == entry.id ? Color.green.opacity(0.1) : Color.secondary.opacity(0.08), in: Capsule())
-                    }
-                    .buttonStyle(.plain)
+                    CopyButton("复制", value: { entry.renderedText })
+                        .buttonStyle(CapsuleChipStyle())
                 }
                 Text(entry.message).font(.caption.monospaced()).textSelection(.enabled)
                 if !entry.details.isEmpty {
@@ -230,10 +238,32 @@ struct RuntimeLogsView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(10)
-        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 10))
+        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: AppRadius.inset))
     }
 
     private func refresh() { entries = RuntimeLogStore.loadAll() }
+
+    /// 开发者隧道只看三项环境是否就绪，不做真实推送。
+    @MainActor
+    private func runDeveloperTunnelCheck() async {
+        let store = RouteLocationSetupStore.shared
+        store.refresh()
+        let status = store.status
+        let readiness = status.readiness
+        testResult = readiness == .ready ? "隧道已就绪" : (readiness.blockingMessage ?? "隧道未就绪")
+        testMessage = """
+        ======== 开发者隧道环境检测 ========
+        LocalDevVPN: \(status.vpnInstalled ? "已安装" : "未安装")
+        本机隧道: \(status.tunnelConnected ? "已连接" : "未连接")
+        配对文件: \(status.hasPairing ? "已导入" : "未导入")
+        结果: \(readiness == .ready ? "就绪，可以开始虚拟定位" : (readiness.blockingMessage ?? "未就绪"))
+        """
+        RuntimeLogger.info("APP", "诊断", "开发者隧道环境检测", details: [
+            "LocalDevVPN": String(status.vpnInstalled),
+            "隧道": String(status.tunnelConnected),
+            "配对文件": String(status.hasPairing)
+        ])
+    }
 
     @MainActor
     private func runThirdPartyConnectionTest() async {

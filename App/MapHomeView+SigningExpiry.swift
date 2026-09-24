@@ -91,6 +91,6 @@ extension MapHomeView {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(12)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: AppRadius.control, style: .continuous))
     }
 }

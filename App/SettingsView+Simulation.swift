@@ -17,43 +17,50 @@ extension SettingsView {
     @ViewBuilder
     var locationSimulationSection: some View {
         Section("定位模拟") {
-            if runtimeMode.mode == .localWiFi {
-                Toggle("运动状态模拟", isOn: motionSimulationBinding)
-                    .disabled(simulationControlsDisabled)
-                Text("实验性功能，默认关闭。开启后会同时模拟定位响应中的运动状态。")
+            if runtimeMode.mode == .developerTunnel {
+                // 隧道直接推送精确坐标，这些改写参数不参与。
+                Text("开发者隧道模式不使用随机扰动和精度设置；路线偏移在走路面板里调。")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
-            }
+            } else {
+                if runtimeMode.mode == .localWiFi {
+                    Toggle("运动状态模拟", isOn: motionSimulationBinding)
+                        .disabled(simulationControlsDisabled)
+                    Text("实验性功能，默认关闭。开启后会同时模拟定位响应中的运动状态。")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
 
-            Toggle("随机扰动", isOn: randomRadiusBinding)
-                .disabled(simulationControlsDisabled)
-            if randomRadius.isEnabled {
+                Toggle("随机扰动", isOn: randomRadiusBinding)
+                    .disabled(simulationControlsDisabled)
+                if randomRadius.isEnabled {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("扰动半径 \(Int(randomRadius.radius.rounded())) 米")
+                        Slider(
+                            value: randomRadiusMetersBinding,
+                            in: RandomRadiusStore.minimumMeters...RandomRadiusStore.maximumMeters,
+                            step: 10
+                        )
+                        .disabled(simulationControlsDisabled)
+                    }
+                }
+                Text(randomRadiusHint)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("扰动半径 \(Int(randomRadius.radius.rounded())) 米")
+                    Text("定位精度 \(locationAccuracy.meters) 米")
                     Slider(
-                        value: randomRadiusMetersBinding,
-                        in: RandomRadiusStore.minimumMeters...RandomRadiusStore.maximumMeters,
-                        step: 10
+                        value: accuracyMetersBinding,
+                        in: Double(LocationAccuracyStore.minimumMeters)...Double(LocationAccuracyStore.maximumMeters),
+                        step: 5
                     )
                     .disabled(simulationControlsDisabled)
                 }
+                Text("写入定位响应的精度字段。数值越小，系统越倾向认为位置可靠。下次同步或开启时生效。")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
             }
-            Text(randomRadiusHint)
-                .font(.footnote)
-                .foregroundStyle(.secondary)
-
-            VStack(alignment: .leading, spacing: 8) {
-                Text("定位精度 \(locationAccuracy.meters) 米")
-                Slider(
-                    value: accuracyMetersBinding,
-                    in: Double(LocationAccuracyStore.minimumMeters)...Double(LocationAccuracyStore.maximumMeters),
-                    step: 5
-                )
-                .disabled(simulationControlsDisabled)
-            }
-            Text("写入定位响应的精度字段。数值越小，系统越倾向认为位置可靠。下次同步或开启时生效。")
-                .font(.footnote)
-                .foregroundStyle(.secondary)
         }
     }
 

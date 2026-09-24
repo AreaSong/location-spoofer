@@ -36,23 +36,17 @@ extension SettingsView {
                 }
             }
 
-            Button {
+            CopyButton("复制模块订阅地址", copiedTitle: "已复制模块订阅地址") {
                 ThirdPartyModuleRuntime.prepareForImport()
-                UIPasteboard.general.string = thirdPartyClient.selectedClient.subscriptionURL.absoluteString
-                copiedClient = thirdPartyClient.selectedClient
-            } label: {
-                Label(copiedClient == thirdPartyClient.selectedClient ? "已复制模块订阅地址" : "复制模块订阅地址", systemImage: "doc.on.doc")
+                return thirdPartyClient.selectedClient.subscriptionURL.absoluteString
             }
 
             Button(action: exportOnDeviceModuleFiles) {
                 Label("导出模块文件", systemImage: "square.and.arrow.up")
             }
 
-            Button {
-                UIPasteboard.general.string = ThirdPartyProxyManager.interceptionHostnamesText
-                copiedMITMHostnames = true
-            } label: {
-                Label(copiedMITMHostnames ? "已复制解密域名" : "复制解密域名", systemImage: "doc.on.doc")
+            CopyButton("复制解密域名", copiedTitle: "已复制解密域名") {
+                ThirdPartyProxyManager.interceptionHostnamesText
             }
 
             Button {

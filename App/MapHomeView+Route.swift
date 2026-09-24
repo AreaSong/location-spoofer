@@ -54,6 +54,28 @@ extension MapHomeView {
         let previous = route.phase
         route.exit()
         clearRouteLocationIfNeeded(from: previous, to: route.phase)
+        showsRoutePanel = false
+    }
+
+    /// 播放中或暂停时退出要先确认；只是摆了图钉的话直接退。
+    func requestExitRoute() {
+        switch route.phase {
+        case .playing, .paused:
+            showExitRouteConfirm = true
+        case .inactive, .preparing, .finished:
+            exitRoute()
+        }
+    }
+
+    /// 面板收起时在“走路”切换条上提示路线还在。
+    var routeChipSubtitle: String? {
+        switch route.phase {
+        case .inactive: return nil
+        case .preparing: return "已设路线"
+        case .playing: return "播放中"
+        case .paused: return "已暂停"
+        case .finished: return "已走完"
+        }
     }
 
     var routeCard: some View {
@@ -63,7 +85,7 @@ extension MapHomeView {
                 clock: route.clock,
                 currentPair: currentSelectionPair,
                 onPlay: playRoute,
-                onExit: exitRoute,
+                onExit: requestExitRoute,
                 onSave: promptSaveRoute,
                 onOpenSaved: openSavedRoutes,
                 embedded: true
@@ -82,16 +104,12 @@ extension MapHomeView {
                             ProgressView().tint(.white)
                         }
                         Text(routePlaybackButtonTitle)
-                            .font(.headline)
-                            .lineLimit(1)
                     }
                     .frame(maxWidth: needsSwitchButton ? nil : .infinity)
                     .frame(minWidth: needsSwitchButton ? 56 : nil)
-                    .padding(.vertical, 12)
                     .padding(.horizontal, needsSwitchButton ? 12 : 0)
                 }
-                .background(buttonColor, in: RoundedRectangle(cornerRadius: 14))
-                .foregroundStyle(.white)
+                .buttonStyle(PrimaryActionStyle(tint: buttonColor))
                 .disabled(spoofState == .verifying)
 
                 if needsSwitchButton {
@@ -103,7 +121,7 @@ extension MapHomeView {
                             .padding(.vertical, 12)
                             .padding(.horizontal, 16)
                     }
-                    .background(.blue, in: RoundedRectangle(cornerRadius: 14))
+                    .background(.blue, in: RoundedRectangle(cornerRadius: AppRadius.control))
                     .foregroundStyle(.white)
                 }
             }

@@ -8,10 +8,8 @@ extension SettingsView {
             Text("共 \(favorites.favorites.count) 个地点。导入时相同国际坐标会更新名称，新地点会追加。")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
-            Button(action: exportFavoritesToClipboard) {
-                Label(copiedFavorites ? "已复制收藏备份" : "导出到剪贴板", systemImage: "doc.on.doc")
-            }
-            .disabled(favorites.favorites.isEmpty)
+            CopyButton("导出到剪贴板", copiedTitle: "已复制收藏备份", value: exportFavoritesToClipboard)
+                .disabled(favorites.favorites.isEmpty)
             Button(action: shareFavoritesFile) {
                 Label("分享备份文件", systemImage: "square.and.arrow.up")
             }
@@ -27,20 +25,21 @@ extension SettingsView {
         }
     }
 
-    func exportFavoritesToClipboard() {
+    /// 返回要写入剪贴板的备份文本；失败时弹出错误并返回 nil，按钮不切到“已复制”。
+    func exportFavoritesToClipboard() -> String? {
         do {
             let data = try favorites.exportTransferred()
             guard let text = String(data: data, encoding: .utf8) else {
                 presentFavoriteTransferError("无法编码收藏备份")
-                return
+                return nil
             }
-            UIPasteboard.general.string = text
-            copiedFavorites = true
             RuntimeLogger.info("APP", "收藏", "已导出收藏到剪贴板", details: [
                 "数量": String(favorites.favorites.count)
             ])
+            return text
         } catch {
             presentFavoriteTransferError(error.localizedDescription)
+            return nil
         }
     }
 

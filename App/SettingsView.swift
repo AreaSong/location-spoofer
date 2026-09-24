@@ -40,15 +40,12 @@ struct SettingsView: View {
     @State var proxyOperationError = ""
     @State var proxyOperationAlertTitle = "代理操作失败"
     @State var modeOperationRunning = false
-    @State var copiedClient: ThirdPartyProxyClient?
-    @State var copiedMITMHostnames = false
     @State var showCertificateResetConfirmation = false
     @State var githubDestination: SafariDestination?
     @State var isCheckingForUpdates = false
     @State var updateCheckResult: UpdateCheckResult?
     @State var mapCoordinateSystemName = CoordinateConverter.MapCoordinateSystem.gcj02.diagnosticName
     @State var mapCoordinateSystemUsedFallback = false
-    @State var copiedFavorites = false
     @State var showFavoriteImporter = false
     @State var favoriteTransferTitle = "收藏"
     @State var favoriteTransferMessage = ""
