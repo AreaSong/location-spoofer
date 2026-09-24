@@ -54,6 +54,7 @@ final class ProxyRuntimeModeStore: ObservableObject {
     }
 
     func setMode(_ mode: ProxyRuntimeMode) {
+        UIPreview.disable()
         let changed = self.mode != mode
         self.mode = mode
         hasSelectedMode = true

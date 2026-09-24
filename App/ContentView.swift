@@ -26,13 +26,13 @@ struct ContentView: View {
                         .font(.subheadline).foregroundStyle(.secondary)
                 }
             case .setup:
-                FirstSetupView(setup: setup, onComplete: finishInitialSetup)
+                FirstSetupView(setup: setup, onComplete: finishInitialSetup, onPreview: finishUIPreview)
             case .map:
                 NavigationView {
                     MapHomeView(setup: setup)
                 }
                 .fullScreenCover(isPresented: $setup.needsSetup) {
-                    FirstSetupView(setup: setup, onComplete: finishPresentedSetup)
+                    FirstSetupView(setup: setup, onComplete: finishPresentedSetup, onPreview: finishUIPreview)
                 }
             }
         }
@@ -64,6 +64,13 @@ struct ContentView: View {
 
     @MainActor
     private func bootstrap() async {
+        if UIPreview.isEnabled() {
+            stopNetworkSpoofing()
+            RuntimeLogger.info("APP", "Startup", "界面预览：跳过运行模式和本地服务")
+            await presentMap()
+            return
+        }
+
         guard runtimeMode.hasSelectedMode else {
             ProxyManager.shared.stop()
             RuntimeLogger.info("APP", "Startup", "尚未选择运行模式，跳过本地 CA 和代理初始化")
@@ -104,6 +111,11 @@ struct ContentView: View {
             stopNetworkSpoofing()
             RuntimeLogger.info("APP", "Startup", "开发者隧道模式：跳过本地 CA、代理和第三方模块")
         }
+        await presentMap()
+    }
+
+    /// 模式已经确定，或模拟器选择了界面预览。此后才创建地图。
+    private func presentMap() async {
         do {
             try CoordinateStorageMigration.migrateIfNeeded(favorites: FavoriteLocationStore())
         } catch {
@@ -161,6 +173,14 @@ struct ContentView: View {
         ProxyManager.shared.stop()
         BackgroundKeepAlive.shared.stop()
         ThirdPartyModuleRuntime.shutdown()
+    }
+
+    private func finishUIPreview() {
+        UIPreview.enable()
+        stopNetworkSpoofing()
+        setup.completeSetup()
+        phase = .splash
+        Task { await bootstrap() }
     }
 
     private func finishInitialSetup() {

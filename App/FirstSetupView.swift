@@ -39,6 +39,7 @@ enum SetupStep: Int, CaseIterable {
 struct FirstSetupView: View {
     @ObservedObject var setup: SetupCoordinator
     let onComplete: () -> Void
+    let onPreview: () -> Void
 
     @State var step: SetupStep
     @State var downloadedDone = false
@@ -65,9 +66,14 @@ struct FirstSetupView: View {
     @State var showsVerificationResult: Bool
     @State var showsThirdPartyFailureLog: Bool
 
-    init(setup: SetupCoordinator, onComplete: @escaping () -> Void) {
+    init(
+        setup: SetupCoordinator,
+        onComplete: @escaping () -> Void,
+        onPreview: @escaping () -> Void
+    ) {
         self.setup = setup
         self.onComplete = onComplete
+        self.onPreview = onPreview
         _step = State(initialValue: setup.setupStep)
         _showThirdPartyRepairReason = State(
             initialValue: setup.setupStep == .thirdPartyImport && !setup.message.isEmpty

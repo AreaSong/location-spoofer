@@ -47,6 +47,23 @@ extension FirstSetupView {
                 }
                 .frame(maxWidth: .infinity)
             }
+
+            if UIPreview.isAvailable {
+                Button(action: onPreview) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("只看界面")
+                            .font(.headline)
+                        Text("打开地图看定点、走路和底栏。开始和走路不会改系统定位。")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(16)
+                    .background(Color.secondary.opacity(0.12), in: RoundedRectangle(cornerRadius: AppRadius.control, style: .continuous))
+                }
+                .buttonStyle(.plain)
+                .disabled(isPreparingMode)
+            }
         }
     }
 

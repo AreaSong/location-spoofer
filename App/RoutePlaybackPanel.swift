@@ -84,14 +84,14 @@ struct RoutePlaybackPanel: View {
     }
 
     private var controls: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 6) {
             actionRow
             settingsDisclosure
             if showsSpeedOffset {
                 speedOffsetSection
             }
             utilityRow
-            // 准备阶段的引导文案已经放在图钉行上方；播放中把进度说明留在下方。
+            // 长引导只出现在展开区。收起态用卡片上的一行摘要，这里不再重复。
             if route.phase != .preparing {
                 statusMessage
             }
@@ -112,17 +112,17 @@ struct RoutePlaybackPanel: View {
     private var actionRow: some View {
         switch route.phase {
         case .playing:
-            VStack(spacing: 10) {
+            VStack(spacing: 6) {
                 ProgressView(value: clock.progress)
                 primaryButton("暂停", disabled: false) { route.pause() }
             }
         case .paused, .finished:
-            VStack(spacing: 10) {
+            VStack(spacing: 6) {
                 ProgressView(value: clock.progress)
                 primaryButton(route.phase == .paused ? "继续走" : "开始走", disabled: playDisabled) { onPlay() }
             }
         default:
-            VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: 6) {
                 statusMessage
                 pinRow
                 primaryButton("开始走", disabled: playDisabled) { onPlay() }
@@ -163,25 +163,25 @@ struct RoutePlaybackPanel: View {
             Button("起点") { route.setStart(currentPair) }
                 .font(.subheadline.weight(.semibold))
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 8)
+                .padding(.vertical, 5)
             Button("终点") { route.setEnd(currentPair) }
                 .font(.subheadline.weight(.semibold))
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 8)
+                .padding(.vertical, 5)
             Button("途经") { route.addVia(currentPair) }
                 .font(.subheadline.weight(.semibold))
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 8)
+                .padding(.vertical, 5)
                 .disabled(!route.canEditVias)
                 .opacity(route.canEditVias ? 1 : 0.4)
             if !route.vias.isEmpty {
                 Button("撤销") { route.removeLastVia() }
                     .font(.subheadline.weight(.semibold))
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, 8)
+                    .padding(.vertical, 5)
             }
         }
-        .padding(4)
+        .padding(2)
         .background(Color.secondary.opacity(0.12), in: RoundedRectangle(cornerRadius: AppRadius.control, style: .continuous))
     }
 
@@ -248,7 +248,7 @@ struct RoutePlaybackPanel: View {
             Label(title, systemImage: "figure.walk")
                 .frame(maxWidth: .infinity)
         }
-        .buttonStyle(PrimaryActionStyle())
+        .buttonStyle(PrimaryActionStyle(compact: true))
         .disabled(disabled)
     }
 

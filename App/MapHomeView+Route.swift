@@ -67,6 +67,73 @@ extension MapHomeView {
         }
     }
 
+    var showsRoutePanelActive: Bool {
+        route.phase != .inactive && showsRoutePanel
+    }
+
+    var showsRouteProgress: Bool {
+        switch route.phase {
+        case .playing, .paused, .finished: return true
+        case .inactive, .preparing: return false
+        }
+    }
+
+    var homePeekTitle: String {
+        showsRoutePanelActive ? routePeekTitle : spotPeekTitle
+    }
+
+    var homePeekAccessibilityLabel: String {
+        showsRoutePanelActive ? routePeekTitle : spotPeekAccessibilityLabel
+    }
+
+    var homePeekColor: Color {
+        if showsRoutePanelActive { return .accentColor }
+        if needsSwitchButton { return .blue }
+        return buttonColor
+    }
+
+    var homePeekDisabled: Bool {
+        showsRoutePanelActive ? routePeekDisabled : spoofState == .verifying
+    }
+
+    var homePeekOpensDetail: Bool {
+        showsRoutePanelActive && routePeekOpensDetail
+    }
+
+    var routePeekTitle: String {
+        switch route.phase {
+        case .playing: return "暂停"
+        case .paused: return "继续"
+        case .preparing where !route.canPlay: return "设置路线"
+        default: return "开始走"
+        }
+    }
+
+    var routePeekOpensDetail: Bool {
+        route.phase == .preparing && !route.canPlay
+    }
+
+    var routePeekDisabled: Bool {
+        if route.phase == .playing || routePeekOpensDetail { return false }
+        return !route.canPlay || route.waitingForActivation || route.isRouting
+    }
+
+    func handlePeekTap() {
+        guard showsRoutePanelActive else {
+            if needsSwitchButton {
+                beginLocationOperation()
+            } else {
+                handleMainButtonTap()
+            }
+            return
+        }
+        if route.phase == .playing {
+            route.pause()
+            return
+        }
+        playRoute()
+    }
+
     /// 面板收起时在“走路”切换条上提示路线还在。
     var routeChipSubtitle: String? {
         switch route.phase {
@@ -79,7 +146,7 @@ extension MapHomeView {
     }
 
     var routeCard: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 6) {
             RoutePlaybackPanel(
                 route: route,
                 clock: route.clock,
@@ -109,17 +176,17 @@ extension MapHomeView {
                     .frame(minWidth: needsSwitchButton ? 56 : nil)
                     .padding(.horizontal, needsSwitchButton ? 12 : 0)
                 }
-                .buttonStyle(PrimaryActionStyle(tint: buttonColor))
+                .buttonStyle(PrimaryActionStyle(tint: buttonColor, compact: true))
                 .disabled(spoofState == .verifying)
 
                 if needsSwitchButton {
                     Button(action: { beginLocationOperation() }) {
                         Label("切换到此处", systemImage: "arrow.triangle.swap")
-                            .font(.body.weight(.medium))
+                            .font(.subheadline.weight(.semibold))
                             .lineLimit(1)
                             .frame(maxWidth: .infinity)
-                            .padding(.vertical, 12)
-                            .padding(.horizontal, 16)
+                            .padding(.vertical, 8)
+                            .padding(.horizontal, 12)
                     }
                     .background(.blue, in: RoundedRectangle(cornerRadius: AppRadius.control))
                     .foregroundStyle(.white)
@@ -135,6 +202,7 @@ extension MapHomeView {
     }
 
     func playRoute() {
+        if refuseUIPreviewLocationChange() { return }
         bindRoutePlayback()
         if locationUseBlock != nil { return }
         if routeUsesDeveloperTunnel {
@@ -247,7 +315,53 @@ extension MapHomeView {
             break
         }
     }
+}
 
+struct HomePeekCaption: View {
+    @ObservedObject var route: RoutePlaybackController
+    @ObservedObject var clock: RoutePlaybackClock
+    let showsRoute: Bool
+
+    var body: some View {
+        if let text = caption {
+            Text(text)
+                .font(.caption2.weight(.medium))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+        }
+    }
+
+    private var caption: String? {
+        showsRoute ? routeCaption : backgroundCaption
+    }
+
+    private var routeCaption: String? {
+        switch route.phase {
+        case .playing, .paused:
+            return "\(Int((clock.progress * 100).rounded()))%"
+        case .finished:
+            return "已走完"
+        case .preparing:
+            if route.isRouting { return "正在规划路线" }
+            if route.canPlay { return RoutePlayback.formattedDistance(route.distanceMeters) }
+            return "先设起点和终点"
+        case .inactive:
+            return nil
+        }
+    }
+
+    private var backgroundCaption: String? {
+        switch route.phase {
+        case .inactive: return nil
+        case .preparing: return "已设路线"
+        case .playing: return "播放中"
+        case .paused: return "已暂停"
+        case .finished: return "已走完"
+        }
+    }
+}
+
+extension MapHomeView {
     func pauseRouteIfLocationBlocked() {
         guard locationUseBlock != nil else { return }
         route.pause()

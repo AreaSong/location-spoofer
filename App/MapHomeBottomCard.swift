@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// 底部卡片。定点和走路共用头部、运行状态行和切换条；两种内容由外部组装后传入。
-struct MapHomeBottomCard<CoordinateRows: View, SpotContent: View, RoutePanel: View>: View {
+/// 底部卡片。默认只留地名、切换和主按钮；坐标、收藏和路线设置点开后出现在同一张卡里。
+struct MapHomeBottomCard<CoordinateRows: View, SpotContent: View, RoutePanel: View, PeekCaption: View>: View {
     let displayName: String
     let mapSystemName: String
     let spoofState: SpoofState
@@ -15,9 +15,17 @@ struct MapHomeBottomCard<CoordinateRows: View, SpotContent: View, RoutePanel: Vi
     let buttonColor: Color
     let showsRoute: Bool
     let routeChipSubtitle: String?
+    let showsRouteProgress: Bool
+    let peekTitle: String
+    let peekAccessibilityLabel: String
+    let peekSystemImage: String?
+    let peekColor: Color
+    let peekDisabled: Bool
+    let peekOpensDetail: Bool
     let coordinateRows: CoordinateRows
     let spotContent: SpotContent
     let routePanel: RoutePanel
+    let peekCaption: PeekCaption
     let onShowSpot: () -> Void
     let onShowRoute: () -> Void
     let onHelp: () -> Void
@@ -25,7 +33,9 @@ struct MapHomeBottomCard<CoordinateRows: View, SpotContent: View, RoutePanel: Vi
     let onOpenSettings: () -> Void
     let onMainTap: () -> Void
     let onSwitchHere: () -> Void
-    @AppStorage("homeCardCompact") private var compact = false
+    let onPeekTap: () -> Void
+    @ObservedObject var playbackClock: RoutePlaybackClock
+    @State private var isExpanded = false
 
     init(
         displayName: String,
@@ -41,16 +51,26 @@ struct MapHomeBottomCard<CoordinateRows: View, SpotContent: View, RoutePanel: Vi
         buttonColor: Color,
         showsRoute: Bool,
         routeChipSubtitle: String? = nil,
+        showsRouteProgress: Bool,
+        peekTitle: String,
+        peekAccessibilityLabel: String,
+        peekSystemImage: String? = nil,
+        peekColor: Color,
+        peekDisabled: Bool,
+        peekOpensDetail: Bool,
+        playbackClock: RoutePlaybackClock,
         @ViewBuilder coordinateRows: () -> CoordinateRows,
         @ViewBuilder spotContent: () -> SpotContent,
         @ViewBuilder routePanel: () -> RoutePanel,
+        @ViewBuilder peekCaption: () -> PeekCaption,
         onShowSpot: @escaping () -> Void,
         onShowRoute: @escaping () -> Void,
         onHelp: @escaping () -> Void,
         onToggleFavorite: @escaping () -> Void,
         onOpenSettings: @escaping () -> Void,
         onMainTap: @escaping () -> Void,
-        onSwitchHere: @escaping () -> Void
+        onSwitchHere: @escaping () -> Void,
+        onPeekTap: @escaping () -> Void
     ) {
         self.displayName = displayName
         self.mapSystemName = mapSystemName
@@ -65,9 +85,17 @@ struct MapHomeBottomCard<CoordinateRows: View, SpotContent: View, RoutePanel: Vi
         self.buttonColor = buttonColor
         self.showsRoute = showsRoute
         self.routeChipSubtitle = routeChipSubtitle
+        self.showsRouteProgress = showsRouteProgress
+        self.peekTitle = peekTitle
+        self.peekAccessibilityLabel = peekAccessibilityLabel
+        self.peekSystemImage = peekSystemImage
+        self.peekColor = peekColor
+        self.peekDisabled = peekDisabled
+        self.peekOpensDetail = peekOpensDetail
         self.coordinateRows = coordinateRows()
         self.spotContent = spotContent()
         self.routePanel = routePanel()
+        self.peekCaption = peekCaption()
         self.onShowSpot = onShowSpot
         self.onShowRoute = onShowRoute
         self.onHelp = onHelp
@@ -75,78 +103,151 @@ struct MapHomeBottomCard<CoordinateRows: View, SpotContent: View, RoutePanel: Vi
         self.onOpenSettings = onOpenSettings
         self.onMainTap = onMainTap
         self.onSwitchHere = onSwitchHere
+        self.onPeekTap = onPeekTap
+        _playbackClock = ObservedObject(wrappedValue: playbackClock)
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            spotHeader
-            if !showsRoute && !compact {
-                spotContent
-            }
-            Button(action: onOpenSettings) {
-                StatusPill(text: runtimeStatusText, tone: runtimeStatusTone)
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel(runtimeStatusText)
-            .accessibilityHint("打开设置")
-            actionSwitcher
-            if showsRoute {
-                routePanel
-            } else {
-                spotActions
+        VStack(alignment: .leading, spacing: 6) {
+            peekHeader
+            peekActionRow
+            if isExpanded {
+                expandedDetail
             }
         }
-        .padding(16)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: AppRadius.card, style: .continuous))
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .background { cardBackground }
         .shadow(color: .black.opacity(0.16), radius: 14, y: 6)
         .animation(.spring(response: 0.35, dampingFraction: 0.86), value: showsRoute)
-        .animation(.spring(response: 0.35, dampingFraction: 0.86), value: compact)
+        .animation(.spring(response: 0.35, dampingFraction: 0.86), value: isExpanded)
     }
 
-    private var spotHeader: some View {
-        HStack(spacing: 8) {
-            VStack(alignment: .leading, spacing: 3) {
-                Text(displayName).font(.subheadline.weight(.semibold)).lineLimit(1)
-                Text("当前地图：\(mapSystemName)")
-                    .font(.caption2.weight(.medium))
-                    .foregroundStyle(.secondary)
-                coordinateRows
+    private var cardBackground: some View {
+        RoundedRectangle(cornerRadius: AppRadius.card, style: .continuous)
+            .fill(.regularMaterial)
+            .overlay(alignment: .top) { routeProgressBar }
+            .clipShape(RoundedRectangle(cornerRadius: AppRadius.card, style: .continuous))
+    }
+
+    @ViewBuilder
+    private var routeProgressBar: some View {
+        if showsRouteProgress {
+            GeometryReader { geo in
+                Rectangle()
+                    .fill(Color.accentColor)
+                    .frame(width: max(0, geo.size.width * playbackClock.progress))
             }
-            Spacer(minLength: 4)
-            Button(spoofState == .active ? "无法生效？" : "无法取消？", action: onHelp)
-                .buttonStyle(CapsuleChipStyle())
-            Button(action: onToggleFavorite) {
-                Image(systemName: isFavoriteSelected ? "star.fill" : "star")
-                    .font(.system(size: 18, weight: .semibold))
-                    .frame(width: 38, height: 38)
-                    .background((isFavoriteSelected ? Color.yellow : Color.gray).opacity(0.18), in: Circle())
+            .frame(height: 3)
+            .accessibilityHidden(true)
+        }
+    }
+
+    private var peekHeader: some View {
+        HStack(spacing: 4) {
+            Button(action: toggleExpanded) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(displayName)
+                        .font(.subheadline.weight(.semibold))
+                        .lineLimit(1)
+                    if !isExpanded {
+                        peekCaption
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .foregroundStyle(isFavoriteSelected ? .orange : .gray)
-            .disabled(favoriteSaveDisabled)
-            .accessibilityLabel(isFavoriteSelected ? "已收藏，点击取消收藏" : "收藏当前选点")
-            if !showsRoute {
-                Button {
-                    compact.toggle()
-                } label: {
-                    Image(systemName: compact ? "chevron.up" : "chevron.down")
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(.secondary)
-                        .frame(width: 32, height: 38)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel(compact ? "展开最近和收藏" : "收起最近和收藏")
-            }
+            .accessibilityLabel(displayName)
+            .accessibilityHint(isExpanded ? "收起详情" : "展开详情")
+            statusDot
+            favoriteButton
+            expandButton
         }
+    }
+
+    private var statusDot: some View {
+        Button(action: onOpenSettings) {
+            Circle()
+                .fill(runtimeStatusTone.color)
+                .frame(width: 8, height: 8)
+                .frame(width: 32, height: 32)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(runtimeStatusText)
+        .accessibilityHint("打开设置")
+    }
+
+    private var favoriteButton: some View {
+        Button(action: onToggleFavorite) {
+            Image(systemName: isFavoriteSelected ? "star.fill" : "star")
+                .font(.system(size: 16, weight: .semibold))
+                .frame(width: 32, height: 32)
+                .background((isFavoriteSelected ? Color.yellow : Color.gray).opacity(0.18), in: Circle())
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(isFavoriteSelected ? .orange : .gray)
+        .disabled(favoriteSaveDisabled)
+        .accessibilityLabel(isFavoriteSelected ? "已收藏，点击取消收藏" : "收藏当前选点")
+    }
+
+    private var expandButton: some View {
+        Button(action: toggleExpanded) {
+            Image(systemName: isExpanded ? "chevron.down" : "chevron.up")
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(.secondary)
+                .frame(width: 32, height: 32)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(isExpanded ? "收起详情" : "展开详情")
+    }
+
+    private var peekActionRow: some View {
+        HStack(spacing: 8) {
+            actionSwitcher
+            peekButton
+        }
+    }
+
+    private var peekButton: some View {
+        Button(action: handlePeekTap) {
+            HStack(spacing: 4) {
+                if spoofState == .verifying, !showsRoute {
+                    ProgressView().tint(.white).controlSize(.small)
+                } else if let peekSystemImage {
+                    Image(systemName: peekSystemImage)
+                }
+                Text(peekTitle).lineLimit(1).minimumScaleFactor(0.8)
+            }
+            .font(.subheadline.weight(.semibold))
+            .foregroundStyle(.white)
+            .frame(minWidth: 96)
+            .padding(.horizontal, 10)
+            .frame(height: 34)
+            .background(
+                peekColor.opacity(peekDisabled ? 0.45 : 1),
+                in: RoundedRectangle(cornerRadius: AppRadius.control, style: .continuous)
+            )
+        }
+        .buttonStyle(.plain)
+        .disabled(peekDisabled)
+        .accessibilityLabel(peekAccessibilityLabel)
+        .accessibilityHint(peekOpensDetail ? "展开路线设置" : "")
     }
 
     private var actionSwitcher: some View {
         HStack(spacing: 6) {
             switchChip(title: "定点", systemImage: "location.fill", selected: !showsRoute, action: onShowSpot)
-            switchChip(title: "走路", systemImage: "figure.walk", subtitle: showsRoute ? nil : routeChipSubtitle, selected: showsRoute, action: onShowRoute)
+            switchChip(
+                title: "走路",
+                systemImage: "figure.walk",
+                subtitle: isExpanded && !showsRoute ? routeChipSubtitle : nil,
+                selected: showsRoute,
+                action: onShowRoute
+            )
         }
-        .padding(4)
+        .padding(2)
         .background(Color.secondary.opacity(0.12), in: RoundedRectangle(cornerRadius: AppRadius.control, style: .continuous))
     }
 
@@ -161,15 +262,16 @@ struct MapHomeBottomCard<CoordinateRows: View, SpotContent: View, RoutePanel: Vi
             VStack(spacing: 1) {
                 Label(title, systemImage: systemImage)
                     .font(.subheadline.weight(.semibold))
+                    .lineLimit(1)
                 if let subtitle {
                     Text(subtitle)
                         .font(.caption2)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(selected ? Color.white.opacity(0.85) : Color.secondary)
                         .lineLimit(1)
                 }
             }
             .frame(maxWidth: .infinity)
-            .padding(.vertical, subtitle == nil ? 8 : 4)
+            .frame(height: subtitle == nil ? 30 : 36)
             .foregroundStyle(selected ? Color.white : Color.primary)
             .background(
                 selected ? Color.accentColor : Color.clear,
@@ -180,6 +282,36 @@ struct MapHomeBottomCard<CoordinateRows: View, SpotContent: View, RoutePanel: Vi
         .buttonStyle(.plain)
         .accessibilityAddTraits(selected ? .isSelected : [])
         .accessibilityLabel(subtitle.map { "\(title)，\($0)" } ?? title)
+    }
+
+    @ViewBuilder
+    private var expandedDetail: some View {
+        if showsRoute {
+            routePanel
+        } else {
+            expandedSpot
+        }
+    }
+
+    private var expandedSpot: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("当前地图：\(mapSystemName)")
+                .font(.caption2.weight(.medium))
+                .foregroundStyle(.secondary)
+            coordinateRows
+            Button(spoofState == .active ? "无法生效？" : "无法取消？", action: onHelp)
+                .buttonStyle(CapsuleChipStyle())
+            spotContent
+            Button(action: onOpenSettings) {
+                StatusPill(text: runtimeStatusText, tone: runtimeStatusTone)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(runtimeStatusText)
+            .accessibilityHint("打开设置")
+            if needsSwitchButton {
+                spotActions
+            }
+        }
     }
 
     private var spotActions: some View {
@@ -197,23 +329,32 @@ struct MapHomeBottomCard<CoordinateRows: View, SpotContent: View, RoutePanel: Vi
                 .frame(minWidth: needsSwitchButton ? 56 : nil)
                 .padding(.horizontal, needsSwitchButton ? 12 : 14)
             }
-            .buttonStyle(PrimaryActionStyle(tint: buttonColor))
+            .buttonStyle(PrimaryActionStyle(tint: buttonColor, compact: true))
             .disabled(spoofState == .verifying)
 
             if needsSwitchButton {
                 Button(action: onSwitchHere) {
                     Label("切换到此处", systemImage: "arrow.triangle.swap")
-                        .font(.body.weight(.medium)).lineLimit(1)
+                        .font(.subheadline.weight(.semibold)).lineLimit(1)
                         .frame(maxWidth: .infinity)
-                        .padding(.vertical, 12).padding(.horizontal, 16)
+                        .padding(.vertical, 8).padding(.horizontal, 12)
                 }
                 .background(.blue, in: RoundedRectangle(cornerRadius: AppRadius.control))
                 .foregroundStyle(.white)
-                .transition(.move(edge: .trailing).combined(with: .opacity))
             }
         }
-        .animation(.spring(response: 0.35, dampingFraction: 0.7), value: needsSwitchButton)
-        .padding(.top, 4)
+    }
+
+    private func toggleExpanded() {
+        isExpanded.toggle()
+    }
+
+    private func handlePeekTap() {
+        if peekOpensDetail {
+            isExpanded = true
+            return
+        }
+        onPeekTap()
     }
 }
 
@@ -240,7 +381,7 @@ struct MapHomeSelectionChips<RecentChips: View, FavoriteChips: View, AllFavorite
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 8) {
             if hasRecents {
                 HStack(spacing: 8) {
                     Text("最近")

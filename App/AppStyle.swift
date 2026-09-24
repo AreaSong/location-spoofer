@@ -33,21 +33,23 @@ struct CapsuleChipStyle: ButtonStyle {
     }
 }
 
-/// 主按钮：白字、headline、竖向 14pt 内边距。禁用时底色减淡。
+/// 主按钮：白字。默认 headline、竖向 14pt；底栏用 compact 收成更矮的一行。禁用时底色减淡。
 struct PrimaryActionStyle: ButtonStyle {
     var tint: Color
+    var compact = false
     @Environment(\.isEnabled) private var isEnabled
 
-    init(tint: Color = .accentColor) {
+    init(tint: Color = .accentColor, compact: Bool = false) {
         self.tint = tint
+        self.compact = compact
     }
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.headline)
+            .font(compact ? .subheadline.weight(.semibold) : .headline)
             .lineLimit(1)
             .foregroundStyle(.white)
-            .padding(.vertical, 14)
+            .padding(.vertical, compact ? 8 : 14)
             .background(
                 tint.opacity(isEnabled ? 1 : 0.45),
                 in: RoundedRectangle(cornerRadius: AppRadius.control, style: .continuous)

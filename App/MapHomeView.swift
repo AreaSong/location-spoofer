@@ -610,8 +610,16 @@ struct MapHomeView: View {
             buttonTitle: buttonTitle,
             buttonSystemImage: buttonSystemImage,
             buttonColor: buttonColor,
-            showsRoute: route.phase != .inactive && showsRoutePanel,
+            showsRoute: showsRoutePanelActive,
             routeChipSubtitle: routeChipSubtitle,
+            showsRouteProgress: showsRouteProgress,
+            peekTitle: homePeekTitle,
+            peekAccessibilityLabel: homePeekAccessibilityLabel,
+            peekSystemImage: showsRoutePanelActive ? nil : buttonSystemImage,
+            peekColor: homePeekColor,
+            peekDisabled: homePeekDisabled,
+            peekOpensDetail: homePeekOpensDetail,
+            playbackClock: route.clock,
             coordinateRows: {
                 coordinateRow(label: "GCJ-02(国内)", system: .gcj02)
                 coordinateRow(label: "WGS-84(国际)", system: .wgs84)
@@ -634,6 +642,9 @@ struct MapHomeView: View {
                 )
             },
             routePanel: { routeCard },
+            peekCaption: {
+                HomePeekCaption(route: route, clock: route.clock, showsRoute: showsRoutePanelActive)
+            },
             onShowSpot: {
                 // 切回定点只收起面板，路线、图钉和播放状态都保留。
                 showsRoutePanel = false
@@ -658,7 +669,8 @@ struct MapHomeView: View {
             },
             onOpenSettings: { activeSheet = .settings },
             onMainTap: handleMainButtonTap,
-            onSwitchHere: { beginLocationOperation() }
+            onSwitchHere: { beginLocationOperation() },
+            onPeekTap: handlePeekTap
         )
     }
 

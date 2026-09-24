@@ -42,6 +42,27 @@ extension MapHomeView {
         }
     }
 
+    var spotPeekTitle: String {
+        if needsSwitchButton { return "切换到此处" }
+        if needsTunnelBeforeStart { return "连接隧道" }
+        if runtimeMode.mode == .thirdParty {
+            switch spoofState {
+            case .idle: return "同步"
+            case .verifying: return "同步中"
+            case .active: return "停止"
+            }
+        }
+        switch spoofState {
+        case .idle: return "开始"
+        case .verifying: return "验证中"
+        case .active: return "停止"
+        }
+    }
+
+    var spotPeekAccessibilityLabel: String {
+        needsSwitchButton ? "切换到此处" : buttonTitle
+    }
+
     var buttonColor: Color {
         switch spoofState {
         case .idle: return .blue
@@ -51,6 +72,7 @@ extension MapHomeView {
     }
 
     func handleMainButtonTap() {
+        if refuseUIPreviewLocationChange() { return }
         if runtimeMode.mode == .developerTunnel, spoofState != .active {
             routeLocation.refresh()
             if routeLocation.readiness != .ready {
@@ -69,7 +91,8 @@ extension MapHomeView {
     }
 
     var locationUseBlock: LocationUseBlock? {
-        LocationUseAvailability.current(
+        if UIPreview.isEnabled() { return nil }
+        return LocationUseAvailability.current(
             mode: runtimeMode.mode,
             wifiEnabled: net.isWiFiEnabled,
             cellularEnabled: net.usesCellular,
@@ -107,7 +130,14 @@ extension MapHomeView {
     }
 
     func beginLocationOperation(target overrideTarget: FavoriteLocation? = nil) {
+        if refuseUIPreviewLocationChange() { return }
         session.begin(target: overrideTarget ?? currentSelectionFavorite)
+    }
+
+    func refuseUIPreviewLocationChange() -> Bool {
+        guard UIPreview.isEnabled() else { return false }
+        manualHint = "界面预览不会修改定位。"
+        return true
     }
 
     func stopSpoofing() {
@@ -248,6 +278,7 @@ extension MapHomeView {
     }
 
     var homeRuntimeStatusTone: StatusPill.Tone {
+        if UIPreview.isEnabled() { return .neutral }
         if runtimeMode.mode == .developerTunnel {
             return routeLocation.readiness == .ready ? .ok : .warn
         }
@@ -265,6 +296,7 @@ extension MapHomeView {
     }
 
     var homeRuntimeStatusText: String {
+        if UIPreview.isEnabled() { return "界面预览" }
         if runtimeMode.mode == .developerTunnel {
             return routeLocation.readiness == .ready ? "隧道已连接" : "隧道未就绪"
         }

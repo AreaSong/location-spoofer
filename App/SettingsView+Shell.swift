@@ -30,6 +30,11 @@ extension SettingsView {
             }
 
             Section("状态") {
+                if UIPreview.isEnabled() {
+                    Text("界面预览不会修改定位。在上面换成一种运行模式后，下次启动会进入对应引导。")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
                 if let message = signingExpiryStatus.settingsMessage {
                     let countdown = signingExpiryStatus.expirationDate.flatMap {
                         SigningExpiryCountdown.text(until: $0, now: Date())
