@@ -251,9 +251,9 @@ final class RouteLiveActivityCenter {
 
     private func showsRouteProgress(_ phase: RouteActivityPhaseKey) -> Bool {
         switch phase {
-        case .playing, .userPaused, .systemFault, .retrying, .finished:
+        case .playing, .userPaused, .systemFault, .retrying, .finished, .actionFailed:
             return true
-        case .stopped, .actionFailed:
+        case .stopped, .planning:
             return false
         }
     }
@@ -269,6 +269,7 @@ final class RouteLiveActivityCenter {
             progress: min(max(snapshot.progress, 0), 1),
             showsProgress: showsRouteProgress(snapshot.phaseKey),
             symbolName: snapshot.symbolName,
+            modeSymbolName: snapshot.modeSymbolName,
             isWarning: snapshot.isWarning,
             primaryAction: snapshot.primaryAction,
             primaryTitle: snapshot.primaryTitle,

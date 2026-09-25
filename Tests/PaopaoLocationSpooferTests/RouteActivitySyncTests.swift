@@ -716,6 +716,200 @@ final class RouteActivitySyncTests: XCTestCase {
         XCTAssertFalse(playing.commandFailed)
     }
 
+    func testPlanningShowsRouteWithoutPlaybackButtons() {
+        let named = RouteActivitySync.snapshot(
+            phase: .preparing,
+            statusMessage: RouteActivitySync.planningMessage,
+            routeName: "很长的滨海步行路线名称不应该撑破布局",
+            remainingMeters: 0,
+            speedMetersPerSecond: 1.4,
+            progress: 0,
+            symbolName: "figure.walk"
+        )
+        XCTAssertEqual(named?.phaseKey, .planning)
+        XCTAssertEqual(named?.statusText, "规划中")
+        XCTAssertEqual(named?.modeSymbolName, "figure.walk")
+        XCTAssertEqual(named?.primaryAction, "")
+        XCTAssertEqual(named?.secondaryAction, "")
+        XCTAssertEqual(RouteActivitySync.detailText(for: named!), "正在规划路线")
+        XCTAssertNotEqual(named?.primaryTitle, "继续")
+        XCTAssertNotEqual(named?.secondaryTitle, "停止虚拟定位")
+
+        let flagged = RouteActivitySync.snapshot(
+            phase: .preparing,
+            statusMessage: "先设起点",
+            routeName: "骑行路线",
+            remainingMeters: 1_200,
+            speedMetersPerSecond: 4,
+            progress: 0,
+            symbolName: "bicycle",
+            isPlanning: true
+        )
+        XCTAssertEqual(flagged?.phaseKey, .planning)
+        XCTAssertEqual(flagged?.modeSymbolName, "bicycle")
+        XCTAssertFalse(flagged?.distanceText.isEmpty == true)
+        XCTAssertFalse(flagged?.timeText.isEmpty == true)
+    }
+
+    func testFinishedAndStoppedDoNotOfferResume() {
+        let finished = RouteActivitySync.snapshot(
+            phase: .finished,
+            statusMessage: "",
+            routeName: "步行路线",
+            remainingMeters: 0,
+            speedMetersPerSecond: 1.4,
+            progress: 1,
+            symbolName: "figure.walk"
+        )!
+        XCTAssertEqual(finished.primaryAction, "")
+        XCTAssertEqual(finished.secondaryAction, "")
+        XCTAssertEqual(RouteActivitySync.detailText(for: finished), "已走完")
+        XCTAssertEqual(finished.modeSymbolName, "figure.walk")
+
+        let stopped = RouteActivitySync.snapshot(
+            phase: .preparing,
+            statusMessage: RouteActivitySync.stoppedMessage,
+            routeName: "步行路线",
+            remainingMeters: 0,
+            speedMetersPerSecond: 1.4,
+            progress: 0.4,
+            symbolName: "bicycle",
+            confirmStopped: true
+        )!
+        XCTAssertEqual(stopped.phaseKey, .stopped)
+        XCTAssertEqual(stopped.primaryTitle, "")
+        XCTAssertEqual(stopped.secondaryTitle, "")
+        XCTAssertEqual(stopped.modeSymbolName, "bicycle")
+        XCTAssertNotEqual(stopped.secondaryAction, "stopSpoof")
+    }
+
+    func testUserPauseKeepsTravelIconAndStopRoute() {
+        let snapshot = RouteActivitySync.snapshot(
+            phase: .paused,
+            statusMessage: RouteActivitySync.userPauseMessage,
+            routeName: "步行路线",
+            remainingMeters: 800,
+            speedMetersPerSecond: 1.4,
+            progress: 0.2,
+            symbolName: "bicycle"
+        )
+        XCTAssertEqual(snapshot?.symbolName, "pause.fill")
+        XCTAssertEqual(snapshot?.modeSymbolName, "bicycle")
+        XCTAssertEqual(snapshot?.primaryAction, "resume")
+        XCTAssertEqual(snapshot?.secondaryAction, "stopRoute")
+        XCTAssertEqual(snapshot?.secondaryTitle, "停止路线")
+    }
+
+    func testRouteIslandActionsMatchRouteStates() {
+        let playing = RouteIslandActions.buttons(
+            phase: "playing",
+            primaryAction: "pause",
+            primaryTitle: "暂停",
+            secondaryAction: "stopRoute",
+            secondaryTitle: "停止路线",
+            isStale: false
+        )
+        XCTAssertEqual(playing.primaryAction, "pause")
+        XCTAssertEqual(playing.secondaryAction, "stopRoute")
+        XCTAssertEqual(playing.secondaryTitle, "停止路线")
+
+        let paused = RouteIslandActions.buttons(
+            phase: "userPaused",
+            primaryAction: "resume",
+            primaryTitle: "继续",
+            secondaryAction: "stopRoute",
+            secondaryTitle: "停止路线",
+            isStale: false
+        )
+        XCTAssertEqual(paused.primaryAction, "resume")
+        XCTAssertEqual(paused.primaryTitle, "继续")
+        XCTAssertEqual(paused.secondaryAction, "stopRoute")
+        XCTAssertEqual(paused.secondaryTitle, "停止路线")
+
+        let spoof = RouteIslandActions.buttons(
+            phase: "userPaused",
+            primaryAction: "resume",
+            primaryTitle: "继续",
+            secondaryAction: "stopSpoof",
+            secondaryTitle: "停止虚拟定位",
+            isStale: false
+        )
+        XCTAssertEqual(spoof.secondaryAction, "")
+
+        let fault = RouteIslandActions.buttons(
+            phase: "systemFault",
+            primaryAction: "resume",
+            primaryTitle: "继续",
+            secondaryAction: "openApp",
+            secondaryTitle: "打开 App",
+            isStale: false
+        )
+        XCTAssertEqual(fault.primaryAction, "openApp")
+        XCTAssertNotEqual(fault.primaryAction, "resume")
+        XCTAssertNotEqual(fault.secondaryAction, "stopSpoof")
+
+        let retrying = RouteIslandActions.buttons(
+            phase: "retrying",
+            primaryAction: "retry",
+            primaryTitle: "重试",
+            secondaryAction: "openApp",
+            secondaryTitle: "打开 App",
+            isStale: true
+        )
+        XCTAssertEqual(retrying.primaryAction, "")
+        XCTAssertEqual(retrying.secondaryAction, "")
+
+        let failed = RouteIslandActions.buttons(
+            phase: "actionFailed",
+            primaryAction: "retry",
+            primaryTitle: "重试",
+            secondaryAction: "switchHere",
+            secondaryTitle: "切换到此处",
+            isStale: false
+        )
+        XCTAssertEqual(failed.primaryAction, "retry")
+        XCTAssertEqual(failed.secondaryAction, "")
+    }
+
+    func testRouteCompactFallsBackWhenTimeIsMissing() {
+        XCTAssertEqual(
+            RouteIslandLayout.compactTrailing(timeText: "12分", statusText: "进行中", isStale: false),
+            "12分"
+        )
+        XCTAssertEqual(
+            RouteIslandLayout.compactTrailing(timeText: "", statusText: "已完成", isStale: false),
+            "已完成"
+        )
+        XCTAssertEqual(
+            RouteIslandLayout.compactTrailing(timeText: "12分", statusText: "进行中", isStale: true),
+            "已中断"
+        )
+        XCTAssertEqual(
+            RouteIslandLayout.compactSymbol(modeSymbolName: "bicycle", symbolName: "pause.fill", isStale: false),
+            "bicycle"
+        )
+        XCTAssertEqual(
+            RouteIslandLayout.metricText(
+                phase: "finished",
+                detailText: "",
+                distanceText: "",
+                timeText: "",
+                statusText: "已完成"
+            ),
+            "已走完"
+        )
+        XCTAssertEqual(
+            RouteIslandLayout.metricText(
+                phase: "playing",
+                detailText: "",
+                distanceText: "800 米",
+                timeText: "10分",
+                statusText: "进行中"
+            ),
+            "还剩 800 米 · 10分"
+        )
+    }
+
     private func playingSnapshot(remainingMeters: Double) -> RouteActivitySnapshot {
         RouteActivitySync.snapshot(
             phase: .playing,

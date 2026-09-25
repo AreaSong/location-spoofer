@@ -11,35 +11,29 @@ struct RouteActivityWidget: Widget {
         } dynamicIsland: { context in
             DynamicIsland {
                 DynamicIslandExpandedRegion(.leading) {
-                    if context.state.kind != "spot" {
-                        Text(context.state.title)
-                            .font(.headline)
-                            .lineLimit(1)
-                    }
+                    EmptyView()
                 }
                 DynamicIslandExpandedRegion(.trailing) {
-                    if context.state.kind != "spot" {
-                        statusLabel(context.state, isStale: context.isStale)
-                    }
+                    EmptyView()
                 }
                 DynamicIslandExpandedRegion(.bottom) {
                     if context.state.kind == "spot" {
                         spotExpanded(context.state, isStale: context.isStale)
                     } else {
-                        islandBottom(context.state, isStale: context.isStale)
+                        routeExpanded(context.state, isStale: context.isStale)
                     }
                 }
             } compactLeading: {
                 if context.state.kind == "spot" {
                     spotCompactIdentity(context.state, isStale: context.isStale)
                 } else {
-                    statusIcon(context.state, isStale: context.isStale)
+                    routeCompactIdentity(context.state, isStale: context.isStale)
                 }
             } compactTrailing: {
                 if context.state.kind == "spot" {
                     spotCompactStatus(context.state, isStale: context.isStale)
                 } else {
-                    compactTrailing(context.state, isStale: context.isStale)
+                    routeCompactStatus(context.state, isStale: context.isStale)
                 }
             } minimal: {
                 statusIcon(context.state, isStale: context.isStale)
@@ -52,7 +46,7 @@ struct RouteActivityWidget: Widget {
         if state.kind == "spot" {
             spotExpanded(state, isStale: isStale)
         } else {
-            routeLockScreen(state, isStale: isStale)
+            routeExpanded(state, isStale: isStale)
         }
     }
 
@@ -181,91 +175,66 @@ struct RouteActivityWidget: Widget {
             .frame(height: 36)
     }
 
-    private func routeLockScreen(_ state: RouteActivityAttributes.ContentState, isStale: Bool) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .firstTextBaseline) {
-                Text(state.title)
-                    .font(.headline)
-                    .lineLimit(1)
-                Spacer(minLength: 8)
-                statusLabel(state, isStale: isStale)
-            }
-            metrics(state, isStale: isStale)
-            actionRow(state, isStale: isStale)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    @ViewBuilder
-    private func islandBottom(_ state: RouteActivityAttributes.ContentState, isStale: Bool) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            metrics(state, isStale: isStale)
-            actionRow(state, isStale: isStale)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    @ViewBuilder
-    private func metrics(_ state: RouteActivityAttributes.ContentState, isStale: Bool) -> some View {
-        if state.kind == "route" {
-            routeMetrics(state, isStale: isStale)
-        } else if !state.detailText.isEmpty {
-            Text(state.detailText)
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
+    private func routeExpanded(_ state: RouteActivityAttributes.ContentState, isStale: Bool) -> some View {
+        let metric = RouteIslandLayout.metricText(
+            phase: state.phase,
+            detailText: state.detailText,
+            distanceText: state.distanceText,
+            timeText: state.timeText,
+            statusText: state.statusText
+        )
+        return VStack(alignment: .leading, spacing: 8) {
+            Text(state.title)
+                .font(.headline)
                 .lineLimit(1)
-        }
-        if !state.errorText.isEmpty {
-            Text(state.errorText)
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .lineLimit(2)
-        }
-    }
-
-    @ViewBuilder
-    private func routeMetrics(_ state: RouteActivityAttributes.ContentState, isStale: Bool) -> some View {
-        if state.showsProgress || !state.distanceText.isEmpty || !state.timeText.isEmpty {
-            HStack(spacing: 12) {
-                if !state.distanceText.isEmpty {
-                    Text("剩余 \(state.distanceText)")
-                        .font(.subheadline.weight(.semibold))
-                        .lineLimit(1)
-                }
-                Spacer(minLength: 8)
-                if !state.timeText.isEmpty {
-                    Text(state.timeText)
-                        .font(.subheadline.weight(.semibold))
-                        .lineLimit(1)
-                }
-            }
+                .truncationMode(.tail)
+            statusLabel(state, isStale: isStale)
+            Text(metric)
+                .font(.subheadline.weight(.semibold))
+                .lineLimit(1)
+                .truncationMode(.tail)
             if state.showsProgress {
                 ProgressView(value: min(max(state.progress, 0), 1))
                     .tint(isStale || state.isWarning ? Color.orange : Color.accentColor)
             }
-        } else if !state.detailText.isEmpty {
-            Text(state.detailText)
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
+            if !state.errorText.isEmpty, state.errorText != metric {
+                Text(state.errorText)
+                    .font(.subheadline)
+                    .foregroundStyle(Color.orange)
+                    .lineLimit(2)
+                    .truncationMode(.tail)
+            }
+            actionRow(state, isStale: isStale)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    private func compactTrailing(_ state: RouteActivityAttributes.ContentState, isStale: Bool) -> some View {
-        Text(compactText(state, isStale: isStale))
+    private func routeCompactIdentity(_ state: RouteActivityAttributes.ContentState, isStale: Bool) -> some View {
+        HStack(spacing: 4) {
+            Image(systemName: RouteIslandLayout.compactSymbol(
+                modeSymbolName: state.modeSymbolName,
+                symbolName: state.symbolName,
+                isStale: isStale
+            ))
             .foregroundStyle(isStale || state.isWarning ? Color.orange : Color.primary)
+            Text(state.title)
+                .font(.caption.weight(.semibold))
+                .lineLimit(1)
+                .truncationMode(.tail)
+        }
     }
 
-    private func compactText(_ state: RouteActivityAttributes.ContentState, isStale: Bool) -> String {
-        if isStale { return "已中断" }
-        switch state.phase {
-        case "systemFault", "retrying", "finished", "stopped", "actionFailed":
-            return state.statusText
-        default:
-            break
-        }
-        if state.kind == "route", !state.timeText.isEmpty { return state.timeText }
-        return state.statusText
+    private func routeCompactStatus(_ state: RouteActivityAttributes.ContentState, isStale: Bool) -> some View {
+        Text(RouteIslandLayout.compactTrailing(
+            timeText: state.timeText,
+            statusText: state.statusText,
+            isStale: isStale
+        ))
+        .font(.caption.weight(.semibold))
+        .foregroundStyle(isStale || state.isWarning ? Color.orange : Color.primary)
+        .lineLimit(1)
+        .minimumScaleFactor(0.8)
+        .layoutPriority(1)
     }
 
     private func submittedAction(_ action: String, state: RouteActivityAttributes.ContentState) -> String {
@@ -290,7 +259,7 @@ struct RouteActivityWidget: Widget {
 
     @ViewBuilder
     private func actionRow(_ state: RouteActivityAttributes.ContentState, isStale: Bool) -> some View {
-        let buttons = IslandActionPresentation.buttons(
+        let buttons = RouteIslandActions.buttons(
             phase: state.phase,
             primaryAction: state.primaryAction,
             primaryTitle: state.primaryTitle,
@@ -363,6 +332,8 @@ struct RouteActivityWidget: Widget {
 
     private func buttonTitle(_ title: String) -> some View {
         Text(title)
+            .lineLimit(1)
+            .minimumScaleFactor(0.8)
             .frame(maxWidth: .infinity)
             .frame(height: 36)
     }

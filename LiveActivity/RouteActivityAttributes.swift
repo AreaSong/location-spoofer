@@ -14,6 +14,7 @@ struct RouteActivityAttributes: ActivityAttributes {
         var progress: Double
         var showsProgress: Bool
         var symbolName: String
+        var modeSymbolName: String
         var isWarning: Bool
         var primaryAction: String
         var primaryTitle: String
@@ -25,7 +26,7 @@ struct RouteActivityAttributes: ActivityAttributes {
 
         private enum CodingKeys: String, CodingKey {
             case kind, title, statusText, detailText, distanceText, timeText, progress, showsProgress
-            case symbolName, isWarning, primaryAction, primaryTitle, secondaryAction, secondaryTitle
+            case symbolName, modeSymbolName, isWarning, primaryAction, primaryTitle, secondaryAction, secondaryTitle
             case phase, errorText, retryCommand
         }
 
@@ -39,6 +40,7 @@ struct RouteActivityAttributes: ActivityAttributes {
             progress: Double,
             showsProgress: Bool,
             symbolName: String,
+            modeSymbolName: String = "",
             isWarning: Bool,
             primaryAction: String,
             primaryTitle: String,
@@ -57,6 +59,7 @@ struct RouteActivityAttributes: ActivityAttributes {
             self.progress = progress
             self.showsProgress = showsProgress
             self.symbolName = symbolName
+            self.modeSymbolName = modeSymbolName
             self.isWarning = isWarning
             self.primaryAction = primaryAction
             self.primaryTitle = primaryTitle
@@ -78,6 +81,7 @@ struct RouteActivityAttributes: ActivityAttributes {
             progress = try container.decode(Double.self, forKey: .progress)
             showsProgress = try container.decode(Bool.self, forKey: .showsProgress)
             symbolName = try container.decode(String.self, forKey: .symbolName)
+            modeSymbolName = try container.decodeIfPresent(String.self, forKey: .modeSymbolName) ?? ""
             isWarning = try container.decode(Bool.self, forKey: .isWarning)
             primaryAction = try container.decode(String.self, forKey: .primaryAction)
             primaryTitle = try container.decode(String.self, forKey: .primaryTitle)
@@ -99,6 +103,7 @@ struct RouteActivityAttributes: ActivityAttributes {
             try container.encode(progress, forKey: .progress)
             try container.encode(showsProgress, forKey: .showsProgress)
             try container.encode(symbolName, forKey: .symbolName)
+            try container.encode(modeSymbolName, forKey: .modeSymbolName)
             try container.encode(isWarning, forKey: .isWarning)
             try container.encode(primaryAction, forKey: .primaryAction)
             try container.encode(primaryTitle, forKey: .primaryTitle)
@@ -190,6 +195,118 @@ enum SpotIslandActions {
             return (buttons.primaryAction, buttons.primaryTitle, "", "")
         }
         return buttons
+    }
+}
+
+enum RouteIslandLayout {
+    static func metricText(
+        phase: String,
+        detailText: String,
+        distanceText: String,
+        timeText: String,
+        statusText: String
+    ) -> String {
+        if !detailText.isEmpty { return detailText }
+        if !distanceText.isEmpty, !timeText.isEmpty {
+            return "还剩 \(distanceText) · \(timeText)"
+        }
+        if !distanceText.isEmpty { return "还剩 \(distanceText)" }
+        if !timeText.isEmpty { return "还剩 \(timeText)" }
+        switch phase {
+        case "planning":
+            return "正在规划路线"
+        case "finished":
+            return "已走完"
+        case "stopped":
+            return "定位仍保持"
+        case "retrying":
+            return "正在重试"
+        case "userPaused":
+            return "已暂停"
+        case "playing":
+            return "正在计算剩余路程"
+        default:
+            return statusText.isEmpty ? "暂时无法估算剩余路程" : statusText
+        }
+    }
+
+    static func compactTrailing(timeText: String, statusText: String, isStale: Bool) -> String {
+        if isStale { return "已中断" }
+        if !timeText.isEmpty { return timeText }
+        if !statusText.isEmpty { return statusText }
+        return "路线"
+    }
+
+    static func compactSymbol(modeSymbolName: String, symbolName: String, isStale: Bool) -> String {
+        if isStale { return "exclamationmark.triangle.fill" }
+        if !modeSymbolName.isEmpty { return modeSymbolName }
+        return symbolName.isEmpty ? "figure.walk" : symbolName
+    }
+}
+
+enum RouteIslandActions {
+    static let quietPhases: Set<String> = ["planning", "retrying", "finished", "stopped"]
+
+    static func buttons(
+        phase: String,
+        primaryAction: String,
+        primaryTitle: String,
+        secondaryAction: String,
+        secondaryTitle: String,
+        isStale: Bool
+    ) -> (primaryAction: String, primaryTitle: String, secondaryAction: String, secondaryTitle: String) {
+        if quietPhases.contains(phase) {
+            return ("", "", "", "")
+        }
+        let presented = IslandActionPresentation.buttons(
+            phase: phase,
+            primaryAction: primaryAction,
+            primaryTitle: primaryTitle,
+            secondaryAction: secondaryAction,
+            secondaryTitle: secondaryTitle,
+            isStale: isStale
+        )
+        return allowed(presented, phase: phase, isStale: isStale)
+    }
+
+    private static func allowed(
+        _ buttons: (primaryAction: String, primaryTitle: String, secondaryAction: String, secondaryTitle: String),
+        phase: String,
+        isStale: Bool
+    ) -> (primaryAction: String, primaryTitle: String, secondaryAction: String, secondaryTitle: String) {
+        var primary = filter(buttons.primaryAction, title: buttons.primaryTitle, phase: phase, isStale: isStale)
+        var secondary = filter(buttons.secondaryAction, title: buttons.secondaryTitle, phase: phase, isStale: isStale)
+        if primary.action.isEmpty {
+            primary = secondary
+            secondary = ("", "")
+        }
+        if !secondary.action.isEmpty, secondary.action == primary.action {
+            secondary = ("", "")
+        }
+        return (primary.action, primary.title, secondary.action, secondary.title)
+    }
+
+    private static func filter(
+        _ action: String,
+        title: String,
+        phase: String,
+        isStale: Bool
+    ) -> (action: String, title: String) {
+        switch action {
+        case "pause":
+            if isStale || phase == "systemFault" || phase == "actionFailed" { return ("", "") }
+            return (action, title.isEmpty ? "暂停" : title)
+        case "resume":
+            if isStale || phase == "systemFault" || phase == "actionFailed" { return ("", "") }
+            return (action, "继续")
+        case "stopRoute":
+            if isStale || phase == "systemFault" || phase == "actionFailed" { return ("", "") }
+            return (action, "停止路线")
+        case "retry", "openApp":
+            return (action, title)
+        default:
+            return ("", "")
+        }
     }
 }
 

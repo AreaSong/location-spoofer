@@ -1,6 +1,7 @@
 import Foundation
 
 enum RouteActivityPhaseKey: String, Equatable {
+    case planning
     case playing
     case userPaused
     case systemFault
@@ -19,6 +20,7 @@ struct RouteActivitySnapshot: Equatable {
     var distanceText: String
     var timeText: String
     var symbolName: String
+    var modeSymbolName: String
     var isWarning: Bool
     var errorText: String
     var primaryAction: String
@@ -99,6 +101,8 @@ enum RouteActivitySync {
     static let locationBlockedMessage = "当前不能继续定位。"
     static let playingStaleInterval: TimeInterval = 45
     static let failureStaleInterval: TimeInterval = 120
+    /// 与路线规划时写入的状态文案一致，用来把规划中送上路线岛。
+    static let planningMessage = "正在规划沿路路线…"
 
     /// 停止路线的短确认结束后，定点仍生效就不再占岛，交给定点布局。
     static func suppressStoppedRoute(confirmUntil: Date?, now: Date, spotStillActive: Bool) -> Bool {
@@ -116,7 +120,25 @@ enum RouteActivitySync {
         if !snapshot.distanceText.isEmpty {
             return "还剩 \(snapshot.distanceText)"
         }
-        return snapshot.timeText
+        if !snapshot.timeText.isEmpty {
+            return "还剩 \(snapshot.timeText)"
+        }
+        switch snapshot.phaseKey {
+        case .planning:
+            return "正在规划路线"
+        case .finished:
+            return "已走完"
+        case .stopped:
+            return keptLocationDetail
+        case .retrying:
+            return "正在重试"
+        case .userPaused:
+            return "已暂停"
+        case .playing:
+            return "正在计算剩余路程"
+        case .systemFault, .actionFailed:
+            return snapshot.statusText.isEmpty ? "暂时无法估算剩余路程" : snapshot.statusText
+        }
     }
 
     static func staleDate(for snapshot: RouteActivitySnapshot, now: Date = Date()) -> Date? {
@@ -125,7 +147,7 @@ enum RouteActivitySync {
             return now.addingTimeInterval(playingStaleInterval)
         case .systemFault, .actionFailed:
             return now.addingTimeInterval(failureStaleInterval)
-        case .userPaused, .finished, .stopped:
+        case .userPaused, .finished, .stopped, .planning:
             return nil
         }
     }
@@ -142,7 +164,8 @@ enum RouteActivitySync {
         isRetrying: Bool = false,
         commandFailed: Bool = false,
         failedCommand: String = "",
-        confirmStopped: Bool = false
+        confirmStopped: Bool = false,
+        isPlanning: Bool = false
     ) -> RouteActivitySnapshot? {
         if commandFailed {
             return failedCommandSnapshot(
@@ -151,7 +174,8 @@ enum RouteActivitySync {
                 speedMetersPerSecond: speedMetersPerSecond,
                 progress: progress,
                 statusMessage: statusMessage,
-                failedCommand: failedCommand
+                failedCommand: failedCommand,
+                symbolName: symbolName
             )
         }
         if isRetrying {
@@ -174,11 +198,20 @@ enum RouteActivitySync {
                     speedMetersPerSecond: speedMetersPerSecond,
                     progress: progress,
                     errorText: statusMessage,
-                    retryCommand: "play"
+                    retryCommand: "play",
+                    modeSymbolName: symbolName
                 )
             }
             if confirmStopped, statusMessage == stoppedMessage {
-                return stopped(routeName: routeName, progress: progress)
+                return stopped(routeName: routeName, progress: progress, modeSymbolName: symbolName)
+            }
+            if isPlanning || statusMessage == planningMessage {
+                return planning(
+                    routeName: routeName,
+                    remainingMeters: remainingMeters,
+                    speedMetersPerSecond: speedMetersPerSecond,
+                    symbolName: symbolName
+                )
             }
             return nil
         case .playing:
@@ -196,10 +229,11 @@ enum RouteActivitySync {
                 routeName: routeName,
                 remainingMeters: remainingMeters,
                 speedMetersPerSecond: speedMetersPerSecond,
-                progress: progress
+                progress: progress,
+                modeSymbolName: symbolName
             )
         case .finished:
-            return finished(routeName: routeName)
+            return finished(routeName: routeName, modeSymbolName: symbolName)
         }
     }
 
@@ -221,7 +255,7 @@ enum RouteActivitySync {
         if next.primaryAction != "retry" && next.secondaryAction != "retry" {
             next.retryCommand = ""
         }
-        if next.phaseKey == .finished || next.phaseKey == .stopped || next.phaseKey == .retrying {
+        if next.phaseKey == .finished || next.phaseKey == .stopped || next.phaseKey == .retrying || next.phaseKey == .planning {
             next.primaryAction = ""
             next.primaryTitle = ""
             next.secondaryAction = ""
@@ -240,6 +274,7 @@ enum RouteActivitySync {
             || previous.statusText != next.statusText
             || previous.routeName != next.routeName
             || previous.symbolName != next.symbolName
+            || previous.modeSymbolName != next.modeSymbolName
             || previous.isWarning != next.isWarning
             || previous.errorText != next.errorText
             || previous.primaryAction != next.primaryAction
@@ -275,6 +310,7 @@ enum RouteActivitySync {
             progress: progress,
             remainingMeters: remainingMeters,
             symbolName: symbolName,
+            modeSymbolName: symbolName,
             isWarning: false,
             errorText: "",
             primaryAction: "pause",
@@ -291,7 +327,8 @@ enum RouteActivitySync {
         routeName: String,
         remainingMeters: Double,
         speedMetersPerSecond: Double,
-        progress: Double
+        progress: Double,
+        modeSymbolName: String
     ) -> RouteActivitySnapshot {
         let minutes = remainingMinutes(meters: remainingMeters, speedMetersPerSecond: speedMetersPerSecond)
         let userPaused = interruption == .userPaused
@@ -305,7 +342,8 @@ enum RouteActivitySync {
                 speedMetersPerSecond: speedMetersPerSecond,
                 progress: progress,
                 errorText: statusMessage,
-                retryCommand: "resume"
+                retryCommand: "resume",
+                modeSymbolName: modeSymbolName
             )
         }
         return routeSnapshot(
@@ -316,6 +354,7 @@ enum RouteActivitySync {
             progress: progress,
             remainingMeters: remainingMeters,
             symbolName: "pause.fill",
+            modeSymbolName: modeSymbolName,
             isWarning: false,
             errorText: "",
             primaryAction: "resume",
@@ -332,7 +371,8 @@ enum RouteActivitySync {
         speedMetersPerSecond: Double,
         progress: Double,
         errorText: String,
-        retryCommand: String
+        retryCommand: String,
+        modeSymbolName: String
     ) -> RouteActivitySnapshot {
         let minutes = remainingMinutes(meters: remainingMeters, speedMetersPerSecond: speedMetersPerSecond)
         return routeSnapshot(
@@ -343,6 +383,7 @@ enum RouteActivitySync {
             progress: progress,
             remainingMeters: remainingMeters,
             symbolName: "exclamationmark.triangle.fill",
+            modeSymbolName: modeSymbolName,
             isWarning: true,
             errorText: errorText,
             primaryAction: "retry",
@@ -350,6 +391,34 @@ enum RouteActivitySync {
             secondaryAction: "openApp",
             secondaryTitle: "打开 App",
             retryCommand: retryCommand
+        )
+    }
+
+    private static func planning(
+        routeName: String,
+        remainingMeters: Double,
+        speedMetersPerSecond: Double,
+        symbolName: String
+    ) -> RouteActivitySnapshot {
+        let minutes = remainingMeters > 0
+            ? remainingMinutes(meters: remainingMeters, speedMetersPerSecond: speedMetersPerSecond)
+            : 0
+        return routeSnapshot(
+            phaseKey: .planning,
+            statusText: "规划中",
+            minutes: minutes,
+            routeName: routeName,
+            progress: 0,
+            remainingMeters: remainingMeters,
+            symbolName: symbolName,
+            modeSymbolName: symbolName,
+            isWarning: false,
+            errorText: "",
+            primaryAction: "",
+            primaryTitle: "",
+            secondaryAction: "",
+            secondaryTitle: "",
+            retryCommand: ""
         )
     }
 
@@ -369,6 +438,7 @@ enum RouteActivitySync {
             progress: progress,
             remainingMeters: remainingMeters,
             symbolName: symbolName,
+            modeSymbolName: symbolName,
             isWarning: false,
             errorText: "",
             primaryAction: "",
@@ -379,7 +449,7 @@ enum RouteActivitySync {
         )
     }
 
-    private static func finished(routeName: String) -> RouteActivitySnapshot {
+    private static func finished(routeName: String, modeSymbolName: String) -> RouteActivitySnapshot {
         routeSnapshot(
             phaseKey: .finished,
             statusText: "已完成",
@@ -388,6 +458,7 @@ enum RouteActivitySync {
             progress: 1,
             remainingMeters: 0,
             symbolName: "checkmark",
+            modeSymbolName: modeSymbolName,
             isWarning: false,
             errorText: "",
             primaryAction: "",
@@ -398,7 +469,7 @@ enum RouteActivitySync {
         )
     }
 
-    private static func stopped(routeName: String, progress: Double) -> RouteActivitySnapshot {
+    private static func stopped(routeName: String, progress: Double, modeSymbolName: String) -> RouteActivitySnapshot {
         routeSnapshot(
             phaseKey: .stopped,
             statusText: "已停止",
@@ -407,6 +478,7 @@ enum RouteActivitySync {
             progress: progress,
             remainingMeters: 0,
             symbolName: "stop.fill",
+            modeSymbolName: modeSymbolName,
             isWarning: false,
             errorText: "",
             primaryAction: "",
@@ -423,7 +495,8 @@ enum RouteActivitySync {
         speedMetersPerSecond: Double,
         progress: Double,
         statusMessage: String,
-        failedCommand: String
+        failedCommand: String,
+        symbolName: String
     ) -> RouteActivitySnapshot {
         let minutes = remainingMinutes(meters: remainingMeters, speedMetersPerSecond: speedMetersPerSecond)
         return routeSnapshot(
@@ -434,6 +507,7 @@ enum RouteActivitySync {
             progress: progress,
             remainingMeters: remainingMeters,
             symbolName: "exclamationmark.triangle.fill",
+            modeSymbolName: symbolName,
             isWarning: true,
             errorText: statusMessage,
             primaryAction: "retry",
@@ -452,6 +526,7 @@ enum RouteActivitySync {
         progress: Double,
         remainingMeters: Double,
         symbolName: String,
+        modeSymbolName: String,
         isWarning: Bool,
         errorText: String,
         primaryAction: String,
@@ -469,6 +544,7 @@ enum RouteActivitySync {
             distanceText: minutes > 0 ? RoutePlayback.formattedDistance(remainingMeters) : "",
             timeText: minutes > 0 ? "\(minutes)分" : "",
             symbolName: symbolName,
+            modeSymbolName: modeSymbolName,
             isWarning: isWarning,
             errorText: errorText,
             primaryAction: primaryAction,
