@@ -250,6 +250,23 @@ final class RouteActivitySyncTests: XCTestCase {
         XCTAssertNil(snapshot)
     }
 
+    func testFinishedUsesCheckmark() {
+        let snapshot = RouteActivitySync.snapshot(
+            phase: .finished,
+            statusMessage: "",
+            routeName: "步行路线",
+            remainingMeters: 0,
+            speedMetersPerSecond: 1.4,
+            progress: 1,
+            symbolName: "figure.walk"
+        )
+        XCTAssertEqual(snapshot?.phaseKey, .finished)
+        XCTAssertEqual(snapshot?.symbolName, "checkmark")
+        XCTAssertEqual(snapshot?.statusText, "已完成")
+        XCTAssertEqual(snapshot?.progress, 1)
+        XCTAssertEqual(snapshot?.primaryAction, "")
+    }
+
     func testStoppedRouteConfirmsWithoutButtons() {
         let snapshot = RouteActivitySync.snapshot(
             phase: .preparing,
@@ -288,8 +305,28 @@ final class RouteActivitySyncTests: XCTestCase {
             secondaryTitle: "停止路线",
             isStale: true
         )
-        XCTAssertEqual(playing.primaryAction, "openApp")
-        XCTAssertEqual(playing.secondaryAction, "")
+        XCTAssertEqual(playing.primaryAction, "retry")
+        XCTAssertEqual(playing.primaryTitle, "重试")
+        XCTAssertEqual(playing.secondaryAction, "openApp")
+        XCTAssertEqual(
+            IslandActionPresentation.submittedAction(action: playing.primaryAction, phase: "playing", retryCommand: ""),
+            "play"
+        )
+
+        let locating = IslandActionPresentation.buttons(
+            phase: "locating",
+            primaryAction: "stopSpoof",
+            primaryTitle: "停止虚拟定位",
+            secondaryAction: "",
+            secondaryTitle: "",
+            isStale: true
+        )
+        XCTAssertEqual(locating.primaryAction, "retry")
+        XCTAssertEqual(locating.secondaryAction, "openApp")
+        XCTAssertEqual(
+            IslandActionPresentation.submittedAction(action: locating.primaryAction, phase: "locating", retryCommand: ""),
+            "begin"
+        )
 
         let fault = IslandActionPresentation.buttons(
             phase: "systemFault",

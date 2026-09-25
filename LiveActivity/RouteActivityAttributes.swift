@@ -114,7 +114,7 @@ struct RouteActivityAttributes: ActivityAttributes {
 }
 
 enum IslandActionPresentation {
-    /// 过期后撤下暂停、继续、停止和切换。可恢复的失败保留重试，其余只留打开 App。
+    /// 过期后撤下暂停、继续、停止和切换。失败态和仍在进行的状态改为重试加打开 App。
     static func buttons(
         phase: String,
         primaryAction: String,
@@ -129,10 +129,26 @@ enum IslandActionPresentation {
         switch phase {
         case "userPaused", "finished", "stopped":
             return ("", "", "", "")
-        case "notApplied", "systemFault", "actionFailed":
-            return ("retry", "重试", "openApp", "打开 App")
         default:
-            return ("openApp", "打开 App", "", "")
+            return ("retry", "重试", "openApp", "打开 App")
+        }
+    }
+
+    /// 没有记下失败命令时，按当前阶段重试，避免进行中的重试落到停止定位。
+    static func submittedAction(action: String, phase: String, retryCommand: String) -> String {
+        guard action == "retry" else { return action }
+        if !retryCommand.isEmpty { return retryCommand }
+        switch phase {
+        case "playing", "retrying":
+            return "play"
+        case "needsSwitch":
+            return "switchHere"
+        case "stopping":
+            return "stopSpoof"
+        case "locating", "verifying", "switching":
+            return "begin"
+        default:
+            return action
         }
     }
 }

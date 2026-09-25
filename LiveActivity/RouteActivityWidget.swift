@@ -119,10 +119,11 @@ struct RouteActivityWidget: Widget {
     }
 
     private func submittedAction(_ action: String, state: RouteActivityAttributes.ContentState) -> String {
-        if action == "retry", !state.retryCommand.isEmpty {
-            return state.retryCommand
-        }
-        return action
+        IslandActionPresentation.submittedAction(
+            action: action,
+            phase: state.phase,
+            retryCommand: state.retryCommand
+        )
     }
 
     private func statusIcon(_ state: RouteActivityAttributes.ContentState, isStale: Bool) -> some View {

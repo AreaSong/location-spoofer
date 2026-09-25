@@ -199,7 +199,7 @@ enum RouteActivitySync {
                 progress: progress
             )
         case .finished:
-            return finished(routeName: routeName, symbolName: symbolName)
+            return finished(routeName: routeName)
         }
     }
 
@@ -379,7 +379,7 @@ enum RouteActivitySync {
         )
     }
 
-    private static func finished(routeName: String, symbolName: String) -> RouteActivitySnapshot {
+    private static func finished(routeName: String) -> RouteActivitySnapshot {
         routeSnapshot(
             phaseKey: .finished,
             statusText: "已完成",
@@ -387,7 +387,7 @@ enum RouteActivitySync {
             routeName: routeName,
             progress: 1,
             remainingMeters: 0,
-            symbolName: symbolName,
+            symbolName: "checkmark",
             isWarning: false,
             errorText: "",
             primaryAction: "",
