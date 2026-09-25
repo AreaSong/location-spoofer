@@ -94,9 +94,30 @@ enum RouteActivitySync {
     static let routeActions: Set<String> = ["pause", "resume", "stopRoute", "retry", "openApp"]
     static let userPauseMessage = "已暂停。"
     static let stoppedMessage = "路线已停止，定位仍保持。"
+    static let keptLocationDetail = "定位仍保持"
+    static let stoppedConfirmInterval: TimeInterval = 3
     static let locationBlockedMessage = "当前不能继续定位。"
     static let playingStaleInterval: TimeInterval = 45
     static let failureStaleInterval: TimeInterval = 120
+
+    /// 停止路线的短确认结束后，定点仍生效就不再占岛，交给定点布局。
+    static func suppressStoppedRoute(confirmUntil: Date?, now: Date, spotStillActive: Bool) -> Bool {
+        guard spotStillActive, let confirmUntil else { return false }
+        return now >= confirmUntil
+    }
+
+    static func detailText(for snapshot: RouteActivitySnapshot) -> String {
+        if snapshot.phaseKey == .stopped {
+            return keptLocationDetail
+        }
+        if !snapshot.distanceText.isEmpty, !snapshot.timeText.isEmpty {
+            return "还剩 \(snapshot.distanceText) · \(snapshot.timeText)"
+        }
+        if !snapshot.distanceText.isEmpty {
+            return "还剩 \(snapshot.distanceText)"
+        }
+        return snapshot.timeText
+    }
 
     static func staleDate(for snapshot: RouteActivitySnapshot, now: Date = Date()) -> Date? {
         switch snapshot.phaseKey {

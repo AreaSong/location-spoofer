@@ -41,7 +41,7 @@ struct RouteActivityWidget: Widget {
                 statusLabel(state, isStale: isStale)
             }
             metrics(state, isStale: isStale)
-            actionRow(state)
+            actionRow(state, isStale: isStale)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -50,7 +50,7 @@ struct RouteActivityWidget: Widget {
     private func islandBottom(_ state: RouteActivityAttributes.ContentState, isStale: Bool) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             metrics(state, isStale: isStale)
-            actionRow(state)
+            actionRow(state, isStale: isStale)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -64,6 +64,12 @@ struct RouteActivityWidget: Widget {
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
+        }
+        if !state.errorText.isEmpty {
+            Text(state.errorText)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .lineLimit(2)
         }
     }
 
@@ -87,6 +93,11 @@ struct RouteActivityWidget: Widget {
                 ProgressView(value: min(max(state.progress, 0), 1))
                     .tint(isStale || state.isWarning ? Color.orange : Color.accentColor)
             }
+        } else if !state.detailText.isEmpty {
+            Text(state.detailText)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
         }
     }
 
@@ -127,20 +138,28 @@ struct RouteActivityWidget: Widget {
     }
 
     @ViewBuilder
-    private func actionRow(_ state: RouteActivityAttributes.ContentState) -> some View {
-        if #available(iOS 17.0, *), !state.primaryAction.isEmpty || !state.secondaryAction.isEmpty {
+    private func actionRow(_ state: RouteActivityAttributes.ContentState, isStale: Bool) -> some View {
+        let buttons = IslandActionPresentation.buttons(
+            phase: state.phase,
+            primaryAction: state.primaryAction,
+            primaryTitle: state.primaryTitle,
+            secondaryAction: state.secondaryAction,
+            secondaryTitle: state.secondaryTitle,
+            isStale: isStale
+        )
+        if #available(iOS 17.0, *), !buttons.primaryAction.isEmpty || !buttons.secondaryAction.isEmpty {
             HStack(spacing: 8) {
-                if !state.primaryAction.isEmpty {
-                    Button(intent: IslandActionIntent(action: submittedAction(state.primaryAction, state: state))) {
-                        Text(state.primaryTitle)
+                if !buttons.primaryAction.isEmpty {
+                    Button(intent: IslandActionIntent(action: submittedAction(buttons.primaryAction, state: state))) {
+                        Text(buttons.primaryTitle)
                             .frame(maxWidth: .infinity)
                             .frame(height: 36)
                     }
                     .buttonStyle(.borderedProminent)
                 }
-                if !state.secondaryAction.isEmpty {
-                    Button(intent: IslandActionIntent(action: submittedAction(state.secondaryAction, state: state))) {
-                        Text(state.secondaryTitle)
+                if !buttons.secondaryAction.isEmpty {
+                    Button(intent: IslandActionIntent(action: submittedAction(buttons.secondaryAction, state: state))) {
+                        Text(buttons.secondaryTitle)
                             .frame(maxWidth: .infinity)
                             .frame(height: 36)
                     }

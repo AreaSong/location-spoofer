@@ -38,6 +38,7 @@ final class RouteActivitySyncTests: XCTestCase {
         XCTAssertEqual(snapshot?.primaryAction, "retry")
         XCTAssertEqual(snapshot?.primaryTitle, "重试")
         XCTAssertEqual(snapshot?.secondaryAction, "openApp")
+        XCTAssertEqual(snapshot?.errorText, "系统定位推送失败，已暂停。")
         XCTAssertNotEqual(snapshot?.primaryTitle, "继续")
     }
 
@@ -264,7 +265,53 @@ final class RouteActivitySyncTests: XCTestCase {
         XCTAssertEqual(snapshot?.phaseKey, .stopped)
         XCTAssertEqual(snapshot?.statusText, "已停止")
         XCTAssertEqual(snapshot?.primaryAction, "")
+        XCTAssertEqual(RouteActivitySync.detailText(for: snapshot!), RouteActivitySync.keptLocationDetail)
+        XCTAssertEqual(snapshot?.errorText, "")
         XCTAssertNil(RouteActivitySync.staleDate(for: snapshot!, now: Date(timeIntervalSince1970: 1_000)))
+    }
+
+    func testStoppedRouteHandsOffToSpotAfterConfirm() {
+        let now = Date(timeIntervalSince1970: 1_000)
+        let until = now.addingTimeInterval(RouteActivitySync.stoppedConfirmInterval)
+        XCTAssertFalse(RouteActivitySync.suppressStoppedRoute(confirmUntil: until, now: now, spotStillActive: true))
+        XCTAssertTrue(RouteActivitySync.suppressStoppedRoute(confirmUntil: until, now: until, spotStillActive: true))
+        XCTAssertFalse(RouteActivitySync.suppressStoppedRoute(confirmUntil: until, now: until, spotStillActive: false))
+        XCTAssertFalse(RouteActivitySync.suppressStoppedRoute(confirmUntil: nil, now: until, spotStillActive: true))
+    }
+
+    func testStaleIslandDropsPauseAndKeepsRetry() {
+        let playing = IslandActionPresentation.buttons(
+            phase: "playing",
+            primaryAction: "pause",
+            primaryTitle: "暂停",
+            secondaryAction: "stopRoute",
+            secondaryTitle: "停止路线",
+            isStale: true
+        )
+        XCTAssertEqual(playing.primaryAction, "openApp")
+        XCTAssertEqual(playing.secondaryAction, "")
+
+        let fault = IslandActionPresentation.buttons(
+            phase: "systemFault",
+            primaryAction: "retry",
+            primaryTitle: "重试",
+            secondaryAction: "openApp",
+            secondaryTitle: "打开 App",
+            isStale: true
+        )
+        XCTAssertEqual(fault.primaryAction, "retry")
+        XCTAssertEqual(fault.secondaryAction, "openApp")
+
+        let paused = IslandActionPresentation.buttons(
+            phase: "userPaused",
+            primaryAction: "resume",
+            primaryTitle: "继续",
+            secondaryAction: "stopRoute",
+            secondaryTitle: "停止路线",
+            isStale: true
+        )
+        XCTAssertEqual(paused.primaryAction, "")
+        XCTAssertEqual(paused.secondaryAction, "")
     }
 
     func testActionChangePushes() {

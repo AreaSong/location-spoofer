@@ -89,6 +89,7 @@ struct MapHomeView: View {
     @State var spotFailureMessage = ""
     @State var spotRetryCommand = ""
     @State var spotStoppedConfirmUntil: Date?
+    @State var routeStoppedConfirmUntil: Date?
     @State var routeCommand = RouteCommandTracking.idle
     let tipPreferences = VirtualLocationTipPreferences()
     let communityPromptPreferences = ThirdPartyCommunityPromptPreferences()

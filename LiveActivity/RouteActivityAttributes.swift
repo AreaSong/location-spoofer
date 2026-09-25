@@ -113,6 +113,30 @@ struct RouteActivityAttributes: ActivityAttributes {
     var name: String
 }
 
+enum IslandActionPresentation {
+    /// 过期后撤下暂停、继续、停止和切换。可恢复的失败保留重试，其余只留打开 App。
+    static func buttons(
+        phase: String,
+        primaryAction: String,
+        primaryTitle: String,
+        secondaryAction: String,
+        secondaryTitle: String,
+        isStale: Bool
+    ) -> (primaryAction: String, primaryTitle: String, secondaryAction: String, secondaryTitle: String) {
+        if !isStale {
+            return (primaryAction, primaryTitle, secondaryAction, secondaryTitle)
+        }
+        switch phase {
+        case "userPaused", "finished", "stopped":
+            return ("", "", "", "")
+        case "notApplied", "systemFault", "actionFailed":
+            return ("retry", "重试", "openApp", "打开 App")
+        default:
+            return ("openApp", "打开 App", "", "")
+        }
+    }
+}
+
 enum RouteActivityCommandStore {
     static let suiteName = "group.com.paopaolabs.location-spoofer"
     static let pendingKey = "routeActivity.pendingCommand"

@@ -133,7 +133,7 @@ final class RouteLiveActivityCenter {
             holdingFinished = false
             return
         }
-        let seconds: TimeInterval = next.phaseKey == .finished ? 30 : 3
+        let seconds: TimeInterval = next.phaseKey == .finished ? 30 : RouteActivitySync.stoppedConfirmInterval
         await activity.end(content, dismissalPolicy: .after(Date().addingTimeInterval(seconds)))
         self.activity = nil
         guard !superseded(token) else {
@@ -233,13 +233,7 @@ final class RouteLiveActivityCenter {
     }
 
     private func routeDetail(_ snapshot: RouteActivitySnapshot) -> String {
-        if !snapshot.distanceText.isEmpty, !snapshot.timeText.isEmpty {
-            return "还剩 \(snapshot.distanceText) · \(snapshot.timeText)"
-        }
-        if !snapshot.distanceText.isEmpty {
-            return "还剩 \(snapshot.distanceText)"
-        }
-        return snapshot.timeText
+        RouteActivitySync.detailText(for: snapshot)
     }
 
     private func showsRouteProgress(_ phase: RouteActivityPhaseKey) -> Bool {

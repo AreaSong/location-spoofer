@@ -97,7 +97,7 @@ extension MapHomeView {
             && route.interruption != .activationFailed
             && route.statusMessage == RouteActivitySync.stoppedMessage
         let statusMessage = routeCommand.commandFailed ? routeCommand.errorText : route.statusMessage
-        let liveRoute = RouteActivitySync.snapshot(
+        let routeSnapshot = RouteActivitySync.snapshot(
             phase: route.phase,
             interruption: route.interruption,
             statusMessage: statusMessage,
@@ -111,6 +111,7 @@ extension MapHomeView {
             failedCommand: routeCommand.failedCommand,
             confirmStopped: confirmStopped
         )
+        let liveRoute = routeSnapshotForIsland(routeSnapshot)
         let spotStopped = spoofState == .idle
             && spotStoppedConfirmUntil.map { $0 > Date() } == true
         let spotSnapshot = liveRoute == nil ? SpotActivitySync.snapshot(
@@ -139,6 +140,33 @@ extension MapHomeView {
                 keepForRecovery: keepForRecovery
             )
         }
+    }
+
+    /// 已停止先短确认。时间一到且定点仍生效，就不再发路线快照，让定点布局接上。
+    private func routeSnapshotForIsland(_ snapshot: RouteActivitySnapshot?) -> RouteActivitySnapshot? {
+        guard snapshot?.phaseKey == .stopped else {
+            routeStoppedConfirmUntil = nil
+            return snapshot
+        }
+        if routeStoppedConfirmUntil == nil {
+            let until = Date().addingTimeInterval(RouteActivitySync.stoppedConfirmInterval)
+            routeStoppedConfirmUntil = until
+            Task { @MainActor in
+                let delay = until.timeIntervalSinceNow
+                if delay > 0 {
+                    try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+                }
+                syncRouteActivity()
+            }
+        }
+        if RouteActivitySync.suppressStoppedRoute(
+            confirmUntil: routeStoppedConfirmUntil,
+            now: Date(),
+            spotStillActive: spoofState == .active
+        ) {
+            return nil
+        }
+        return snapshot
     }
 
     func bindRoutePlayback() {
