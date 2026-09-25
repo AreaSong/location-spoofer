@@ -123,14 +123,17 @@ final class RouteLiveActivityCenter {
             kind: "route",
             title: snapshot.routeName,
             statusText: snapshot.statusText,
-            detailText: snapshot.detailText,
+            detailText: "",
+            distanceText: snapshot.distanceText,
+            timeText: snapshot.timeText,
             progress: snapshot.progress,
-            showsProgress: snapshot.statusText.hasSuffix("分") || snapshot.statusText == "暂停" || snapshot.statusText == "异常" || snapshot.statusText == "完成",
+            showsProgress: true,
             symbolName: snapshot.symbolName,
             isWarning: snapshot.isWarning,
-            showsRoute: true,
-            action: snapshot.action,
-            actionTitle: snapshot.actionTitle
+            primaryAction: snapshot.primaryAction,
+            primaryTitle: snapshot.primaryTitle,
+            secondaryAction: snapshot.secondaryAction,
+            secondaryTitle: snapshot.secondaryTitle
         )
     }
 
@@ -140,13 +143,16 @@ final class RouteLiveActivityCenter {
             title: snapshot.placeName,
             statusText: snapshot.statusText,
             detailText: snapshot.caption,
+            distanceText: "",
+            timeText: "",
             progress: 0,
             showsProgress: false,
             symbolName: snapshot.symbolName,
             isWarning: snapshot.isWarning,
-            showsRoute: false,
-            action: snapshot.action,
-            actionTitle: snapshot.actionTitle
+            primaryAction: snapshot.primaryAction,
+            primaryTitle: snapshot.primaryTitle,
+            secondaryAction: snapshot.secondaryAction,
+            secondaryTitle: snapshot.secondaryTitle
         )
     }
 }

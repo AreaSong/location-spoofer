@@ -13,10 +13,12 @@ final class RouteActivitySyncTests: XCTestCase {
             symbolName: "figure.walk"
         )
         XCTAssertEqual(snapshot?.phaseKey, .paused)
-        XCTAssertEqual(snapshot?.statusText, "暂停")
+        XCTAssertEqual(snapshot?.statusText, "已暂停")
         XCTAssertEqual(snapshot?.symbolName, "pause.fill")
-        XCTAssertEqual(snapshot?.action, "primary")
-        XCTAssertEqual(snapshot?.actionTitle, "继续")
+        XCTAssertEqual(snapshot?.primaryAction, "resume")
+        XCTAssertEqual(snapshot?.primaryTitle, "继续")
+        XCTAssertEqual(snapshot?.secondaryAction, "stopRoute")
+        XCTAssertEqual(snapshot?.secondaryTitle, "停止路线")
     }
 
     func testPushFailurePauseIsAWarning() {
@@ -32,8 +34,10 @@ final class RouteActivitySyncTests: XCTestCase {
         XCTAssertEqual(snapshot?.phaseKey, .warning)
         XCTAssertEqual(snapshot?.statusText, "异常")
         XCTAssertEqual(snapshot?.symbolName, "exclamationmark.triangle.fill")
-        XCTAssertEqual(snapshot?.action, "primary")
-        XCTAssertEqual(snapshot?.actionTitle, "继续")
+        XCTAssertEqual(snapshot?.primaryAction, "retry")
+        XCTAssertEqual(snapshot?.primaryTitle, "重试")
+        XCTAssertEqual(snapshot?.secondaryAction, "openApp")
+        XCTAssertNotEqual(snapshot?.primaryTitle, "继续")
     }
 
     func testSameMinuteDoesNotPushAgain() {
@@ -46,7 +50,7 @@ final class RouteActivitySyncTests: XCTestCase {
     func testProgressOrDetailChangePushes() {
         let first = playingSnapshot(remainingMeters: 900)
         let detailChanged = playingSnapshot(remainingMeters: 860)
-        XCTAssertNotEqual(first.detailText, detailChanged.detailText)
+        XCTAssertNotEqual(first.distanceText, detailChanged.distanceText)
         XCTAssertTrue(RouteActivitySync.shouldUpdate(first, to: detailChanged))
 
         var progressChanged = first
@@ -63,21 +67,17 @@ final class RouteActivitySyncTests: XCTestCase {
         defer {
             RouteActivityCommandStore.defaults = previous
             defaults.removePersistentDomain(forName: suite)
-            RouteActivityBridge.showSpot = nil
-            RouteActivityBridge.showRoute = nil
-            RouteActivityBridge.primary = nil
+            RouteActivityBridge.handler = nil
         }
 
-        RouteActivityBridge.showSpot = nil
-        RouteActivityBridge.showRoute = nil
-        RouteActivityBridge.primary = nil
+        RouteActivityBridge.handler = nil
         var ran = false
-        RouteActivityBridge.submit("primary")
+        RouteActivityBridge.submit("pause")
         XCTAssertFalse(ran)
 
-        RouteActivityBridge.showSpot = {}
-        RouteActivityBridge.showRoute = {}
-        RouteActivityBridge.primary = { ran = true }
+        RouteActivityBridge.handler = { action in
+            ran = action == "pause"
+        }
         RouteActivityBridge.drainPending()
         XCTAssertTrue(ran)
         XCTAssertNil(RouteActivityCommandStore.consume())
@@ -109,12 +109,14 @@ final class RouteActivitySyncTests: XCTestCase {
             needsSwitch: false,
             failed: false,
             placeName: "深圳湾",
-            buttonTitle: "停止"
+            coordinateStandard: "GCJ-02",
+            accuracyMeters: 25
         )
         XCTAssertEqual(locating?.statusText, "定位中")
         XCTAssertEqual(locating?.symbolName, "location.fill")
-        XCTAssertEqual(locating?.action, "primary")
-        XCTAssertEqual(locating?.actionTitle, "停止")
+        XCTAssertEqual(locating?.primaryAction, "stopSpoof")
+        XCTAssertEqual(locating?.primaryTitle, "停止虚拟定位")
+        XCTAssertEqual(locating?.caption, "GCJ-02 · 精度 25 米")
 
         let moved = SpotActivitySync.snapshot(
             isVerifying: false,
@@ -122,10 +124,12 @@ final class RouteActivitySyncTests: XCTestCase {
             needsSwitch: true,
             failed: false,
             placeName: "深圳湾",
-            buttonTitle: "切换到此处"
+            coordinateStandard: "GCJ-02",
+            accuracyMeters: 25
         )
         XCTAssertEqual(moved?.statusText, "待切换")
-        XCTAssertEqual(moved?.actionTitle, "切换到此处")
+        XCTAssertEqual(moved?.primaryTitle, "切换到此处")
+        XCTAssertEqual(moved?.secondaryAction, "stopSpoof")
 
         let verifying = SpotActivitySync.snapshot(
             isVerifying: true,
@@ -133,10 +137,11 @@ final class RouteActivitySyncTests: XCTestCase {
             needsSwitch: false,
             failed: false,
             placeName: "深圳湾",
-            buttonTitle: "验证中"
+            coordinateStandard: "WGS-84",
+            accuracyMeters: 10
         )
         XCTAssertEqual(verifying?.statusText, "验证中")
-        XCTAssertEqual(verifying?.action, "")
+        XCTAssertEqual(verifying?.primaryAction, "")
 
         let failed = SpotActivitySync.snapshot(
             isVerifying: false,
@@ -144,18 +149,21 @@ final class RouteActivitySyncTests: XCTestCase {
             needsSwitch: false,
             failed: true,
             placeName: "深圳湾",
-            buttonTitle: "重试"
+            coordinateStandard: "GCJ-02",
+            accuracyMeters: 25
         )
         XCTAssertEqual(failed?.statusText, "未生效")
         XCTAssertEqual(failed?.isWarning, true)
-        XCTAssertEqual(failed?.actionTitle, "重试")
+        XCTAssertEqual(failed?.primaryTitle, "重试")
+        XCTAssertEqual(failed?.secondaryTitle, "打开 App")
         XCTAssertNil(SpotActivitySync.snapshot(
             isVerifying: false,
             isActive: false,
             needsSwitch: false,
             failed: false,
             placeName: "深圳湾",
-            buttonTitle: "开始"
+            coordinateStandard: "GCJ-02",
+            accuracyMeters: 25
         ))
     }
 

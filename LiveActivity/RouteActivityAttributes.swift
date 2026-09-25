@@ -9,13 +9,16 @@ struct RouteActivityAttributes: ActivityAttributes {
         var title: String
         var statusText: String
         var detailText: String
+        var distanceText: String
+        var timeText: String
         var progress: Double
         var showsProgress: Bool
         var symbolName: String
         var isWarning: Bool
-        var showsRoute: Bool
-        var action: String
-        var actionTitle: String
+        var primaryAction: String
+        var primaryTitle: String
+        var secondaryAction: String
+        var secondaryTitle: String
     }
 
     var name: String
@@ -27,8 +30,12 @@ enum RouteActivityCommandStore {
 
     static var defaults = UserDefaults(suiteName: suiteName) ?? .standard
 
+    static let allowedActions: Set<String> = [
+        "switchHere", "stopSpoof", "retry", "openApp", "pause", "resume", "stopRoute"
+    ]
+
     static func enqueue(_ action: String) {
-        guard action == "spot" || action == "route" || action == "primary" else { return }
+        guard allowedActions.contains(action) else { return }
         defaults.set(action, forKey: pendingKey)
     }
 
@@ -41,9 +48,7 @@ enum RouteActivityCommandStore {
 
 @MainActor
 enum RouteActivityBridge {
-    static var showSpot: (() -> Void)?
-    static var showRoute: (() -> Void)?
-    static var primary: (() -> Void)?
+    static var handler: ((String) -> Void)?
 
     static func submit(_ action: String) {
         RouteActivityCommandStore.enqueue(action)
@@ -51,22 +56,9 @@ enum RouteActivityBridge {
     }
 
     static func drainPending() {
-        guard showSpot != nil, showRoute != nil, primary != nil else { return }
+        guard handler != nil else { return }
         guard let action = RouteActivityCommandStore.consume() else { return }
-        perform(action)
-    }
-
-    static func perform(_ action: String) {
-        switch action {
-        case "spot":
-            showSpot?()
-        case "route":
-            showRoute?()
-        case "primary":
-            primary?()
-        default:
-            break
-        }
+        handler?(action)
     }
 }
 

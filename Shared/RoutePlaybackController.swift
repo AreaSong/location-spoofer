@@ -360,6 +360,18 @@ final class RoutePlaybackController: ObservableObject {
         captureSession(force: true)
     }
 
+    /// 停下播放，保留已写下的虚拟定位。回到可编辑，不走退出清理。
+    func stopPlaybackKeepingLocation() {
+        guard phase == .playing || phase == .paused else { return }
+        stopPlaybackTask()
+        endRouteKeepAlive()
+        waitingForActivation = false
+        phase = .preparing
+        interruption = .playing
+        statusMessage = "路线已停止，定位仍保持。"
+        captureSession(force: true)
+    }
+
     func resume() {
         guard phase == .paused, canPlay else { return }
         interruption = .playing

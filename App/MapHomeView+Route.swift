@@ -11,18 +11,40 @@ extension MapHomeView {
 
     @MainActor
     func registerRouteActivityToggle() {
-        RouteActivityBridge.showSpot = {
-            showsRoutePanel = false
-        }
-        RouteActivityBridge.showRoute = {
-            enterRoute()
-            showsRoutePanel = true
-        }
-        RouteActivityBridge.primary = {
-            handlePeekTap()
+        RouteActivityBridge.handler = { action in
+            handleIslandAction(action)
         }
         RouteActivityBridge.drainPending()
         syncRouteActivity(clearStale: true)
+    }
+
+    func handleIslandAction(_ action: String) {
+        switch action {
+        case "pause":
+            route.pause()
+        case "resume":
+            playRoute()
+        case "retry":
+            retryIslandAction()
+        case "stopRoute":
+            route.stopPlaybackKeepingLocation()
+        case "stopSpoof":
+            stopSpoofing()
+        case "switchHere":
+            beginLocationOperation()
+        case "openApp":
+            break
+        default:
+            break
+        }
+    }
+
+    private func retryIslandAction() {
+        if route.phase == .paused {
+            playRoute()
+            return
+        }
+        handleMainButtonTap()
     }
 
     func syncRouteActivity(clearStale: Bool = false) {
@@ -38,25 +60,14 @@ extension MapHomeView {
             progress: route.progress,
             symbolName: travelSymbol
         )
-        let preparingRoute = showsRoutePanel && (route.phase == .preparing || route.phase == .inactive)
-            ? RouteActivitySync.preparingSnapshot(
-                routeName: routeName,
-                hasStart: route.start != nil,
-                hasEnd: route.end != nil,
-                canPlay: route.canPlay,
-                isRouting: route.isRouting,
-                distanceMeters: route.distanceMeters,
-                symbolName: travelSymbol
-            )
-            : nil
-        let routeSnapshot = liveRoute ?? preparingRoute
-        let spotSnapshot = routeSnapshot == nil ? SpotActivitySync.snapshot(
+        let spotSnapshot = liveRoute == nil ? SpotActivitySync.snapshot(
             isVerifying: spoofState == .verifying,
             isActive: spoofState == .active,
             needsSwitch: needsSwitchButton,
             failed: spotIslandFailed,
             placeName: mapState.displayName ?? "当前选点",
-            buttonTitle: spotPeekTitle
+            coordinateStandard: CoordinateConverter.currentMapCoordinateSystem.rawValue,
+            accuracyMeters: LocationAccuracyStore.shared.meters
         ) : nil
         Task {
             let keepForRecovery = route.phase == .inactive && route.sessionStore.load() != nil
@@ -64,7 +75,7 @@ extension MapHomeView {
                 await RouteLiveActivityCenter.shared.reconcileOnLaunch(hasRecoverableSession: keepForRecovery)
             }
             await RouteLiveActivityCenter.shared.sync(
-                route: routeSnapshot,
+                route: liveRoute,
                 spot: spotSnapshot,
                 keepForRecovery: keepForRecovery
             )

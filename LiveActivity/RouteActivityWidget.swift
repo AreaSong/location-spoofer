@@ -6,7 +6,7 @@ import WidgetKit
 struct RouteActivityWidget: Widget {
     var body: some WidgetConfiguration {
         ActivityConfiguration(for: RouteActivityAttributes.self) { context in
-            expandedBody(context.state, isStale: context.isStale)
+            lockScreen(context.state, isStale: context.isStale)
                 .padding()
         } dynamicIsland: { context in
             DynamicIsland {
@@ -19,62 +19,86 @@ struct RouteActivityWidget: Widget {
                     statusLabel(context.state, isStale: context.isStale)
                 }
                 DynamicIslandExpandedRegion(.bottom) {
-                    expandedControls(context.state, isStale: context.isStale)
+                    islandBottom(context.state, isStale: context.isStale)
                 }
             } compactLeading: {
                 statusIcon(context.state, isStale: context.isStale)
             } compactTrailing: {
-                statusLabel(context.state, isStale: context.isStale)
+                compactTrailing(context.state, isStale: context.isStale)
             } minimal: {
                 statusIcon(context.state, isStale: context.isStale)
             }
         }
     }
 
-    private func expandedBody(_ state: RouteActivityAttributes.ContentState, isStale: Bool) -> some View {
-        expandedControls(state, isStale: isStale)
-    }
-
-    private func expandedControls(_ state: RouteActivityAttributes.ContentState, isStale: Bool) -> some View {
+    private func lockScreen(_ state: RouteActivityAttributes.ContentState, isStale: Bool) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 8) {
-                modeChip("定点", selected: !state.showsRoute, action: "spot")
-                modeChip("走路", selected: state.showsRoute, action: "route")
-            }
-            if state.showsProgress {
-                ProgressView(value: min(max(state.progress, 0), 1))
-                    .tint(isStale || state.isWarning ? Color.orange : Color.accentColor)
-            }
-            actionButton(state)
-            if !state.detailText.isEmpty {
-                Text(state.detailText)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+            HStack(alignment: .firstTextBaseline) {
+                Text(state.title)
+                    .font(.headline)
                     .lineLimit(1)
+                Spacer(minLength: 8)
+                statusLabel(state, isStale: isStale)
             }
+            metrics(state, isStale: isStale)
+            actionRow(state)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     @ViewBuilder
-    private func modeChip(_ title: String, selected: Bool, action: String) -> some View {
-        if #available(iOS 17.0, *) {
-            Button(intent: IslandActionIntent(action: action)) {
-                chipLabel(title, selected: selected)
-            }
-            .buttonStyle(.plain)
-        } else {
-            chipLabel(title, selected: selected)
+    private func islandBottom(_ state: RouteActivityAttributes.ContentState, isStale: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            metrics(state, isStale: isStale)
+            actionRow(state)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    @ViewBuilder
+    private func metrics(_ state: RouteActivityAttributes.ContentState, isStale: Bool) -> some View {
+        if state.kind == "route" {
+            routeMetrics(state, isStale: isStale)
+        } else if !state.detailText.isEmpty {
+            Text(state.detailText)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
         }
     }
 
-    private func chipLabel(_ title: String, selected: Bool) -> some View {
-        Text(title)
-            .font(.subheadline.weight(.semibold))
-            .frame(maxWidth: .infinity)
-            .frame(height: 36)
-            .foregroundStyle(selected ? Color.white : Color.primary)
-            .background(selected ? Color.accentColor : Color.white.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
+    @ViewBuilder
+    private func routeMetrics(_ state: RouteActivityAttributes.ContentState, isStale: Bool) -> some View {
+        if state.showsProgress || !state.distanceText.isEmpty || !state.timeText.isEmpty {
+            HStack(spacing: 12) {
+                if !state.distanceText.isEmpty {
+                    Text("剩余 \(state.distanceText)")
+                        .font(.subheadline.weight(.semibold))
+                        .lineLimit(1)
+                }
+                Spacer(minLength: 8)
+                if !state.timeText.isEmpty {
+                    Text(state.timeText)
+                        .font(.subheadline.weight(.semibold))
+                        .lineLimit(1)
+                }
+            }
+            if state.showsProgress {
+                ProgressView(value: min(max(state.progress, 0), 1))
+                    .tint(isStale || state.isWarning ? Color.orange : Color.accentColor)
+            }
+        }
+    }
+
+    private func compactTrailing(_ state: RouteActivityAttributes.ContentState, isStale: Bool) -> some View {
+        Text(compactText(state, isStale: isStale))
+            .foregroundStyle(isStale || state.isWarning ? Color.orange : Color.primary)
+    }
+
+    private func compactText(_ state: RouteActivityAttributes.ContentState, isStale: Bool) -> String {
+        if isStale { return "已中断" }
+        if state.kind == "route", !state.timeText.isEmpty { return state.timeText }
+        return state.statusText
     }
 
     private func statusIcon(_ state: RouteActivityAttributes.ContentState, isStale: Bool) -> some View {
@@ -84,18 +108,32 @@ struct RouteActivityWidget: Widget {
 
     private func statusLabel(_ state: RouteActivityAttributes.ContentState, isStale: Bool) -> some View {
         Text(isStale ? "已中断" : state.statusText)
+            .font(.subheadline.weight(.semibold))
             .foregroundStyle(isStale || state.isWarning ? Color.orange : Color.primary)
+            .lineLimit(1)
     }
 
     @ViewBuilder
-    private func actionButton(_ state: RouteActivityAttributes.ContentState) -> some View {
-        if #available(iOS 17.0, *), !state.action.isEmpty {
-            Button(intent: IslandActionIntent(action: "primary")) {
-                Text(state.actionTitle)
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 36)
+    private func actionRow(_ state: RouteActivityAttributes.ContentState) -> some View {
+        if #available(iOS 17.0, *), !state.primaryAction.isEmpty || !state.secondaryAction.isEmpty {
+            HStack(spacing: 8) {
+                if !state.primaryAction.isEmpty {
+                    Button(intent: IslandActionIntent(action: state.primaryAction)) {
+                        Text(state.primaryTitle)
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 36)
+                    }
+                    .buttonStyle(.borderedProminent)
+                }
+                if !state.secondaryAction.isEmpty {
+                    Button(intent: IslandActionIntent(action: state.secondaryAction)) {
+                        Text(state.secondaryTitle)
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 36)
+                    }
+                    .buttonStyle(.bordered)
+                }
             }
-            .buttonStyle(.borderedProminent)
         }
     }
 }

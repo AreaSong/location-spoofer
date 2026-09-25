@@ -13,12 +13,14 @@ struct RouteActivitySnapshot: Equatable {
     var remainingMinutes: Int
     var routeName: String
     var progress: Double
-    var detailText: String
+    var distanceText: String
+    var timeText: String
     var symbolName: String
     var isWarning: Bool
-    var showsRoute: Bool
-    var action: String
-    var actionTitle: String
+    var primaryAction: String
+    var primaryTitle: String
+    var secondaryAction: String
+    var secondaryTitle: String
 }
 
 enum RouteActivitySync {
@@ -28,11 +30,11 @@ enum RouteActivitySync {
 
     static func staleDate(for snapshot: RouteActivitySnapshot, now: Date = Date()) -> Date? {
         switch snapshot.phaseKey {
-        case .playing where snapshot.statusText.hasSuffix("分"):
+        case .playing:
             return now.addingTimeInterval(playingStaleInterval)
         case .warning:
             return now.addingTimeInterval(failureStaleInterval)
-        case .playing, .paused, .finished:
+        case .paused, .finished:
             return nil
         }
     }
@@ -46,65 +48,27 @@ enum RouteActivitySync {
         progress: Double,
         symbolName: String
     ) -> RouteActivitySnapshot? {
-        let minutes = remainingMinutes(meters: remainingMeters, speedMetersPerSecond: speedMetersPerSecond)
-        let detail = "还剩 \(RoutePlayback.formattedDistance(remainingMeters))"
         switch phase {
         case .inactive, .preparing:
             return nil
         case .playing:
-            return routeSnapshot(
-                phaseKey: .playing,
-                statusText: "\(minutes)分",
-                minutes: minutes,
+            return playing(
                 routeName: routeName,
+                remainingMeters: remainingMeters,
+                speedMetersPerSecond: speedMetersPerSecond,
                 progress: progress,
-                detailText: detail,
-                symbolName: symbolName,
-                isWarning: false,
-                action: "primary",
-                actionTitle: "暂停"
+                symbolName: symbolName
             )
         case .paused:
-            let warning = statusMessage != userPauseMessage && !statusMessage.isEmpty
-            if warning {
-                return routeSnapshot(
-                    phaseKey: .warning,
-                    statusText: "异常",
-                    minutes: minutes,
-                    routeName: routeName,
-                    progress: progress,
-                    detailText: detail,
-                    symbolName: "exclamationmark.triangle.fill",
-                    isWarning: true,
-                    action: "primary",
-                    actionTitle: "继续"
-                )
-            }
-            return routeSnapshot(
-                phaseKey: .paused,
-                statusText: "暂停",
-                minutes: minutes,
+            return paused(
+                statusMessage: statusMessage,
                 routeName: routeName,
-                progress: progress,
-                detailText: detail,
-                symbolName: "pause.fill",
-                isWarning: false,
-                action: "primary",
-                actionTitle: "继续"
+                remainingMeters: remainingMeters,
+                speedMetersPerSecond: speedMetersPerSecond,
+                progress: progress
             )
         case .finished:
-            return routeSnapshot(
-                phaseKey: .finished,
-                statusText: "完成",
-                minutes: 0,
-                routeName: routeName,
-                progress: 1,
-                detailText: detail,
-                symbolName: "checkmark.circle.fill",
-                isWarning: false,
-                action: "",
-                actionTitle: ""
-            )
+            return finished(routeName: routeName, symbolName: symbolName)
         }
     }
 
@@ -117,53 +81,99 @@ enum RouteActivitySync {
             || previous.statusText != next.statusText
             || previous.routeName != next.routeName
             || previous.symbolName != next.symbolName
-            || previous.actionTitle != next.actionTitle
-            || previous.detailText != next.detailText {
+            || previous.primaryTitle != next.primaryTitle
+            || previous.secondaryTitle != next.secondaryTitle
+            || previous.distanceText != next.distanceText
+            || previous.timeText != next.timeText {
             return true
         }
         return abs(previous.progress - next.progress) >= minimumProgressDelta
     }
 
-    static func preparingSnapshot(
+    static func remainingMinutes(meters: Double, speedMetersPerSecond: Double) -> Int {
+        let seconds = max(meters / max(speedMetersPerSecond, 0.1), 0)
+        return max(1, Int((seconds / 60).rounded(.up)))
+    }
+
+    private static func playing(
         routeName: String,
-        hasStart: Bool,
-        hasEnd: Bool,
-        canPlay: Bool,
-        isRouting: Bool,
-        distanceMeters: Double,
+        remainingMeters: Double,
+        speedMetersPerSecond: Double,
+        progress: Double,
         symbolName: String
     ) -> RouteActivitySnapshot {
-        let statusText: String
-        let actionTitle: String
-        let detailText: String
-        if isRouting {
-            statusText = "规划中"
-            actionTitle = ""
-            detailText = "正在规划路线"
-        } else if !hasStart {
-            statusText = "设起点"
-            actionTitle = "设为起点"
-            detailText = "先设起点"
-        } else if !hasEnd || !canPlay {
-            statusText = "设终点"
-            actionTitle = "设为终点"
-            detailText = "再设终点"
-        } else {
-            statusText = "开始走"
-            actionTitle = "开始走"
-            detailText = RoutePlayback.formattedDistance(distanceMeters)
-        }
+        let minutes = remainingMinutes(meters: remainingMeters, speedMetersPerSecond: speedMetersPerSecond)
         return routeSnapshot(
             phaseKey: .playing,
-            statusText: statusText,
-            minutes: 0,
+            statusText: "进行中",
+            minutes: minutes,
             routeName: routeName,
-            progress: 0,
-            detailText: detailText,
+            progress: progress,
+            remainingMeters: remainingMeters,
             symbolName: symbolName,
             isWarning: false,
-            action: actionTitle.isEmpty ? "" : "primary",
-            actionTitle: actionTitle
+            primaryAction: "pause",
+            primaryTitle: "暂停",
+            secondaryAction: "stopRoute",
+            secondaryTitle: "停止路线"
+        )
+    }
+
+    private static func paused(
+        statusMessage: String,
+        routeName: String,
+        remainingMeters: Double,
+        speedMetersPerSecond: Double,
+        progress: Double
+    ) -> RouteActivitySnapshot {
+        let minutes = remainingMinutes(meters: remainingMeters, speedMetersPerSecond: speedMetersPerSecond)
+        let warning = statusMessage != userPauseMessage && !statusMessage.isEmpty
+        if warning {
+            return routeSnapshot(
+                phaseKey: .warning,
+                statusText: "异常",
+                minutes: minutes,
+                routeName: routeName,
+                progress: progress,
+                remainingMeters: remainingMeters,
+                symbolName: "exclamationmark.triangle.fill",
+                isWarning: true,
+                primaryAction: "retry",
+                primaryTitle: "重试",
+                secondaryAction: "openApp",
+                secondaryTitle: "打开 App"
+            )
+        }
+        return routeSnapshot(
+            phaseKey: .paused,
+            statusText: "已暂停",
+            minutes: minutes,
+            routeName: routeName,
+            progress: progress,
+            remainingMeters: remainingMeters,
+            symbolName: "pause.fill",
+            isWarning: false,
+            primaryAction: "resume",
+            primaryTitle: "继续",
+            secondaryAction: "stopRoute",
+            secondaryTitle: "停止路线"
+        )
+    }
+
+    private static func finished(routeName: String, symbolName: String) -> RouteActivitySnapshot {
+        routeSnapshot(
+            phaseKey: .finished,
+            statusText: "已完成",
+            minutes: 0,
+            routeName: routeName,
+            progress: 1,
+            remainingMeters: 0,
+            symbolName: symbolName,
+            isWarning: false,
+            primaryAction: "",
+            primaryTitle: "",
+            secondaryAction: "",
+            secondaryTitle: ""
         )
     }
 
@@ -173,11 +183,13 @@ enum RouteActivitySync {
         minutes: Int,
         routeName: String,
         progress: Double,
-        detailText: String,
+        remainingMeters: Double,
         symbolName: String,
         isWarning: Bool,
-        action: String,
-        actionTitle: String
+        primaryAction: String,
+        primaryTitle: String,
+        secondaryAction: String,
+        secondaryTitle: String
     ) -> RouteActivitySnapshot {
         RouteActivitySnapshot(
             phaseKey: phaseKey,
@@ -185,18 +197,15 @@ enum RouteActivitySync {
             remainingMinutes: minutes,
             routeName: routeName,
             progress: progress,
-            detailText: detailText,
+            distanceText: RoutePlayback.formattedDistance(remainingMeters),
+            timeText: minutes > 0 ? "\(minutes)分" : "",
             symbolName: symbolName,
             isWarning: isWarning,
-            showsRoute: true,
-            action: action,
-            actionTitle: actionTitle
+            primaryAction: primaryAction,
+            primaryTitle: primaryTitle,
+            secondaryAction: secondaryAction,
+            secondaryTitle: secondaryTitle
         )
-    }
-
-    static func remainingMinutes(meters: Double, speedMetersPerSecond: Double) -> Int {
-        let seconds = max(meters / max(speedMetersPerSecond, 0.1), 0)
-        return max(1, Int((seconds / 60).rounded(.up)))
     }
 }
 
@@ -213,10 +222,11 @@ struct SpotActivitySnapshot: Equatable {
     var statusText: String
     var symbolName: String
     var isWarning: Bool
-    var showsRoute: Bool
     var caption: String
-    var action: String
-    var actionTitle: String
+    var primaryAction: String
+    var primaryTitle: String
+    var secondaryAction: String
+    var secondaryTitle: String
 }
 
 enum SpotActivitySync {
@@ -226,25 +236,34 @@ enum SpotActivitySync {
         needsSwitch: Bool,
         failed: Bool,
         placeName: String,
-        buttonTitle: String
+        coordinateStandard: String,
+        accuracyMeters: Int
     ) -> SpotActivitySnapshot? {
+        let caption = standardCaption(coordinateStandard, accuracyMeters: accuracyMeters)
         if isVerifying {
-            return spot(.verifying, placeName: placeName, statusText: "验证中", symbolName: "location", isWarning: false, caption: "正在检测", action: "", actionTitle: "")
+            return spot(.verifying, placeName: placeName, statusText: "验证中", symbolName: "location", isWarning: false, caption: caption, primaryAction: "", primaryTitle: "", secondaryAction: "", secondaryTitle: "")
         }
         if isActive && needsSwitch {
-            return spot(.needsSwitch, placeName: placeName, statusText: "待切换", symbolName: "arrow.triangle.swap", isWarning: false, caption: "地图已挪开", action: "primary", actionTitle: buttonTitle)
+            return spot(.needsSwitch, placeName: placeName, statusText: "待切换", symbolName: "arrow.triangle.swap", isWarning: false, caption: caption, primaryAction: "switchHere", primaryTitle: "切换到此处", secondaryAction: "stopSpoof", secondaryTitle: "停止虚拟定位")
         }
         if isActive {
-            return spot(.locating, placeName: placeName, statusText: "定位中", symbolName: "location.fill", isWarning: false, caption: "定位已写在这里", action: "primary", actionTitle: buttonTitle)
+            return spot(.locating, placeName: placeName, statusText: "定位中", symbolName: "location.fill", isWarning: false, caption: caption, primaryAction: "stopSpoof", primaryTitle: "停止虚拟定位", secondaryAction: "", secondaryTitle: "")
         }
         if failed {
-            return spot(.failed, placeName: placeName, statusText: "未生效", symbolName: "exclamationmark.triangle.fill", isWarning: true, caption: "没有写成", action: "primary", actionTitle: buttonTitle)
+            return spot(.failed, placeName: placeName, statusText: "未生效", symbolName: "exclamationmark.triangle.fill", isWarning: true, caption: caption, primaryAction: "retry", primaryTitle: "重试", secondaryAction: "openApp", secondaryTitle: "打开 App")
         }
         return nil
     }
 
     static func shouldUpdate(_ previous: SpotActivitySnapshot?, to next: SpotActivitySnapshot) -> Bool {
         previous != next
+    }
+
+    private static func standardCaption(_ standard: String, accuracyMeters: Int) -> String {
+        let accuracy = "精度 \(accuracyMeters) 米"
+        let trimmed = standard.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return accuracy }
+        return "\(trimmed) · \(accuracy)"
     }
 
     private static func spot(
@@ -254,8 +273,10 @@ enum SpotActivitySync {
         symbolName: String,
         isWarning: Bool,
         caption: String,
-        action: String,
-        actionTitle: String
+        primaryAction: String,
+        primaryTitle: String,
+        secondaryAction: String,
+        secondaryTitle: String
     ) -> SpotActivitySnapshot {
         SpotActivitySnapshot(
             status: status,
@@ -263,10 +284,11 @@ enum SpotActivitySync {
             statusText: statusText,
             symbolName: symbolName,
             isWarning: isWarning,
-            showsRoute: false,
             caption: caption,
-            action: action,
-            actionTitle: actionTitle
+            primaryAction: primaryAction,
+            primaryTitle: primaryTitle,
+            secondaryAction: secondaryAction,
+            secondaryTitle: secondaryTitle
         )
     }
 }
