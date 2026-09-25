@@ -51,12 +51,19 @@ final class RouteActivitySyncTests: XCTestCase {
 
     func testProgressOrDetailChangePushes() {
         let first = playingSnapshot(remainingMeters: 900)
-        let detailChanged = playingSnapshot(remainingMeters: 860)
-        XCTAssertNotEqual(first.distanceText, detailChanged.distanceText)
-        XCTAssertTrue(RouteActivitySync.shouldUpdate(first, to: detailChanged))
+        let meterChanged = playingSnapshot(remainingMeters: 899)
+        XCTAssertNotEqual(first.distanceText, meterChanged.distanceText)
+        XCTAssertEqual(first.timeText, meterChanged.timeText)
+        XCTAssertFalse(RouteActivitySync.shouldUpdate(first, to: meterChanged))
+
+        let sameMinute = playingSnapshot(remainingMeters: 860)
+        XCTAssertNotEqual(first.distanceText, sameMinute.distanceText)
+        XCTAssertEqual(first.timeText, sameMinute.timeText)
+        XCTAssertFalse(RouteActivitySync.shouldUpdate(first, to: sameMinute))
 
         var progressChanged = first
         progressChanged.progress += RouteActivitySync.minimumProgressDelta
+        progressChanged.distanceText = sameMinute.distanceText
         XCTAssertTrue(RouteActivitySync.shouldUpdate(first, to: progressChanged))
     }
 

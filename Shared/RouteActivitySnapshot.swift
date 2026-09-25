@@ -265,7 +265,7 @@ enum RouteActivitySync {
         return next
     }
 
-    /// 进度不到 1% 时不推送，避免每个定位点都打满灵动岛更新额度。
+    /// 进度不到 1% 时不推送。剩余距离按米变化不算一次更新，分钟、状态和动作变化仍立即推送。
     static let minimumProgressDelta = 0.01
 
     static func shouldUpdate(_ previous: RouteActivitySnapshot?, to next: RouteActivitySnapshot) -> Bool {
@@ -282,7 +282,6 @@ enum RouteActivitySync {
             || previous.secondaryAction != next.secondaryAction
             || previous.secondaryTitle != next.secondaryTitle
             || previous.retryCommand != next.retryCommand
-            || previous.distanceText != next.distanceText
             || previous.timeText != next.timeText {
             return true
         }
