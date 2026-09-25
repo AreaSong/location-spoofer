@@ -7,32 +7,31 @@ import UIKit
 final class RouteLiveActivityCenter {
     static let shared = RouteLiveActivityCenter()
 
+    private struct SyncRequest {
+        var route: RouteActivitySnapshot?
+        var spot: SpotActivitySnapshot?
+        var keepForRecovery: Bool
+        var token: Int
+    }
+
     private var activity: Activity<RouteActivityAttributes>?
     private var lastRoute: RouteActivitySnapshot?
     private var lastSpot: SpotActivitySnapshot?
     private var holdingFinished = false
     private var generation = 0
+    private var queued: SyncRequest?
+    private var draining = false
     private var closedRouteTerminal: RouteActivityPhaseKey?
     private var closedSpotStop = false
 
     func sync(route: RouteActivitySnapshot?, spot: SpotActivitySnapshot?, keepForRecovery: Bool = false) async {
-        generation += 1
-        let token = generation
-        holdingFinished = false
-        if let route {
-            await presentRoute(route, token: token)
-            return
-        }
-        if let spot {
-            await presentSpot(spot, token: token)
-        } else if keepForRecovery {
-            return
-        } else {
-            await endNow()
-        }
+        enqueue(route: route, spot: spot, keepForRecovery: keepForRecovery)
+        await drain()
     }
 
     func reconcileOnLaunch(hasRecoverableSession: Bool) async {
+        generation += 1
+        holdingFinished = false
         let existing = Activity<RouteActivityAttributes>.activities
         if hasRecoverableSession, let first = existing.first {
             activity = first
@@ -48,7 +47,42 @@ final class RouteLiveActivityCenter {
     }
 
     func endNowIfIdle() async {
-        await endNow()
+        enqueue(route: nil, spot: nil, keepForRecovery: false)
+        await drain()
+    }
+
+    private func enqueue(route: RouteActivitySnapshot?, spot: SpotActivitySnapshot?, keepForRecovery: Bool) {
+        generation += 1
+        holdingFinished = false
+        queued = SyncRequest(route: route, spot: spot, keepForRecovery: keepForRecovery, token: generation)
+    }
+
+    /// 同一时间只应用最新一次同步。旧任务在发布或结束前退出，避免把新状态盖掉或收起。
+    private func drain() async {
+        if draining { return }
+        draining = true
+        defer { draining = false }
+        while let request = queued {
+            queued = nil
+            await apply(request)
+        }
+    }
+
+    private func apply(_ request: SyncRequest) async {
+        if let route = request.route {
+            await presentRoute(route, token: request.token)
+            return
+        }
+        if let spot = request.spot {
+            await presentSpot(spot, token: request.token)
+            return
+        }
+        if request.keepForRecovery { return }
+        await endNow(token: request.token)
+    }
+
+    private func superseded(_ token: Int) -> Bool {
+        queued != nil || token != generation
     }
 
     private func presentRoute(_ next: RouteActivitySnapshot, token: Int) async {
@@ -68,32 +102,47 @@ final class RouteLiveActivityCenter {
         let state = routeState(next)
         let content = ActivityContent(state: state, staleDate: RouteActivitySync.staleDate(for: next))
         await ensureActivity(name: next.routeName, content: content)
-        guard let activity else { return }
+        guard !superseded(token), let activity else { return }
         if becomingTerminal {
-            holdingFinished = true
-            if next.phaseKey == .finished {
-                UINotificationFeedbackGenerator().notificationOccurred(.success)
-            }
-            let dismissed = await publish(activity, content, alert: next.phaseKey == .finished)
-            guard token == generation else {
-                holdingFinished = false
-                return
-            }
-            guard dismissed else {
-                holdingFinished = false
-                return
-            }
-            let seconds: TimeInterval = next.phaseKey == .finished ? 30 : 3
-            await activity.end(content, dismissalPolicy: .after(Date().addingTimeInterval(seconds)))
-            self.activity = nil
-            lastRoute = nil
-            holdingFinished = false
-            closedRouteTerminal = next.phaseKey
+            await finishRoute(next, activity: activity, content: content, token: token)
             return
         }
+        guard !superseded(token) else { return }
         guard await publish(activity, content, alert: false) else { return }
-        guard token == generation else { return }
+        guard !superseded(token) else { return }
         lastRoute = next
+    }
+
+    private func finishRoute(
+        _ next: RouteActivitySnapshot,
+        activity: Activity<RouteActivityAttributes>,
+        content: ActivityContent<RouteActivityAttributes.ContentState>,
+        token: Int
+    ) async {
+        guard !superseded(token) else { return }
+        holdingFinished = true
+        if next.phaseKey == .finished {
+            UINotificationFeedbackGenerator().notificationOccurred(.success)
+        }
+        let dismissed = await publish(activity, content, alert: next.phaseKey == .finished)
+        guard !superseded(token) else {
+            holdingFinished = false
+            return
+        }
+        guard dismissed else {
+            holdingFinished = false
+            return
+        }
+        let seconds: TimeInterval = next.phaseKey == .finished ? 30 : 3
+        await activity.end(content, dismissalPolicy: .after(Date().addingTimeInterval(seconds)))
+        self.activity = nil
+        guard !superseded(token) else {
+            holdingFinished = false
+            return
+        }
+        lastRoute = nil
+        holdingFinished = false
+        closedRouteTerminal = next.phaseKey
     }
 
     private func presentSpot(_ next: SpotActivitySnapshot, token: Int) async {
@@ -111,19 +160,30 @@ final class RouteLiveActivityCenter {
         let state = spotState(next)
         let content = ActivityContent(state: state, staleDate: SpotActivitySync.staleDate(for: next))
         await ensureActivity(name: next.placeName, content: content)
-        guard let activity else { return }
+        guard !superseded(token), let activity else { return }
         if next.status == .stopped {
-            guard await publish(activity, content, alert: false) else { return }
-            guard token == generation else { return }
-            await activity.end(content, dismissalPolicy: .after(Date().addingTimeInterval(3)))
-            self.activity = nil
-            lastSpot = nil
-            closedSpotStop = true
+            await finishSpot(activity, content: content, token: token)
             return
         }
+        guard !superseded(token) else { return }
         guard await publish(activity, content, alert: false) else { return }
-        guard token == generation else { return }
+        guard !superseded(token) else { return }
         lastSpot = next
+    }
+
+    private func finishSpot(
+        _ activity: Activity<RouteActivityAttributes>,
+        content: ActivityContent<RouteActivityAttributes.ContentState>,
+        token: Int
+    ) async {
+        guard !superseded(token) else { return }
+        guard await publish(activity, content, alert: false) else { return }
+        guard !superseded(token) else { return }
+        await activity.end(content, dismissalPolicy: .after(Date().addingTimeInterval(3)))
+        self.activity = nil
+        guard !superseded(token) else { return }
+        lastSpot = nil
+        closedSpotStop = true
     }
 
     private func ensureActivity(name: String, content: ActivityContent<RouteActivityAttributes.ContentState>) async {
@@ -163,12 +223,13 @@ final class RouteLiveActivityCenter {
         return true
     }
 
-    private func endNow() async {
-        lastRoute = nil
-        lastSpot = nil
-        guard let activity else { return }
+    private func endNow(token: Int) async {
+        guard !superseded(token), let activity else { return }
         await activity.end(nil, dismissalPolicy: .immediate)
         self.activity = nil
+        guard !superseded(token) else { return }
+        lastRoute = nil
+        lastSpot = nil
     }
 
     private func routeDetail(_ snapshot: RouteActivitySnapshot) -> String {

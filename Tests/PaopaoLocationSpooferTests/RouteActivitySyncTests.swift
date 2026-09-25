@@ -440,6 +440,55 @@ final class RouteActivitySyncTests: XCTestCase {
         XCTAssertNil(SpotActivitySync.staleDate(for: stopped!, now: Date(timeIntervalSince1970: 1_000)))
     }
 
+    func testRouteRetryStaysVisibleUntilActivationSettles() {
+        let waiting = RouteCommandTracking.afterAttempt(
+            command: "play",
+            phase: .preparing,
+            interruption: .playing,
+            waitingForActivation: true,
+            statusMessage: "正在开启虚拟定位…"
+        )
+        XCTAssertTrue(waiting.isRetrying)
+        XCTAssertFalse(waiting.commandFailed)
+
+        let settled = waiting.reconcile(phase: .playing, interruption: .playing, waitingForActivation: false)
+        XCTAssertFalse(settled.isRetrying)
+
+        let blocked = RouteCommandTracking.afterAttempt(
+            command: "resume",
+            phase: .paused,
+            interruption: .pushFailed,
+            waitingForActivation: false,
+            statusMessage: RouteActivitySync.locationBlockedMessage
+        )
+        XCTAssertFalse(blocked.isRetrying)
+        XCTAssertFalse(blocked.commandFailed)
+    }
+
+    func testRouteCommandFailureKeepsTheAttemptedCommand() {
+        let paused = RouteCommandTracking.afterAttempt(
+            command: "pause",
+            phase: .playing,
+            interruption: .playing,
+            waitingForActivation: false,
+            statusMessage: "正在走"
+        )
+        XCTAssertTrue(paused.commandFailed)
+        XCTAssertEqual(paused.failedCommand, "pause")
+
+        let stopped = RouteCommandTracking.afterAttempt(
+            command: "stopRoute",
+            phase: .preparing,
+            interruption: .playing,
+            waitingForActivation: false,
+            statusMessage: RouteActivitySync.stoppedMessage
+        )
+        XCTAssertFalse(stopped.commandFailed)
+
+        let playing = paused.reconcile(phase: .playing, interruption: .playing, waitingForActivation: false)
+        XCTAssertFalse(playing.commandFailed)
+    }
+
     private func playingSnapshot(remainingMeters: Double) -> RouteActivitySnapshot {
         RouteActivitySync.snapshot(
             phase: .playing,

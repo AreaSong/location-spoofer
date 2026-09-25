@@ -28,6 +28,68 @@ struct RouteActivitySnapshot: Equatable {
     var retryCommand: String
 }
 
+struct RouteCommandTracking: Equatable {
+    var isRetrying = false
+    var commandFailed = false
+    var failedCommand = ""
+    var errorText = ""
+
+    static let idle = RouteCommandTracking()
+
+    static func afterAttempt(
+        command: String,
+        phase: RoutePhase,
+        interruption: RouteInterruption,
+        waitingForActivation: Bool,
+        statusMessage: String
+    ) -> RouteCommandTracking {
+        switch command {
+        case "pause":
+            guard phase == .paused, interruption == .userPaused else {
+                return failed("pause", "暂停没有执行。")
+            }
+            return idle
+        case "stopRoute":
+            guard phase == .preparing, statusMessage == RouteActivitySync.stoppedMessage else {
+                return failed("stopRoute", "停止路线没有执行。")
+            }
+            return idle
+        case "play", "resume":
+            if phase == .playing { return idle }
+            if waitingForActivation { return RouteCommandTracking(isRetrying: true) }
+            if interruption == .activationFailed || interruption == .pushFailed { return idle }
+            return failed(command, "重试没有执行。")
+        default:
+            return idle
+        }
+    }
+
+    func reconcile(
+        phase: RoutePhase,
+        interruption: RouteInterruption,
+        waitingForActivation: Bool
+    ) -> RouteCommandTracking {
+        var next = self
+        if next.isRetrying {
+            let settled = phase == .playing
+                || interruption == .activationFailed
+                || interruption == .pushFailed
+                || (!waitingForActivation && phase != .preparing && phase != .paused)
+            if settled { next.isRetrying = false }
+        }
+        if next.commandFailed, phase == .playing || interruption == .activationFailed {
+            next.commandFailed = false
+            next.failedCommand = ""
+            next.errorText = ""
+        }
+        return next
+    }
+
+    private static func failed(_ command: String, _ message: String) -> RouteCommandTracking {
+        RouteCommandTracking(commandFailed: true, failedCommand: command, errorText: message)
+    }
+}
+
 enum RouteActivitySync {
     static let routeActions: Set<String> = ["pause", "resume", "stopRoute", "retry", "openApp"]
     static let userPauseMessage = "已暂停。"

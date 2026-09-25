@@ -22,16 +22,34 @@ extension MapHomeView {
         switch action {
         case "pause":
             route.pause()
+            routeCommand = RouteCommandTracking.afterAttempt(
+                command: "pause",
+                phase: route.phase,
+                interruption: route.interruption,
+                waitingForActivation: route.waitingForActivation,
+                statusMessage: route.statusMessage
+            )
+            syncRouteActivity()
         case "resume":
             playRoute()
+            noteRouteAttempt("resume")
         case "retry":
             retryIslandAction()
         case "play":
             playRoute()
+            noteRouteAttempt("play")
         case "begin":
             beginLocationOperation()
         case "stopRoute":
             route.stopPlaybackKeepingLocation()
+            routeCommand = RouteCommandTracking.afterAttempt(
+                command: "stopRoute",
+                phase: route.phase,
+                interruption: route.interruption,
+                waitingForActivation: route.waitingForActivation,
+                statusMessage: route.statusMessage
+            )
+            syncRouteActivity()
         case "stopSpoof":
             stopSpoofing()
         case "switchHere":
@@ -55,22 +73,42 @@ extension MapHomeView {
         handleMainButtonTap()
     }
 
+    private func noteRouteAttempt(_ command: String) {
+        routeCommand = RouteCommandTracking.afterAttempt(
+            command: command,
+            phase: route.phase,
+            interruption: route.interruption,
+            waitingForActivation: route.waitingForActivation,
+            statusMessage: route.statusMessage
+        )
+        syncRouteActivity()
+    }
+
     func syncRouteActivity(clearStale: Bool = false) {
         guard #available(iOS 16.2, *) else { return }
+        routeCommand = routeCommand.reconcile(
+            phase: route.phase,
+            interruption: route.interruption,
+            waitingForActivation: route.waitingForActivation
+        )
         let travelSymbol = route.travelMode == .bike ? "bicycle" : "figure.walk"
         let routeName = route.editingSavedRoute?.name ?? route.travelMode.displayName
         let confirmStopped = route.phase == .preparing
             && route.interruption != .activationFailed
             && route.statusMessage == RouteActivitySync.stoppedMessage
+        let statusMessage = routeCommand.commandFailed ? routeCommand.errorText : route.statusMessage
         let liveRoute = RouteActivitySync.snapshot(
             phase: route.phase,
             interruption: route.interruption,
-            statusMessage: route.statusMessage,
+            statusMessage: statusMessage,
             routeName: routeName,
             remainingMeters: route.remainingMeters,
             speedMetersPerSecond: route.speedMetersPerSecond,
             progress: route.progress,
             symbolName: travelSymbol,
+            isRetrying: routeCommand.isRetrying,
+            commandFailed: routeCommand.commandFailed,
+            failedCommand: routeCommand.failedCommand,
             confirmStopped: confirmStopped
         )
         let spotStopped = spoofState == .idle
