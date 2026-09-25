@@ -19,6 +19,95 @@ struct RouteActivityAttributes: ActivityAttributes {
         var primaryTitle: String
         var secondaryAction: String
         var secondaryTitle: String
+        var phase: String
+        var errorText: String
+        var retryCommand: String
+
+        private enum CodingKeys: String, CodingKey {
+            case kind, title, statusText, detailText, distanceText, timeText, progress, showsProgress
+            case symbolName, isWarning, primaryAction, primaryTitle, secondaryAction, secondaryTitle
+            case phase, errorText, retryCommand
+        }
+
+        init(
+            kind: String,
+            title: String,
+            statusText: String,
+            detailText: String,
+            distanceText: String,
+            timeText: String,
+            progress: Double,
+            showsProgress: Bool,
+            symbolName: String,
+            isWarning: Bool,
+            primaryAction: String,
+            primaryTitle: String,
+            secondaryAction: String,
+            secondaryTitle: String,
+            phase: String = "",
+            errorText: String = "",
+            retryCommand: String = ""
+        ) {
+            self.kind = kind
+            self.title = title
+            self.statusText = statusText
+            self.detailText = detailText
+            self.distanceText = distanceText
+            self.timeText = timeText
+            self.progress = progress
+            self.showsProgress = showsProgress
+            self.symbolName = symbolName
+            self.isWarning = isWarning
+            self.primaryAction = primaryAction
+            self.primaryTitle = primaryTitle
+            self.secondaryAction = secondaryAction
+            self.secondaryTitle = secondaryTitle
+            self.phase = phase
+            self.errorText = errorText
+            self.retryCommand = retryCommand
+        }
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            kind = try container.decode(String.self, forKey: .kind)
+            title = try container.decode(String.self, forKey: .title)
+            statusText = try container.decode(String.self, forKey: .statusText)
+            detailText = try container.decode(String.self, forKey: .detailText)
+            distanceText = try container.decode(String.self, forKey: .distanceText)
+            timeText = try container.decode(String.self, forKey: .timeText)
+            progress = try container.decode(Double.self, forKey: .progress)
+            showsProgress = try container.decode(Bool.self, forKey: .showsProgress)
+            symbolName = try container.decode(String.self, forKey: .symbolName)
+            isWarning = try container.decode(Bool.self, forKey: .isWarning)
+            primaryAction = try container.decode(String.self, forKey: .primaryAction)
+            primaryTitle = try container.decode(String.self, forKey: .primaryTitle)
+            secondaryAction = try container.decode(String.self, forKey: .secondaryAction)
+            secondaryTitle = try container.decode(String.self, forKey: .secondaryTitle)
+            phase = try container.decodeIfPresent(String.self, forKey: .phase) ?? ""
+            errorText = try container.decodeIfPresent(String.self, forKey: .errorText) ?? ""
+            retryCommand = try container.decodeIfPresent(String.self, forKey: .retryCommand) ?? ""
+        }
+
+        func encode(to encoder: Encoder) throws {
+            var container = encoder.container(keyedBy: CodingKeys.self)
+            try container.encode(kind, forKey: .kind)
+            try container.encode(title, forKey: .title)
+            try container.encode(statusText, forKey: .statusText)
+            try container.encode(detailText, forKey: .detailText)
+            try container.encode(distanceText, forKey: .distanceText)
+            try container.encode(timeText, forKey: .timeText)
+            try container.encode(progress, forKey: .progress)
+            try container.encode(showsProgress, forKey: .showsProgress)
+            try container.encode(symbolName, forKey: .symbolName)
+            try container.encode(isWarning, forKey: .isWarning)
+            try container.encode(primaryAction, forKey: .primaryAction)
+            try container.encode(primaryTitle, forKey: .primaryTitle)
+            try container.encode(secondaryAction, forKey: .secondaryAction)
+            try container.encode(secondaryTitle, forKey: .secondaryTitle)
+            try container.encode(phase, forKey: .phase)
+            try container.encode(errorText, forKey: .errorText)
+            try container.encode(retryCommand, forKey: .retryCommand)
+        }
     }
 
     var name: String

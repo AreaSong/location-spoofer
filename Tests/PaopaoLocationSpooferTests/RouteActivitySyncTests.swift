@@ -12,7 +12,7 @@ final class RouteActivitySyncTests: XCTestCase {
             progress: 0.2,
             symbolName: "figure.walk"
         )
-        XCTAssertEqual(snapshot?.phaseKey, .paused)
+        XCTAssertEqual(snapshot?.phaseKey, .userPaused)
         XCTAssertEqual(snapshot?.statusText, "已暂停")
         XCTAssertEqual(snapshot?.symbolName, "pause.fill")
         XCTAssertEqual(snapshot?.primaryAction, "resume")
@@ -31,8 +31,9 @@ final class RouteActivitySyncTests: XCTestCase {
             progress: 0.2,
             symbolName: "figure.walk"
         )
-        XCTAssertEqual(snapshot?.phaseKey, .warning)
+        XCTAssertEqual(snapshot?.phaseKey, .systemFault)
         XCTAssertEqual(snapshot?.statusText, "异常")
+        XCTAssertEqual(snapshot?.retryCommand, "resume")
         XCTAssertEqual(snapshot?.symbolName, "exclamationmark.triangle.fill")
         XCTAssertEqual(snapshot?.primaryAction, "retry")
         XCTAssertEqual(snapshot?.primaryTitle, "重试")
@@ -152,7 +153,9 @@ final class RouteActivitySyncTests: XCTestCase {
             coordinateStandard: "GCJ-02",
             accuracyMeters: 25
         )
+        XCTAssertEqual(failed?.status, .notApplied)
         XCTAssertEqual(failed?.statusText, "未生效")
+        XCTAssertEqual(failed?.retryCommand, "begin")
         XCTAssertEqual(failed?.isWarning, true)
         XCTAssertEqual(failed?.primaryTitle, "重试")
         XCTAssertEqual(failed?.secondaryTitle, "打开 App")
@@ -212,6 +215,160 @@ final class RouteActivitySyncTests: XCTestCase {
         XCTAssertEqual(RouteActivitySync.staleDate(for: playing, now: now), now.addingTimeInterval(45))
         XCTAssertNil(RouteActivitySync.staleDate(for: paused, now: now))
         XCTAssertEqual(RouteActivitySync.staleDate(for: failed, now: now), now.addingTimeInterval(120))
+    }
+
+    func testActivationFailureStaysOnTheIsland() {
+        let snapshot = RouteActivitySync.snapshot(
+            phase: .preparing,
+            interruption: .activationFailed,
+            statusMessage: "系统定位推送失败，已暂停。",
+            routeName: "步行路线",
+            remainingMeters: 800,
+            speedMetersPerSecond: 1.4,
+            progress: 0,
+            symbolName: "figure.walk"
+        )
+        XCTAssertEqual(snapshot?.phaseKey, .systemFault)
+        XCTAssertEqual(snapshot?.primaryTitle, "重试")
+        XCTAssertEqual(snapshot?.secondaryTitle, "打开 App")
+        XCTAssertEqual(snapshot?.retryCommand, "play")
+        XCTAssertNotEqual(snapshot?.primaryTitle, "继续")
+    }
+
+    func testPlainPreparingStillHidesTheActivity() {
+        let snapshot = RouteActivitySync.snapshot(
+            phase: .preparing,
+            interruption: .playing,
+            statusMessage: "先设起点",
+            routeName: "步行路线",
+            remainingMeters: 0,
+            speedMetersPerSecond: 1.4,
+            progress: 0,
+            symbolName: "figure.walk"
+        )
+        XCTAssertNil(snapshot)
+    }
+
+    func testStoppedRouteConfirmsWithoutButtons() {
+        let snapshot = RouteActivitySync.snapshot(
+            phase: .preparing,
+            interruption: .playing,
+            statusMessage: RouteActivitySync.stoppedMessage,
+            routeName: "步行路线",
+            remainingMeters: 400,
+            speedMetersPerSecond: 1.4,
+            progress: 0.4,
+            symbolName: "figure.walk",
+            confirmStopped: true
+        )
+        XCTAssertEqual(snapshot?.phaseKey, .stopped)
+        XCTAssertEqual(snapshot?.statusText, "已停止")
+        XCTAssertEqual(snapshot?.primaryAction, "")
+        XCTAssertNil(RouteActivitySync.staleDate(for: snapshot!, now: Date(timeIntervalSince1970: 1_000)))
+    }
+
+    func testActionChangePushes() {
+        var first = playingSnapshot(remainingMeters: 900)
+        var next = first
+        next.primaryAction = "resume"
+        XCTAssertTrue(RouteActivitySync.shouldUpdate(first, to: next))
+        first.isWarning = false
+        next = first
+        next.isWarning = true
+        XCTAssertTrue(RouteActivitySync.shouldUpdate(first, to: next))
+    }
+
+    func testSpotStoppingAndActionFailure() {
+        let stopping = SpotActivitySync.snapshot(
+            isVerifying: true,
+            isActive: false,
+            needsSwitch: false,
+            failed: false,
+            placeName: "深圳湾",
+            coordinateStandard: "GCJ-02",
+            accuracyMeters: 25,
+            isStopping: true
+        )
+        XCTAssertEqual(stopping?.status, .stopping)
+        XCTAssertEqual(stopping?.statusText, "正在停止")
+        XCTAssertEqual(stopping?.primaryAction, "")
+
+        let failedAction = SpotActivitySync.snapshot(
+            isVerifying: false,
+            isActive: true,
+            needsSwitch: false,
+            failed: false,
+            placeName: "深圳湾",
+            coordinateStandard: "GCJ-02",
+            accuracyMeters: 25,
+            actionFailed: true,
+            errorText: "推送失败",
+            retryCommand: "stopSpoof"
+        )
+        XCTAssertEqual(failedAction?.status, .actionFailed)
+        XCTAssertEqual(failedAction?.primaryTitle, "重试")
+        XCTAssertEqual(failedAction?.retryCommand, "stopSpoof")
+        XCTAssertNotEqual(failedAction?.statusText, "验证中")
+    }
+
+    func testLocationBlockMessageIsNotUserPause() {
+        let snapshot = RouteActivitySync.snapshot(
+            phase: .paused,
+            interruption: .pushFailed,
+            statusMessage: RouteActivitySync.locationBlockedMessage,
+            routeName: "步行路线",
+            remainingMeters: 800,
+            speedMetersPerSecond: 1.4,
+            progress: 0.2,
+            symbolName: "figure.walk"
+        )
+        XCTAssertEqual(snapshot?.phaseKey, .systemFault)
+        XCTAssertEqual(snapshot?.primaryAction, "retry")
+        XCTAssertNotEqual(snapshot?.primaryTitle, "继续")
+    }
+
+    func testRouteSnapshotDropsSpotActions() {
+        var snapshot = playingSnapshot(remainingMeters: 900)
+        snapshot.primaryAction = "stopSpoof"
+        snapshot.primaryTitle = "停止虚拟定位"
+        snapshot.secondaryAction = "pause"
+        snapshot.secondaryTitle = "暂停"
+        let normalized = RouteActivitySync.normalized(snapshot)
+        XCTAssertEqual(normalized.primaryAction, "pause")
+        XCTAssertEqual(normalized.secondaryAction, "")
+        XCTAssertNotEqual(normalized.primaryAction, "stopSpoof")
+    }
+
+    func testSpotSnapshotDropsRouteActions() {
+        let locating = SpotActivitySync.snapshot(
+            isVerifying: false,
+            isActive: true,
+            needsSwitch: false,
+            failed: false,
+            placeName: "深圳湾",
+            coordinateStandard: "GCJ-02",
+            accuracyMeters: 25
+        )!
+        var edited = locating
+        edited.primaryAction = "pause"
+        edited.primaryTitle = "暂停"
+        edited.secondaryAction = "stopRoute"
+        edited.secondaryTitle = "停止路线"
+        let normalized = SpotActivitySync.normalized(edited)
+        XCTAssertEqual(normalized.primaryAction, "")
+        XCTAssertEqual(normalized.secondaryAction, "")
+    }
+
+    func testConflictingPauseAndResumeKeepsOneButton() {
+        var snapshot = playingSnapshot(remainingMeters: 900)
+        snapshot.phaseKey = .userPaused
+        snapshot.primaryAction = "resume"
+        snapshot.primaryTitle = "继续"
+        snapshot.secondaryAction = "pause"
+        snapshot.secondaryTitle = "暂停"
+        let normalized = RouteActivitySync.normalized(snapshot)
+        XCTAssertEqual(normalized.primaryAction, "resume")
+        XCTAssertEqual(normalized.secondaryAction, "")
     }
 
     private func playingSnapshot(remainingMeters: Double) -> RouteActivitySnapshot {
