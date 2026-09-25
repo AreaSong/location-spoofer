@@ -155,6 +155,9 @@ final class RouteLiveActivityCenter {
             closedSpotStop = false
         }
         guard SpotActivitySync.shouldUpdate(lastSpot, to: next) || lastRoute != nil else { return }
+        if next.status == .actionFailed || next.status == .notApplied, lastSpot?.status != next.status {
+            UINotificationFeedbackGenerator().notificationOccurred(.error)
+        }
         lastRoute = nil
         closedRouteTerminal = nil
         let state = spotState(next)
@@ -202,8 +205,18 @@ final class RouteLiveActivityCenter {
                 error: error,
                 details: ["phase": content.state.phase]
             )
-            activity = nil
+            activity = await adoptedActivity()
         }
+    }
+
+    /// 新建失败时接上系统里已有的那一条，随后由调用方写成当前阶段。
+    private func adoptedActivity() async -> Activity<RouteActivityAttributes>? {
+        let existing = Activity<RouteActivityAttributes>.activities
+        guard let first = existing.first else { return nil }
+        for extra in existing.dropFirst() {
+            await extra.end(nil, dismissalPolicy: .immediate)
+        }
+        return first
     }
 
     private func publish(

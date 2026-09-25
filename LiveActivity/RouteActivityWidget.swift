@@ -11,27 +11,177 @@ struct RouteActivityWidget: Widget {
         } dynamicIsland: { context in
             DynamicIsland {
                 DynamicIslandExpandedRegion(.leading) {
-                    Text(context.state.title)
-                        .font(.headline)
-                        .lineLimit(1)
+                    if context.state.kind != "spot" {
+                        Text(context.state.title)
+                            .font(.headline)
+                            .lineLimit(1)
+                    }
                 }
                 DynamicIslandExpandedRegion(.trailing) {
-                    statusLabel(context.state, isStale: context.isStale)
+                    if context.state.kind != "spot" {
+                        statusLabel(context.state, isStale: context.isStale)
+                    }
                 }
                 DynamicIslandExpandedRegion(.bottom) {
-                    islandBottom(context.state, isStale: context.isStale)
+                    if context.state.kind == "spot" {
+                        spotExpanded(context.state, isStale: context.isStale)
+                    } else {
+                        islandBottom(context.state, isStale: context.isStale)
+                    }
                 }
             } compactLeading: {
-                statusIcon(context.state, isStale: context.isStale)
+                if context.state.kind == "spot" {
+                    spotCompactIdentity(context.state, isStale: context.isStale)
+                } else {
+                    statusIcon(context.state, isStale: context.isStale)
+                }
             } compactTrailing: {
-                compactTrailing(context.state, isStale: context.isStale)
+                if context.state.kind == "spot" {
+                    spotCompactStatus(context.state, isStale: context.isStale)
+                } else {
+                    compactTrailing(context.state, isStale: context.isStale)
+                }
             } minimal: {
                 statusIcon(context.state, isStale: context.isStale)
             }
         }
     }
 
+    @ViewBuilder
     private func lockScreen(_ state: RouteActivityAttributes.ContentState, isStale: Bool) -> some View {
+        if state.kind == "spot" {
+            spotExpanded(state, isStale: isStale)
+        } else {
+            routeLockScreen(state, isStale: isStale)
+        }
+    }
+
+    private func spotExpanded(_ state: RouteActivityAttributes.ContentState, isStale: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(state.title)
+                .font(.headline)
+                .lineLimit(1)
+                .truncationMode(.tail)
+            statusLabel(state, isStale: isStale)
+            if !state.detailText.isEmpty {
+                Text(state.detailText)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+            }
+            if !state.errorText.isEmpty {
+                Text(state.errorText)
+                    .font(.subheadline)
+                    .foregroundStyle(Color.orange)
+                    .lineLimit(2)
+                    .truncationMode(.tail)
+            }
+            spotActionRow(state, isStale: isStale)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func spotCompactIdentity(_ state: RouteActivityAttributes.ContentState, isStale: Bool) -> some View {
+        HStack(spacing: 4) {
+            statusIcon(state, isStale: isStale)
+            Text(state.title)
+                .font(.caption.weight(.semibold))
+                .lineLimit(1)
+                .truncationMode(.tail)
+        }
+    }
+
+    private func spotCompactStatus(_ state: RouteActivityAttributes.ContentState, isStale: Bool) -> some View {
+        Text(isStale ? "已中断" : state.statusText)
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(isStale || state.isWarning ? Color.orange : Color.primary)
+            .lineLimit(1)
+            .minimumScaleFactor(0.8)
+    }
+
+    @ViewBuilder
+    private func spotActionRow(_ state: RouteActivityAttributes.ContentState, isStale: Bool) -> some View {
+        let buttons = SpotIslandActions.buttons(
+            phase: state.phase,
+            primaryAction: state.primaryAction,
+            primaryTitle: state.primaryTitle,
+            secondaryAction: state.secondaryAction,
+            secondaryTitle: state.secondaryTitle,
+            isStale: isStale
+        )
+        if #available(iOS 17.0, *), !buttons.primaryAction.isEmpty || !buttons.secondaryAction.isEmpty {
+            HStack(spacing: 8) {
+                if !buttons.primaryAction.isEmpty {
+                    spotIslandButton(
+                        action: buttons.primaryAction,
+                        title: buttons.primaryTitle,
+                        state: state,
+                        prominent: true
+                    )
+                }
+                if !buttons.secondaryAction.isEmpty {
+                    spotIslandButton(
+                        action: buttons.secondaryAction,
+                        title: buttons.secondaryTitle,
+                        state: state,
+                        prominent: false
+                    )
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func spotIslandButton(
+        action: String,
+        title: String,
+        state: RouteActivityAttributes.ContentState,
+        prominent: Bool
+    ) -> some View {
+        if #available(iOS 17.0, *) {
+            let submitted = submittedAction(action, state: state)
+            if submitted == "openApp" {
+                spotOpenAppButton(title: title, prominent: prominent)
+            } else {
+                spotCommandButton(title: title, action: submitted, prominent: prominent)
+            }
+        }
+    }
+
+    @available(iOS 17.0, *)
+    @ViewBuilder
+    private func spotOpenAppButton(title: String, prominent: Bool) -> some View {
+        if prominent {
+            Button(intent: IslandOpenAppIntent()) { spotButtonTitle(title) }
+                .buttonStyle(.borderedProminent)
+        } else {
+            Button(intent: IslandOpenAppIntent()) { spotButtonTitle(title) }
+                .buttonStyle(.bordered)
+        }
+    }
+
+    @available(iOS 17.0, *)
+    @ViewBuilder
+    private func spotCommandButton(title: String, action: String, prominent: Bool) -> some View {
+        if prominent {
+            Button(intent: IslandCommandIntent(action: action)) { spotButtonTitle(title) }
+                .buttonStyle(.borderedProminent)
+        } else {
+            Button(intent: IslandCommandIntent(action: action)) { spotButtonTitle(title) }
+                .buttonStyle(.bordered)
+        }
+    }
+
+    private func spotButtonTitle(_ title: String) -> some View {
+        Text(title)
+            .lineLimit(1)
+            .minimumScaleFactor(0.8)
+            .frame(maxWidth: .infinity)
+            .frame(height: 36)
+    }
+
+    private func routeLockScreen(_ state: RouteActivityAttributes.ContentState, isStale: Bool) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .firstTextBaseline) {
                 Text(state.title)
@@ -151,23 +301,70 @@ struct RouteActivityWidget: Widget {
         if #available(iOS 17.0, *), !buttons.primaryAction.isEmpty || !buttons.secondaryAction.isEmpty {
             HStack(spacing: 8) {
                 if !buttons.primaryAction.isEmpty {
-                    Button(intent: IslandActionIntent(action: submittedAction(buttons.primaryAction, state: state))) {
-                        Text(buttons.primaryTitle)
-                            .frame(maxWidth: .infinity)
-                            .frame(height: 36)
-                    }
-                    .buttonStyle(.borderedProminent)
+                    islandButton(
+                        action: buttons.primaryAction,
+                        title: buttons.primaryTitle,
+                        state: state,
+                        prominent: true
+                    )
                 }
                 if !buttons.secondaryAction.isEmpty {
-                    Button(intent: IslandActionIntent(action: submittedAction(buttons.secondaryAction, state: state))) {
-                        Text(buttons.secondaryTitle)
-                            .frame(maxWidth: .infinity)
-                            .frame(height: 36)
-                    }
-                    .buttonStyle(.bordered)
+                    islandButton(
+                        action: buttons.secondaryAction,
+                        title: buttons.secondaryTitle,
+                        state: state,
+                        prominent: false
+                    )
                 }
             }
         }
+    }
+
+    @ViewBuilder
+    private func islandButton(
+        action: String,
+        title: String,
+        state: RouteActivityAttributes.ContentState,
+        prominent: Bool
+    ) -> some View {
+        if #available(iOS 17.0, *) {
+            let submitted = submittedAction(action, state: state)
+            if submitted == "openApp" {
+                openAppButton(title: title, prominent: prominent)
+            } else {
+                commandButton(title: title, action: submitted, prominent: prominent)
+            }
+        }
+    }
+
+    @available(iOS 17.0, *)
+    @ViewBuilder
+    private func openAppButton(title: String, prominent: Bool) -> some View {
+        if prominent {
+            Button(intent: IslandOpenAppIntent()) { buttonTitle(title) }
+                .buttonStyle(.borderedProminent)
+        } else {
+            Button(intent: IslandOpenAppIntent()) { buttonTitle(title) }
+                .buttonStyle(.bordered)
+        }
+    }
+
+    @available(iOS 17.0, *)
+    @ViewBuilder
+    private func commandButton(title: String, action: String, prominent: Bool) -> some View {
+        if prominent {
+            Button(intent: IslandCommandIntent(action: action)) { buttonTitle(title) }
+                .buttonStyle(.borderedProminent)
+        } else {
+            Button(intent: IslandCommandIntent(action: action)) { buttonTitle(title) }
+                .buttonStyle(.bordered)
+        }
+    }
+
+    private func buttonTitle(_ title: String) -> some View {
+        Text(title)
+            .frame(maxWidth: .infinity)
+            .frame(height: 36)
     }
 }
 

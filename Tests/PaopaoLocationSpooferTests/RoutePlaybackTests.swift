@@ -676,6 +676,43 @@ final class RoutePlaybackControllerTests: XCTestCase {
         route.pause()
     }
 
+    func testPausedLocationBlockDropsResume() {
+        let route = preparedRoute(repeatMode: .once)
+        route.applyCoordinate = { _ in true }
+        route.requestPlay()
+        route.noteActivated()
+        route.pause()
+        let progress = route.progress
+        route.markPausedLocationBlocked()
+
+        XCTAssertEqual(route.phase, .paused)
+        XCTAssertEqual(route.interruption, .pushFailed)
+        XCTAssertEqual(route.statusMessage, RouteActivitySync.locationBlockedMessage)
+        XCTAssertEqual(route.progress, progress, accuracy: 0.000_1)
+
+        let tracking = RouteCommandTracking.afterAttempt(
+            command: "resume",
+            phase: route.phase,
+            interruption: route.interruption,
+            waitingForActivation: route.waitingForActivation,
+            statusMessage: route.statusMessage
+        )
+        XCTAssertFalse(tracking.commandFailed)
+        let snapshot = RouteActivitySync.snapshot(
+            phase: route.phase,
+            interruption: route.interruption,
+            statusMessage: route.statusMessage,
+            routeName: "步行",
+            remainingMeters: route.remainingMeters,
+            speedMetersPerSecond: route.speedMetersPerSecond,
+            progress: route.progress,
+            symbolName: "figure.walk"
+        )
+        XCTAssertEqual(snapshot?.phaseKey, .systemFault)
+        XCTAssertEqual(snapshot?.primaryTitle, "重试")
+        XCTAssertNotEqual(snapshot?.primaryTitle, "继续")
+    }
+
     func testPreferencesSurviveNewController() {
         let suite = "RoutePlaybackPrefs.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!

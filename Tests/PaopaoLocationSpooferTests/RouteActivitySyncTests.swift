@@ -85,6 +85,28 @@ final class RouteActivitySyncTests: XCTestCase {
         XCTAssertNil(RouteActivityCommandStore.consume())
     }
 
+    func testExpiredIslandCommandIsDropped() {
+        let suite = "route-activity-expiry-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        let previousDefaults = RouteActivityCommandStore.defaults
+        let previousNow = RouteActivityCommandStore.now
+        RouteActivityCommandStore.defaults = defaults
+        defer {
+            RouteActivityCommandStore.defaults = previousDefaults
+            RouteActivityCommandStore.now = previousNow
+            defaults.removePersistentDomain(forName: suite)
+        }
+
+        let issued = Date(timeIntervalSince1970: 1_000)
+        RouteActivityCommandStore.now = { issued }
+        RouteActivityCommandStore.enqueue("resume")
+        RouteActivityCommandStore.now = { issued.addingTimeInterval(RouteActivityCommandStore.maxAge + 1) }
+        XCTAssertNil(RouteActivityCommandStore.consume())
+
+        defaults.set("resume", forKey: RouteActivityCommandStore.pendingKey)
+        XCTAssertNil(RouteActivityCommandStore.consume())
+    }
+
     func testMinuteChangePushes() {
         let first = playingSnapshot(remainingMeters: 900)
         let later = playingSnapshot(remainingMeters: 200)
@@ -522,6 +544,127 @@ final class RouteActivitySyncTests: XCTestCase {
         XCTAssertEqual(stopped?.statusText, "已停止")
         XCTAssertEqual(stopped?.primaryAction, "")
         XCTAssertNil(SpotActivitySync.staleDate(for: stopped!, now: Date(timeIntervalSince1970: 1_000)))
+    }
+
+    func testSpotIslandActionsFollowStatus() {
+        let needsSwitch = SpotIslandActions.buttons(
+            phase: "needsSwitch",
+            primaryAction: "switchHere",
+            primaryTitle: "切换到此处",
+            secondaryAction: "stopSpoof",
+            secondaryTitle: "停止虚拟定位",
+            isStale: false
+        )
+        XCTAssertEqual(needsSwitch.primaryAction, "switchHere")
+        XCTAssertEqual(needsSwitch.primaryTitle, "切换到此处")
+        XCTAssertEqual(needsSwitch.secondaryAction, "stopSpoof")
+        XCTAssertEqual(needsSwitch.secondaryTitle, "停止虚拟定位")
+
+        let locating = SpotIslandActions.buttons(
+            phase: "locating",
+            primaryAction: "switchHere",
+            primaryTitle: "切换到此处",
+            secondaryAction: "stopSpoof",
+            secondaryTitle: "停止虚拟定位",
+            isStale: false
+        )
+        XCTAssertEqual(locating.primaryAction, "stopSpoof")
+        XCTAssertEqual(locating.primaryTitle, "停止虚拟定位")
+        XCTAssertEqual(locating.secondaryAction, "")
+
+        let switching = SpotIslandActions.buttons(
+            phase: "switching",
+            primaryAction: "switchHere",
+            primaryTitle: "切换到此处",
+            secondaryAction: "stopSpoof",
+            secondaryTitle: "停止虚拟定位",
+            isStale: false
+        )
+        XCTAssertEqual(switching.primaryAction, "")
+        XCTAssertEqual(switching.secondaryAction, "")
+
+        let staleSwitching = SpotIslandActions.buttons(
+            phase: "switching",
+            primaryAction: "switchHere",
+            primaryTitle: "切换到此处",
+            secondaryAction: "",
+            secondaryTitle: "",
+            isStale: true
+        )
+        XCTAssertEqual(staleSwitching.primaryAction, "")
+
+        let stopped = SpotIslandActions.buttons(
+            phase: "stopped",
+            primaryAction: "resume",
+            primaryTitle: "继续",
+            secondaryAction: "switchHere",
+            secondaryTitle: "切换到此处",
+            isStale: false
+        )
+        XCTAssertEqual(stopped.primaryAction, "")
+        XCTAssertEqual(stopped.secondaryAction, "")
+
+        let notApplied = SpotIslandActions.buttons(
+            phase: "notApplied",
+            primaryAction: "retry",
+            primaryTitle: "重试",
+            secondaryAction: "openApp",
+            secondaryTitle: "打开 App",
+            isStale: false
+        )
+        XCTAssertEqual(notApplied.primaryAction, "retry")
+        XCTAssertEqual(notApplied.secondaryAction, "openApp")
+
+        let failed = SpotIslandActions.buttons(
+            phase: "actionFailed",
+            primaryAction: "retry",
+            primaryTitle: "重试",
+            secondaryAction: "openApp",
+            secondaryTitle: "打开 App",
+            isStale: false
+        )
+        XCTAssertEqual(failed.primaryAction, "retry")
+        XCTAssertEqual(failed.secondaryTitle, "打开 App")
+        XCTAssertEqual(
+            IslandActionPresentation.submittedAction(action: failed.primaryAction, phase: "actionFailed", retryCommand: "stopSpoof"),
+            "stopSpoof"
+        )
+    }
+
+    func testSpotFailureAndStoppedDisplay() {
+        let failed = SpotActivitySync.snapshot(
+            isVerifying: false,
+            isActive: true,
+            needsSwitch: false,
+            failed: false,
+            placeName: "非常长的地点名称不应该把状态挤出灵动岛",
+            coordinateStandard: "GCJ-02",
+            accuracyMeters: 25,
+            actionFailed: true,
+            errorText: "推送失败",
+            retryCommand: "begin"
+        )
+        XCTAssertEqual(failed?.status, .actionFailed)
+        XCTAssertEqual(failed?.statusText, "操作失败")
+        XCTAssertEqual(failed?.errorText, "推送失败")
+        XCTAssertEqual(failed?.caption, "GCJ-02 · 精度 25 米")
+        XCTAssertFalse(failed?.caption.contains("暂停") == true)
+
+        let stopped = SpotActivitySync.snapshot(
+            isVerifying: false,
+            isActive: false,
+            needsSwitch: true,
+            failed: false,
+            placeName: "深圳湾",
+            coordinateStandard: "GCJ-02",
+            accuracyMeters: 25,
+            isStopped: true
+        )
+        XCTAssertEqual(stopped?.status, .stopped)
+        XCTAssertEqual(stopped?.primaryAction, "")
+        XCTAssertEqual(stopped?.secondaryAction, "")
+        XCTAssertNotEqual(stopped?.primaryTitle, "继续")
+        XCTAssertNotEqual(stopped?.primaryTitle, "切换到此处")
     }
 
     func testRouteRetryStaysVisibleUntilActivationSettles() {

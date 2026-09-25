@@ -389,7 +389,10 @@ extension MapHomeView {
             playRouteInPreview()
             return
         }
-        if locationUseBlock != nil { return }
+        if locationUseBlock != nil {
+            route.markPausedLocationBlocked()
+            return
+        }
         if routeUsesDeveloperTunnel {
             playRouteThroughDeveloperTunnel()
         } else {

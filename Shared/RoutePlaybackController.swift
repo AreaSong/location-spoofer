@@ -371,6 +371,14 @@ final class RoutePlaybackController: ObservableObject {
         captureSession(force: true)
     }
 
+    /// 用户已经暂停时，定位被挡住不能再显示「继续」。
+    func markPausedLocationBlocked() {
+        guard phase == .paused else { return }
+        interruption = .pushFailed
+        statusMessage = RouteActivitySync.locationBlockedMessage
+        captureSession(force: true)
+    }
+
     func markActivationFailed(_ message: String) {
         guard phase == .preparing || phase == .paused else { return }
         phase = .preparing

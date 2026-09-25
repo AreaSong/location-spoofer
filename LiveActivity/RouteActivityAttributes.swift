@@ -153,11 +153,54 @@ enum IslandActionPresentation {
     }
 }
 
+enum SpotIslandActions {
+    /// 验证、切换、停止过程中和已停止不留按钮，避免重复点击，也不把终态显示成可继续。
+    static let quietPhases: Set<String> = ["verifying", "switching", "stopping", "stopped"]
+
+    static func buttons(
+        phase: String,
+        primaryAction: String,
+        primaryTitle: String,
+        secondaryAction: String,
+        secondaryTitle: String,
+        isStale: Bool
+    ) -> (primaryAction: String, primaryTitle: String, secondaryAction: String, secondaryTitle: String) {
+        if quietPhases.contains(phase) {
+            return ("", "", "", "")
+        }
+        let presented = IslandActionPresentation.buttons(
+            phase: phase,
+            primaryAction: primaryAction,
+            primaryTitle: primaryTitle,
+            secondaryAction: secondaryAction,
+            secondaryTitle: secondaryTitle,
+            isStale: isStale
+        )
+        guard phase == "locating", !isStale else { return presented }
+        return withoutSwitch(presented)
+    }
+
+    private static func withoutSwitch(
+        _ buttons: (primaryAction: String, primaryTitle: String, secondaryAction: String, secondaryTitle: String)
+    ) -> (primaryAction: String, primaryTitle: String, secondaryAction: String, secondaryTitle: String) {
+        if buttons.primaryAction == "switchHere" {
+            return (buttons.secondaryAction, buttons.secondaryTitle, "", "")
+        }
+        if buttons.secondaryAction == "switchHere" {
+            return (buttons.primaryAction, buttons.primaryTitle, "", "")
+        }
+        return buttons
+    }
+}
+
 enum RouteActivityCommandStore {
     static let suiteName = "group.com.paopaolabs.location-spoofer"
     static let pendingKey = "routeActivity.pendingCommand"
+    static let pendingAtKey = "routeActivity.pendingCommandAt"
+    static let maxAge: TimeInterval = 120
 
     static var defaults = UserDefaults(suiteName: suiteName) ?? .standard
+    static var now: () -> Date = Date.init
 
     static let allowedActions: Set<String> = [
         "switchHere", "stopSpoof", "retry", "openApp", "pause", "resume", "stopRoute", "play", "begin"
@@ -166,11 +209,16 @@ enum RouteActivityCommandStore {
     static func enqueue(_ action: String) {
         guard allowedActions.contains(action) else { return }
         defaults.set(action, forKey: pendingKey)
+        defaults.set(now().timeIntervalSince1970, forKey: pendingAtKey)
     }
 
     static func consume() -> String? {
         guard let action = defaults.string(forKey: pendingKey) else { return nil }
+        let storedAt = defaults.object(forKey: pendingAtKey) as? Double
         defaults.removeObject(forKey: pendingKey)
+        defaults.removeObject(forKey: pendingAtKey)
+        guard let storedAt else { return nil }
+        guard now().timeIntervalSince1970 - storedAt <= maxAge else { return nil }
         return action
     }
 }
@@ -192,9 +240,9 @@ enum RouteActivityBridge {
 }
 
 @available(iOS 17.0, *)
-struct IslandActionIntent: LiveActivityIntent {
+struct IslandCommandIntent: LiveActivityIntent {
     static var title: LocalizedStringResource = "灵动岛操作"
-    static var openAppWhenRun = true
+    static var openAppWhenRun = false
 
     @Parameter(title: "动作")
     var action: String
@@ -211,6 +259,19 @@ struct IslandActionIntent: LiveActivityIntent {
         let name = action
         await MainActor.run {
             RouteActivityBridge.submit(name)
+        }
+        return .result()
+    }
+}
+
+@available(iOS 17.0, *)
+struct IslandOpenAppIntent: LiveActivityIntent {
+    static var title: LocalizedStringResource = "打开 App"
+    static var openAppWhenRun = true
+
+    func perform() async throws -> some IntentResult {
+        await MainActor.run {
+            RouteActivityBridge.submit("openApp")
         }
         return .result()
     }
