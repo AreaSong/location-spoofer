@@ -23,6 +23,19 @@ struct RouteActivitySnapshot: Equatable {
 
 enum RouteActivitySync {
     static let userPauseMessage = "已暂停。"
+    static let playingStaleInterval: TimeInterval = 45
+    static let failureStaleInterval: TimeInterval = 120
+
+    static func staleDate(for snapshot: RouteActivitySnapshot, now: Date = Date()) -> Date? {
+        switch snapshot.phaseKey {
+        case .playing where snapshot.statusText.hasSuffix("分"):
+            return now.addingTimeInterval(playingStaleInterval)
+        case .warning:
+            return now.addingTimeInterval(failureStaleInterval)
+        case .playing, .paused, .finished:
+            return nil
+        }
+    }
 
     static func snapshot(
         phase: RoutePhase,
@@ -63,8 +76,8 @@ enum RouteActivitySync {
                     detailText: detail,
                     symbolName: "exclamationmark.triangle.fill",
                     isWarning: true,
-                    action: "",
-                    actionTitle: ""
+                    action: "primary",
+                    actionTitle: "继续"
                 )
             }
             return routeSnapshot(

@@ -352,7 +352,7 @@ enum ThirdPartyProxyClient: String, CaseIterable, Identifiable {
     }
 
     var verificationText: String? {
-        self == .shadowrocket ? nil : "配置已提供，尚未验证"
+        ThirdPartyCompatibilityMatrix.row(for: self).isDeviceVerified ? nil : "配置已提供，尚未验证"
     }
 
     var moduleFileName: String {

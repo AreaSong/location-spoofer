@@ -64,6 +64,7 @@ struct RoutePlaybackPanel: View {
     let onExit: () -> Void
     let onSave: () -> Void
     let onOpenSaved: () -> Void
+    let onRestart: () -> Void
     var embedded = false
     @State private var showsSpeedOffset = false
     @State private var customSpeed = false
@@ -99,6 +100,9 @@ struct RoutePlaybackPanel: View {
                     .lineLimit(2)
             }
             actionRow
+            if route.interruption == .pushFailed {
+                restartRow
+            }
             settingsDisclosure
             if showsSpeedOffset {
                 speedOffsetSection
@@ -223,6 +227,11 @@ struct RoutePlaybackPanel: View {
         }
         .padding(2)
         .background(Color.secondary.opacity(0.12), in: RoundedRectangle(cornerRadius: AppRadius.control, style: .continuous))
+    }
+
+    private var restartRow: some View {
+        Button("从头走") { onRestart() }
+            .buttonStyle(CapsuleChipStyle())
     }
 
     private func pinButton(

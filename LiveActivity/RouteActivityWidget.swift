@@ -6,7 +6,7 @@ import WidgetKit
 struct RouteActivityWidget: Widget {
     var body: some WidgetConfiguration {
         ActivityConfiguration(for: RouteActivityAttributes.self) { context in
-            expandedBody(context.state)
+            expandedBody(context.state, isStale: context.isStale)
                 .padding()
         } dynamicIsland: { context in
             DynamicIsland {
@@ -16,26 +16,26 @@ struct RouteActivityWidget: Widget {
                         .lineLimit(1)
                 }
                 DynamicIslandExpandedRegion(.trailing) {
-                    statusLabel(context.state)
+                    statusLabel(context.state, isStale: context.isStale)
                 }
                 DynamicIslandExpandedRegion(.bottom) {
-                    expandedControls(context.state)
+                    expandedControls(context.state, isStale: context.isStale)
                 }
             } compactLeading: {
-                statusIcon(context.state)
+                statusIcon(context.state, isStale: context.isStale)
             } compactTrailing: {
-                statusLabel(context.state)
+                statusLabel(context.state, isStale: context.isStale)
             } minimal: {
-                statusIcon(context.state)
+                statusIcon(context.state, isStale: context.isStale)
             }
         }
     }
 
-    private func expandedBody(_ state: RouteActivityAttributes.ContentState) -> some View {
-        expandedControls(state)
+    private func expandedBody(_ state: RouteActivityAttributes.ContentState, isStale: Bool) -> some View {
+        expandedControls(state, isStale: isStale)
     }
 
-    private func expandedControls(_ state: RouteActivityAttributes.ContentState) -> some View {
+    private func expandedControls(_ state: RouteActivityAttributes.ContentState, isStale: Bool) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
                 modeChip("定点", selected: !state.showsRoute, action: "spot")
@@ -43,7 +43,7 @@ struct RouteActivityWidget: Widget {
             }
             if state.showsProgress {
                 ProgressView(value: min(max(state.progress, 0), 1))
-                    .tint(state.isWarning ? Color.orange : Color.accentColor)
+                    .tint(isStale || state.isWarning ? Color.orange : Color.accentColor)
             }
             actionButton(state)
             if !state.detailText.isEmpty {
@@ -77,14 +77,14 @@ struct RouteActivityWidget: Widget {
             .background(selected ? Color.accentColor : Color.white.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
     }
 
-    private func statusIcon(_ state: RouteActivityAttributes.ContentState) -> some View {
-        Image(systemName: state.symbolName)
-            .foregroundStyle(state.isWarning ? Color.orange : Color.primary)
+    private func statusIcon(_ state: RouteActivityAttributes.ContentState, isStale: Bool) -> some View {
+        Image(systemName: isStale ? "exclamationmark.triangle.fill" : state.symbolName)
+            .foregroundStyle(isStale || state.isWarning ? Color.orange : Color.primary)
     }
 
-    private func statusLabel(_ state: RouteActivityAttributes.ContentState) -> some View {
-        Text(state.statusText)
-            .foregroundStyle(state.isWarning ? Color.orange : Color.primary)
+    private func statusLabel(_ state: RouteActivityAttributes.ContentState, isStale: Bool) -> some View {
+        Text(isStale ? "已中断" : state.statusText)
+            .foregroundStyle(isStale || state.isWarning ? Color.orange : Color.primary)
     }
 
     @ViewBuilder

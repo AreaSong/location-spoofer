@@ -7,15 +7,20 @@ final class SavedRouteStoreTests: XCTestCase {
         let defaults = UserDefaults(suiteName: suite)!
         defer { defaults.removePersistentDomain(forName: suite) }
 
-        let store = SavedRouteStore(defaults: defaults)
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("SavedRouteStoreTests.\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = SavedRouteStore(defaults: defaults, pathDirectory: directory)
         let saved = store.save(sampleRoute(name: "学校"))
         XCTAssertEqual(store.routes.count, 1)
-        let restored = SavedRouteStore(defaults: defaults).routes.first!
+        let restored = SavedRouteStore(defaults: defaults, pathDirectory: directory).routes.first!
         XCTAssertEqual(restored.id, saved.id)
         XCTAssertEqual(restored.repeatMode, .roundTrip)
         XCTAssertEqual(restored.pathPoints!.count, 2)
         XCTAssertEqual(restored.viaPoints.count, 1)
         XCTAssertNil(restored.straightFallback)
+        let catalog = String(data: defaults.data(forKey: "saved_routes_v1")!, encoding: .utf8)!
+        XCTAssertFalse(catalog.contains("pathPoints"))
     }
 
     func testOldRouteWithoutFallbackDecodesAsNil() throws {
@@ -42,6 +47,43 @@ final class SavedRouteStoreTests: XCTestCase {
         SavedRouteStore(defaults: defaults).save(route)
         XCTAssertEqual(SavedRouteStore(defaults: defaults).routes.first?.straightFallback, .partial)
         XCTAssertEqual(RoutePathFallback.partial.notice, "部分路段规划失败，已改用直线")
+    }
+
+    func testEmbeddedPathMigratesOutOfDefaultsAndCapsFilePoints() throws {
+        let suite = "SavedRouteStoreTests.migrate.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(suite, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        var route = sampleRoute(name: "长路线")
+        route.pathPoints = (0..<900).map { index in
+            CoordinateConverter.coordinatePair(
+                lat: 22.49 + Double(index) * 0.00001,
+                lon: 113.95 + Double(index) * 0.00001,
+                mapCoordinateSystem: .wgs84
+            )
+        }
+        let encoded = try JSONEncoder().encode([route])
+        var object = try JSONSerialization.jsonObject(with: encoded) as! [[String: Any]]
+        let points = route.pathPoints!.map {
+            ["wgs84": ["latitude": $0.wgs84.latitude, "longitude": $0.wgs84.longitude],
+             "gcj02": ["latitude": $0.gcj02.latitude, "longitude": $0.gcj02.longitude],
+             "conversionVersion": 1]
+        }
+        object[0]["pathPoints"] = points
+        defaults.set(try JSONSerialization.data(withJSONObject: object), forKey: "saved_routes_v1")
+
+        let restored = SavedRouteStore(defaults: defaults, pathDirectory: directory).routes.first!
+        XCTAssertLessThanOrEqual(restored.pathPoints!.count, RoutePathSimplifier.maxPoints)
+        XCTAssertGreaterThanOrEqual(restored.pathPoints!.count, 2)
+        let catalog = String(data: defaults.data(forKey: "saved_routes_v1")!, encoding: .utf8)!
+        XCTAssertFalse(catalog.contains("pathPoints"))
+
+        let file = directory.appendingPathComponent("\(route.id.uuidString).json")
+        try FileManager.default.removeItem(at: file)
+        XCTAssertNil(SavedRouteStore(defaults: defaults, pathDirectory: directory).routes.first?.pathPoints)
     }
 
     func testSaveInsertsNewestFirstAndCapsAtLimit() {

@@ -7,6 +7,8 @@ enum FavoriteTransfer {
     struct MergeResult: Equatable {
         var added: Int
         var updated: Int
+        var skippedDuplicates: Int
+        var skippedOverLimit: Int
     }
 
     enum TransferError: LocalizedError, Equatable {

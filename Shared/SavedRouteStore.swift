@@ -76,7 +76,6 @@ struct SavedRoute: Codable, Identifiable, Equatable {
         try container.encode(offsetMeters, forKey: .offsetMeters)
         try container.encode(repeatMode, forKey: .repeatMode)
         try container.encode(viaPoints, forKey: .viaPoints)
-        try container.encodeIfPresent(pathPoints, forKey: .pathPoints)
         try container.encodeIfPresent(straightFallback, forKey: .straightFallback)
         try container.encode(createdAt, forKey: .createdAt)
     }
@@ -107,27 +106,38 @@ final class SavedRouteStore: ObservableObject {
 
     @Published private(set) var routes: [SavedRoute]
     private let defaults: UserDefaults
+    private let pathStore: RoutePathFileStore
 
-    init(defaults: UserDefaults = AppGroup.defaults) {
+    init(defaults: UserDefaults = AppGroup.defaults, pathDirectory: URL? = nil) {
+        let pathStore = RoutePathFileStore(directory: pathDirectory ?? RoutePathFileStore.defaultDirectory)
         self.defaults = defaults
-        if let data = defaults.data(forKey: Keys.routes),
-           let decoded = try? JSONDecoder().decode([SavedRoute].self, from: data) {
-            routes = Array(decoded.prefix(Self.limit))
-        } else {
-            routes = []
+        self.pathStore = pathStore
+        let decoded = Self.loadCatalog(defaults)
+        let kept = Array(decoded.prefix(Self.limit))
+        let dropped = decoded.dropFirst(Self.limit)
+        dropped.forEach { pathStore.delete($0.id) }
+        let hadEmbeddedPath = kept.contains { ($0.pathPoints?.count ?? 0) >= 2 }
+        let hydrated = kept.map { Self.hydrate($0, pathStore: pathStore) }
+        routes = hydrated
+        if hadEmbeddedPath {
+            persistIgnoringFailure()
         }
     }
 
     @discardableResult
     func save(_ route: SavedRoute) -> SavedRoute {
-        var next = routes.filter { $0.id != route.id }
-        next.insert(route, at: 0)
+        pathStore.write(route)
+        var stored = route
+        stored.pathPoints = pathStore.read(matching: route) ?? route.pathPoints
+        var next = routes.filter { $0.id != stored.id }
+        next.insert(stored, at: 0)
         if next.count > Self.limit {
+            next.suffix(from: Self.limit).forEach { pathStore.delete($0.id) }
             next = Array(next.prefix(Self.limit))
         }
         routes = next
         persistIgnoringFailure()
-        return route
+        return stored
     }
 
     func rename(_ id: UUID, to name: String) {
@@ -137,8 +147,93 @@ final class SavedRouteStore: ObservableObject {
     }
 
     func delete(_ route: SavedRoute) {
+        pathStore.delete(route.id)
         routes = routes.filter { $0.id != route.id }
         persistIgnoringFailure()
+    }
+
+    func exportTransferred() throws -> Data {
+        try RouteTransfer.encode(routes)
+    }
+
+    @discardableResult
+    func importTransferred(_ incoming: [SavedRoute]) -> RouteTransfer.MergeResult {
+        var added = 0
+        var updated = 0
+        var skippedOverLimit = 0
+        var next = routes
+        for item in incoming {
+            if let index = next.firstIndex(where: { $0.id == item.id || sameGeometry($0, item) }) {
+                var merged = item
+                if next[index].id != item.id {
+                    merged = replacing(item, id: next[index].id, createdAt: next[index].createdAt)
+                }
+                pathStore.delete(next[index].id)
+                pathStore.write(merged)
+                var stored = merged
+                stored.pathPoints = pathStore.read(matching: merged)
+                next[index] = stored
+                updated += 1
+            } else if next.count >= Self.limit {
+                skippedOverLimit += 1
+            } else {
+                pathStore.write(item)
+                var stored = item
+                stored.pathPoints = pathStore.read(matching: item)
+                next.insert(stored, at: 0)
+                added += 1
+            }
+        }
+        routes = next
+        persistIgnoringFailure()
+        return RouteTransfer.MergeResult(added: added, updated: updated, skippedOverLimit: skippedOverLimit)
+    }
+
+    private func sameGeometry(_ lhs: SavedRoute, _ rhs: SavedRoute) -> Bool {
+        lhs.travelMode == rhs.travelMode
+            && lhs.viaPoints.count == rhs.viaPoints.count
+            && samePoint(lhs.start, rhs.start)
+            && samePoint(lhs.end, rhs.end)
+            && zip(lhs.viaPoints, rhs.viaPoints).allSatisfy { samePoint($0, $1) }
+    }
+
+    private func samePoint(_ lhs: CoordinatePair, _ rhs: CoordinatePair) -> Bool {
+        abs(lhs.wgs84.latitude - rhs.wgs84.latitude) < 0.000001
+            && abs(lhs.wgs84.longitude - rhs.wgs84.longitude) < 0.000001
+    }
+
+    private func replacing(_ route: SavedRoute, id: UUID, createdAt: Date) -> SavedRoute {
+        SavedRoute(
+            id: id,
+            name: route.name,
+            start: route.start,
+            end: route.end,
+            travelMode: route.travelMode,
+            speedKilometersPerHour: route.speedKilometersPerHour,
+            offsetMeters: route.offsetMeters,
+            repeatMode: route.repeatMode,
+            viaPoints: route.viaPoints,
+            pathPoints: route.pathPoints,
+            straightFallback: route.straightFallback,
+            createdAt: createdAt
+        )
+    }
+
+    private static func hydrate(_ route: SavedRoute, pathStore: RoutePathFileStore) -> SavedRoute {
+        var copy = route
+        if let embedded = copy.pathPoints, embedded.count >= 2 {
+            pathStore.write(copy)
+        }
+        copy.pathPoints = pathStore.read(matching: route)
+        return copy
+    }
+
+    private static func loadCatalog(_ defaults: UserDefaults) -> [SavedRoute] {
+        guard let data = defaults.data(forKey: Keys.routes),
+              let decoded = try? JSONDecoder().decode([SavedRoute].self, from: data) else {
+            return []
+        }
+        return decoded
     }
 
     private func persistIgnoringFailure() {

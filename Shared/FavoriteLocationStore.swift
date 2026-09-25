@@ -85,6 +85,8 @@ struct MapConfiguration: Equatable {
 }
 
 final class FavoriteLocationStore: ObservableObject {
+    static let limit = 300
+
     private enum Keys {
         static let favorites = "favorite_locations"
         static let selectedID = "favorite_locations_selected_id"
@@ -159,11 +161,9 @@ final class FavoriteLocationStore: ObservableObject {
 
     @discardableResult
     private func save(_ favorite: FavoriteLocation) -> FavoriteLocation {
-        favorites.removeAll {
-            abs($0.coordinatePair.wgs84.latitude - favorite.coordinatePair.wgs84.latitude) < 0.000001
-                && abs($0.coordinatePair.wgs84.longitude - favorite.coordinatePair.wgs84.longitude) < 0.000001
-        }
+        favorites.removeAll { isSameWGS84($0, favorite) }
         favorites.insert(favorite, at: 0)
+        trimToLimitDroppingOldest()
         select(favorite.id)
         persistIgnoringFailure()
         return favorite
@@ -222,15 +222,19 @@ final class FavoriteLocationStore: ObservableObject {
 
     @discardableResult
     func importTransferred(_ incoming: [FavoriteLocation]) -> FavoriteTransfer.MergeResult {
+        let unique = dedupedIncoming(incoming)
         var added = 0
         var updated = 0
+        var skippedOverLimit = 0
         var newItems: [FavoriteLocation] = []
-        for item in incoming {
+        for item in unique {
             if let index = favorites.firstIndex(where: { isSameWGS84($0, item) }) {
                 favorites[index].name = item.name
                 favorites[index].coordinatePair = item.coordinatePair
                 favorites[index].accuracy = item.accuracy
                 updated += 1
+            } else if favorites.count + newItems.count >= Self.limit {
+                skippedOverLimit += 1
             } else {
                 newItems.append(item)
                 added += 1
@@ -240,7 +244,34 @@ final class FavoriteLocationStore: ObservableObject {
             favorites.insert(contentsOf: newItems, at: 0)
         }
         persistIgnoringFailure()
-        return FavoriteTransfer.MergeResult(added: added, updated: updated)
+        return FavoriteTransfer.MergeResult(
+            added: added,
+            updated: updated,
+            skippedDuplicates: incoming.count - unique.count,
+            skippedOverLimit: skippedOverLimit
+        )
+    }
+
+    private func dedupedIncoming(_ incoming: [FavoriteLocation]) -> [FavoriteLocation] {
+        var unique: [FavoriteLocation] = []
+        for item in incoming {
+            if let index = unique.firstIndex(where: { isSameWGS84($0, item) }) {
+                unique[index].name = item.name
+                unique[index].coordinatePair = item.coordinatePair
+                unique[index].accuracy = item.accuracy
+            } else {
+                unique.append(item)
+            }
+        }
+        return unique
+    }
+
+    private func trimToLimitDroppingOldest() {
+        guard favorites.count > Self.limit else { return }
+        let overflow = favorites.count - Self.limit
+        let oldest = favorites.sorted { $0.createdAt < $1.createdAt }.prefix(overflow)
+        let dropping = Set(oldest.map(\.id))
+        favorites.removeAll { dropping.contains($0.id) }
     }
 
     private func isSameWGS84(_ lhs: FavoriteLocation, _ rhs: FavoriteLocation) -> Bool {

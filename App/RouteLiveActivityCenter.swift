@@ -13,7 +13,7 @@ final class RouteLiveActivityCenter {
     private var holdingFinished = false
     private var generation = 0
 
-    func sync(route: RouteActivitySnapshot?, spot: SpotActivitySnapshot?) async {
+    func sync(route: RouteActivitySnapshot?, spot: SpotActivitySnapshot?, keepForRecovery: Bool = false) async {
         generation += 1
         let token = generation
         if let route {
@@ -23,16 +23,30 @@ final class RouteLiveActivityCenter {
         guard !holdingFinished else { return }
         if let spot {
             await presentSpot(spot, token: token)
+        } else if keepForRecovery {
+            return
         } else {
             await endNow()
         }
     }
 
-    func endStaleActivities() async {
-        guard activity == nil else { return }
-        for existing in Activity<RouteActivityAttributes>.activities {
-            await existing.end(nil, dismissalPolicy: .immediate)
+    func reconcileOnLaunch(hasRecoverableSession: Bool) async {
+        let existing = Activity<RouteActivityAttributes>.activities
+        if hasRecoverableSession, let first = existing.first {
+            activity = first
+            for extra in existing.dropFirst() {
+                await extra.end(nil, dismissalPolicy: .immediate)
+            }
+            return
         }
+        for activity in existing {
+            await activity.end(nil, dismissalPolicy: .immediate)
+        }
+        activity = nil
+    }
+
+    func endNowIfIdle() async {
+        await endNow()
     }
 
     private func presentRoute(_ next: RouteActivitySnapshot, token: Int) async {
@@ -40,7 +54,7 @@ final class RouteLiveActivityCenter {
         let becomingFinished = next.phaseKey == .finished && lastRoute?.phaseKey != .finished
         lastSpot = nil
         let state = routeState(next)
-        let content = ActivityContent(state: state, staleDate: nil)
+        let content = ActivityContent(state: state, staleDate: RouteActivitySync.staleDate(for: next))
         await ensureActivity(name: next.routeName, content: content)
         guard let activity else { return }
         if becomingFinished {

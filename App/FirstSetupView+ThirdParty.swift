@@ -106,6 +106,27 @@ extension FirstSetupView {
                     Text("客户端需要支持请求脚本、持久化存储、HTTP 200 JSON 响应、Apple WLOC 响应脚本，以及 Apple 定位域名（gs-loc.apple.com、gsp-ssl.ls.apple.com、bluedot.is.autonavi.com 等）的 HTTPS 解密。保存接口和 WLOC 响应脚本必须读取同一份持久化数据。")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
+
+                    Text("真机兼容性")
+                        .font(.subheadline.bold())
+                    Text(ThirdPartyCompatibility.ios27MITMNote)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                    ForEach(ThirdPartyCompatibilityMatrix.rows) { row in
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(row.client.name)
+                                .font(.caption.weight(.semibold))
+                            Text("模块 \(row.moduleFile) · 导入 \(row.moduleImport) · 脚本存储 \(row.scriptStorage)")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                            Text("HTTPS 解密 \(row.httpsDecrypt) · WLOC \(row.wlocRewrite) · \(row.deviceStatus)")
+                                .font(.caption2)
+                                .foregroundStyle(row.isDeviceVerified ? Color.secondary : Color.orange)
+                            Text(row.note)
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
                 }
                 .padding(.top, 8)
             }

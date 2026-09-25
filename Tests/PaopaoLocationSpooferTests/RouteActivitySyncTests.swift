@@ -32,7 +32,8 @@ final class RouteActivitySyncTests: XCTestCase {
         XCTAssertEqual(snapshot?.phaseKey, .warning)
         XCTAssertEqual(snapshot?.statusText, "异常")
         XCTAssertEqual(snapshot?.symbolName, "exclamationmark.triangle.fill")
-        XCTAssertEqual(snapshot?.action, "")
+        XCTAssertEqual(snapshot?.action, "primary")
+        XCTAssertEqual(snapshot?.actionTitle, "继续")
     }
 
     func testSameMinuteDoesNotPushAgain() {
@@ -177,6 +178,32 @@ final class RouteActivitySyncTests: XCTestCase {
         let fast = RoutePlayback.tick(path: path, speedMetersPerSecond: 5.6, elapsed: fastElapsed)
         XCTAssertEqual(slow.progress, progress, accuracy: 0.02)
         XCTAssertEqual(fast.progress, progress, accuracy: 0.02)
+    }
+
+    func testStaleDateFollowsPhase() {
+        let now = Date(timeIntervalSince1970: 1_000)
+        let playing = playingSnapshot(remainingMeters: 900)
+        let paused = RouteActivitySync.snapshot(
+            phase: .paused,
+            statusMessage: RouteActivitySync.userPauseMessage,
+            routeName: "步行路线",
+            remainingMeters: 800,
+            speedMetersPerSecond: 1.4,
+            progress: 0.2,
+            symbolName: "figure.walk"
+        )!
+        let failed = RouteActivitySync.snapshot(
+            phase: .paused,
+            statusMessage: "系统定位推送失败，已暂停。",
+            routeName: "步行路线",
+            remainingMeters: 800,
+            speedMetersPerSecond: 1.4,
+            progress: 0.2,
+            symbolName: "figure.walk"
+        )!
+        XCTAssertEqual(RouteActivitySync.staleDate(for: playing, now: now), now.addingTimeInterval(45))
+        XCTAssertNil(RouteActivitySync.staleDate(for: paused, now: now))
+        XCTAssertEqual(RouteActivitySync.staleDate(for: failed, now: now), now.addingTimeInterval(120))
     }
 
     private func playingSnapshot(remainingMeters: Double) -> RouteActivitySnapshot {

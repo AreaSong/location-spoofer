@@ -59,10 +59,15 @@ extension MapHomeView {
             buttonTitle: spotPeekTitle
         ) : nil
         Task {
+            let keepForRecovery = route.phase == .inactive && route.sessionStore.load() != nil
             if clearStale {
-                await RouteLiveActivityCenter.shared.endStaleActivities()
+                await RouteLiveActivityCenter.shared.reconcileOnLaunch(hasRecoverableSession: keepForRecovery)
             }
-            await RouteLiveActivityCenter.shared.sync(route: routeSnapshot, spot: spotSnapshot)
+            await RouteLiveActivityCenter.shared.sync(
+                route: routeSnapshot,
+                spot: spotSnapshot,
+                keepForRecovery: keepForRecovery
+            )
         }
     }
 
@@ -161,6 +166,8 @@ extension MapHomeView {
         switch route.phase {
         case .playing: return "暂停"
         case .paused: return "继续"
+        case .preparing where route.interruption == .activationFailed && route.end != nil:
+            return "重试"
         case .preparing where route.start == nil: return "设为起点"
         case .preparing: return "设为终点"
         default: return "开始走"
@@ -228,6 +235,7 @@ extension MapHomeView {
                 onExit: requestExitRoute,
                 onSave: promptSaveRoute,
                 onOpenSaved: openSavedRoutes,
+                onRestart: { playRoute(fromStart: true) },
                 embedded: true
             )
             routePlaybackSpoofControls
@@ -274,8 +282,11 @@ extension MapHomeView {
         return buttonTitle
     }
 
-    func playRoute() {
+    func playRoute(fromStart: Bool = false) {
         bindRoutePlayback()
+        if fromStart {
+            route.resetProgressForRestart()
+        }
         if UIPreview.isEnabled() {
             playRouteInPreview()
             return

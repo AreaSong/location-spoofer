@@ -281,14 +281,16 @@ Suitable for:
 
 Current client status:
 
-| Client | Status | Community configuration |
-|---|---|---|
-| Shadowrocket | Currently used for on-device testing | Built-in App guide |
-| Surge | Configuration provided, not fully verified | Contributions wanted |
-| Quantumult X | Configuration provided, not fully verified | Contributions wanted |
-| Loon | Configuration provided, not fully verified | Contributions wanted |
-| Stash | Configuration provided, not fully verified | Contributions wanted |
-| Egern | Uses the Surge module, not fully verified | Contributions wanted |
+| Client | Module file | Import | Script storage | HTTPS decrypt | WLOC rewrite | On-device status | Note |
+|---|---|---|---|---|---|---|---|
+| Shadowrocket | wloc.module | Provided | Provided | Depends on the client | Provided | Verified on device | Currently used for on-device testing |
+| Surge | wloc.sgmodule | Provided | Provided | Depends on the client | Provided | Not verified on device | Configuration provided |
+| Quantumult X | wloc.conf | Provided | Provided | Depends on the client | Provided | Not verified on device | Configuration provided |
+| Loon | wloc.lpx | Provided | Provided | Depends on the client | Provided | Not verified on device | Configuration provided |
+| Stash | wloc.stoverride | Provided | Provided | Depends on the client | Provided | Not verified on device | Configuration provided |
+| Egern | wloc.sgmodule | Provided | Provided | Depends on the client | Provided | Not verified on device | Uses the Surge module; configuration provided |
+
+Starting with iOS 27 beta 6, the system blocks MITM of `gs-loc.apple.com`, so every client above is temporarily unavailable. A client that is not marked verified only has a module file; that is not an on-device pass.
 
 Community configurations are reviewed by client. Accepted submissions are linked in this table with attribution unless
 the contributor requests anonymous inclusion.

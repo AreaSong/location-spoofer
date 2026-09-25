@@ -52,6 +52,7 @@ struct MapHomeView: View {
     @ObservedObject var setup: SetupCoordinator
     @StateObject var favorites: FavoriteLocationStore
     @StateObject var savedRoutes = SavedRouteStore()
+    @StateObject var recentRoutes = RecentRouteStore()
     @StateObject var actions: LocationActionCoordinator
     @StateObject var route: RoutePlaybackController
     @StateObject var session: SpoofSession
@@ -91,6 +92,7 @@ struct MapHomeView: View {
     @State var editingFavorite: FavoriteLocation?
     @State var editName = ""
     @State var showSaveRouteAlert = false
+    @State var routeRecovery: RouteSession?
     @State var saveRouteName = ""
     @State var reverseGeocodeTask: Task<Void, Never>?
     @State var geocodeDebounceTask: Task<Void, Never>?
@@ -326,6 +328,7 @@ struct MapHomeView: View {
                 case .savedRoutes:
                     SavedRouteListView(
                         store: savedRoutes,
+                        recentRoutes: recentRoutes,
                         onSelect: { saved in
                             let previous = route.phase
                             settleRouteSimulation(after: route.load(saved), from: previous)
@@ -397,6 +400,18 @@ struct MapHomeView: View {
             }
         }
         .onChange(of: route.phase) { phase in
+            if phase == .playing, let start = route.start, let end = route.end {
+                recentRoutes.record(
+                    name: route.editingSavedRoute?.name ?? route.travelMode.displayName,
+                    start: start,
+                    end: end,
+                    viaPoints: route.vias,
+                    travelMode: route.travelMode,
+                    speedKilometersPerHour: route.speedKilometersPerHour,
+                    offsetMeters: route.offsetMeters,
+                    repeatMode: route.repeatMode
+                )
+            }
             clearRouteLocationIfNeeded(from: lastRoutePhase, to: phase)
             lastRoutePhase = phase
             syncRouteActivity()
@@ -421,6 +436,9 @@ struct MapHomeView: View {
             startMapRuntimeOnce()
             bindRoutePlayback()
             registerRouteActivityToggle()
+            if let session = route.sessionStore.load(), route.phase == .inactive {
+                routeRecovery = session
+            }
             if runtimeMode.mode == .localWiFi {
                 registerWiFiChangeObserver()
             } else if runtimeMode.mode == .thirdParty {
@@ -569,8 +587,29 @@ struct MapHomeView: View {
             if let name = route.editingSavedRoute?.name {
                 Text("覆盖会更新「\(name)」，另存为会再占一条。最多保存 20 条。")
             } else {
-                Text("保存起点、终点、途经点和沿路折线，下次可以直接走。")
+                Text("保存起点、终点和途经点。沿路折线会压缩后单独存放，下次可以直接走。")
             }
+        }
+        .alert("继续上次路线", isPresented: Binding(
+            get: { routeRecovery != nil },
+            set: { if !$0 { routeRecovery = nil } }
+        )) {
+            Button("继续") {
+                if let session = routeRecovery {
+                    route.applyRecovery(session)
+                    showsRoutePanel = true
+                }
+                routeRecovery = nil
+            }
+            Button("放弃", role: .cancel) {
+                route.sessionStore.clear()
+                routeRecovery = nil
+                if #available(iOS 16.2, *) {
+                    Task { await RouteLiveActivityCenter.shared.endNowIfIdle() }
+                }
+            }
+        } message: {
+            Text(routeRecovery.map { "从「\($0.name)」大约 \(Int(($0.progress * 100).rounded()))% 接着走。不会自动开始定位。" } ?? "")
         }
         .confirmationDialog(
             "退出会停止播放并清除路线",

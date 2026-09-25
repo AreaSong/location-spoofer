@@ -49,6 +49,8 @@ final class RoutePlaybackController: ObservableObject {
     /// 开发者定位推送每次采样都写，不再等 8 米或 5 秒。
     var ignoresWriteGate = false
     var pushFailureMessage = "系统定位推送失败，已暂停。"
+    @Published private(set) var interruption: RouteInterruption = .playing
+    let sessionStore: RouteSessionStore
 
     private(set) var headingForward = true
     private var elapsed: TimeInterval = 0
@@ -63,9 +65,17 @@ final class RoutePlaybackController: ObservableObject {
     private var pathGeneration: UInt64 = 0
     private var writeGate = RouteWriteGate()
     private let preferenceStore: RoutePlaybackPreferenceStore
+    private var pendingRecovery: RouteSession?
+    private var recoveredProgress: Double?
+    private var lastSessionProgress = -1.0
+    private var lastSessionWrite = Date.distantPast
 
-    init(preferenceStore: RoutePlaybackPreferenceStore = RoutePlaybackPreferenceStore()) {
+    init(
+        preferenceStore: RoutePlaybackPreferenceStore = RoutePlaybackPreferenceStore(),
+        sessionStore: RouteSessionStore = RouteSessionStore()
+    ) {
         self.preferenceStore = preferenceStore
+        self.sessionStore = sessionStore
         let prefs = preferenceStore.load()
         travelMode = prefs.travelMode
         speedKilometersPerHour = prefs.speedKilometersPerHour
@@ -174,6 +184,8 @@ final class RoutePlaybackController: ObservableObject {
         pathGeneration &+= 1
         headingForward = true
         waitingForActivation = false
+        pendingRecovery = nil
+        recoveredProgress = nil
         start = saved.start
         end = saved.end
         vias = saved.viaPoints
@@ -343,12 +355,37 @@ final class RoutePlaybackController: ObservableObject {
         stopPlaybackTask()
         endRouteKeepAlive()
         phase = .paused
+        interruption = .userPaused
         statusMessage = "已暂停。"
+        captureSession(force: true)
     }
 
     func resume() {
         guard phase == .paused, canPlay else { return }
+        interruption = .playing
         startLoop()
+    }
+
+    func resetProgressForRestart() {
+        stopPlaybackTask()
+        endRouteKeepAlive()
+        headingForward = true
+        elapsed = 0
+        progress = 0
+        interruption = .playing
+        waitingForActivation = false
+        current = path?.points.first ?? start
+        phase = .preparing
+        refreshReadyMessage()
+    }
+
+    func applyRecovery(_ session: RouteSession) {
+        _ = load(session.savedRoute())
+        if path == nil {
+            path = RoutePath.make([session.start] + session.viaPoints + [session.end])
+        }
+        pendingRecovery = session
+        applyPendingRecovery()
     }
 
     /// 返回已经发出、但还没结束的起点写入。调用方应等它完成后再清系统定位。
@@ -372,7 +409,11 @@ final class RoutePlaybackController: ObservableObject {
         editingSavedRoute = nil
         pathFallback = nil
         ignoresWriteGate = false
+        interruption = .playing
+        pendingRecovery = nil
+        recoveredProgress = nil
         phase = .inactive
+        clearSession()
         return pendingWrite
     }
 
@@ -481,6 +522,8 @@ final class RoutePlaybackController: ObservableObject {
         refreshReadyMessage()
         restorePlaybackStatusIfNeeded()
         bumpPathRevision()
+        applyPendingRecovery()
+        reapplyRecoveredProgress()
     }
 
     private var isPlaybackInProgress: Bool {
@@ -521,9 +564,12 @@ final class RoutePlaybackController: ObservableObject {
         let generation = playbackGeneration
         writeGate.reset()
         beginRouteKeepAlive()
+        interruption = .playing
+        recoveredProgress = nil
         phase = .playing
         statusMessage = playbackStatusMessage()
         playbackOrigin = Date().addingTimeInterval(-elapsed)
+        captureSession(force: true)
         playbackTask = Task { [weak self] in
             await self?.runLoop(generation: generation)
         }
@@ -549,8 +595,7 @@ final class RoutePlaybackController: ObservableObject {
                 // 写入挂起期间，这一轮可能已取消，或已被新播放替换。
                 guard isPlaybackCurrent(generation) else { return }
                 if !applied {
-                    pause()
-                    statusMessage = pushFailureMessage
+                    notePushFailure()
                     return
                 }
                 writeGate.markWritten(tick.coordinatePair, at: now)
@@ -561,6 +606,7 @@ final class RoutePlaybackController: ObservableObject {
                     phase = .finished
                     statusMessage = finishedStatusMessage()
                     endRouteKeepAlive()
+                    clearSession()
                     return
                 }
                 playbackOrigin = Date()
@@ -570,6 +616,7 @@ final class RoutePlaybackController: ObservableObject {
                 continue
             }
             statusMessage = playbackStatusMessage()
+            captureSession(force: false)
             try? await Task.sleep(nanoseconds: tickIntervalNanoseconds)
         }
         if isPlaybackCurrent(generation), phase == .playing {
@@ -579,6 +626,84 @@ final class RoutePlaybackController: ObservableObject {
 
     private func isPlaybackCurrent(_ generation: UInt64) -> Bool {
         generation == playbackGeneration && !Task.isCancelled
+    }
+
+    private func notePushFailure() {
+        if phase == .playing {
+            pause()
+        }
+        interruption = .pushFailed
+        statusMessage = pushFailureMessage
+        captureSession(force: true)
+    }
+
+    private func captureSession(force: Bool) {
+        guard let start, let end else { return }
+        let now = Date()
+        if !force,
+           abs(progress - lastSessionProgress) < 0.01,
+           now.timeIntervalSince(lastSessionWrite) < 5 {
+            return
+        }
+        sessionStore.save(RouteSession(
+            routeID: editingSavedRoute?.id,
+            name: editingSavedRoute?.name ?? travelMode.displayName,
+            start: start,
+            end: end,
+            viaPoints: vias,
+            travelMode: travelMode,
+            speedKilometersPerHour: speedKilometersPerHour,
+            offsetMeters: offsetMeters,
+            repeatMode: repeatMode,
+            straightFallback: pathFallback,
+            progress: progress,
+            elapsed: elapsed,
+            headingForward: headingForward,
+            interruption: interruption,
+            updatedAt: now
+        ))
+        lastSessionProgress = progress
+        lastSessionWrite = now
+    }
+
+    private func clearSession() {
+        sessionStore.clear()
+        lastSessionProgress = -1
+        lastSessionWrite = .distantPast
+    }
+
+    private func applyPendingRecovery() {
+        guard let session = pendingRecovery, path != nil else { return }
+        progress = min(1, max(0, session.progress))
+        elapsed = session.elapsed
+        headingForward = session.headingForward
+        interruption = session.interruption == .playing ? .userPaused : session.interruption
+        recoveredProgress = progress
+        snapCurrentToProgress()
+        if interruption == .activationFailed {
+            phase = .preparing
+            statusMessage = pushFailureMessage
+        } else if interruption == .pushFailed {
+            phase = .paused
+            statusMessage = pushFailureMessage
+        } else {
+            phase = .paused
+            statusMessage = RouteActivitySync.userPauseMessage
+        }
+        pendingRecovery = nil
+        captureSession(force: true)
+    }
+
+    private func reapplyRecoveredProgress() {
+        guard let recoveredProgress, path != nil else { return }
+        guard phase == .paused || phase == .preparing else { return }
+        progress = recoveredProgress
+        elapsed = RoutePlayback.elapsed(
+            progress: progress,
+            totalMeters: path?.totalMeters ?? 0,
+            speedMetersPerSecond: speedMetersPerSecond
+        )
+        snapCurrentToProgress()
     }
 
     func bumpPathRevision() {
@@ -606,7 +731,9 @@ final class RoutePlaybackController: ObservableObject {
             noteActivated()
         } else {
             cancelWaiting()
+            interruption = .activationFailed
             statusMessage = pushFailureMessage
+            captureSession(force: true)
         }
     }
 
