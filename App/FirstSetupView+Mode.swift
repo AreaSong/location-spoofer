@@ -188,10 +188,7 @@ extension FirstSetupView {
     }
 
     var appModeNetworkBlockedMessage: String? {
-        AppModeNetworkRequirement.blockedMessage(
-            wifiEnabled: net.isWiFiEnabled,
-            cellularEnabled: net.usesCellular
-        )
+        AppModeNetworkRequirement.blockedMessage(net.appModeNetworkStatus)
     }
 
     func selectMode(_ mode: ProxyRuntimeMode) {

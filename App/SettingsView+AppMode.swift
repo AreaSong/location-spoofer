@@ -24,10 +24,7 @@ extension SettingsView {
     }
 
     var appModeNetworkBlockedMessage: String? {
-        AppModeNetworkRequirement.blockedMessage(
-            wifiEnabled: net.isWiFiEnabled,
-            cellularEnabled: net.usesCellular
-        )
+        AppModeNetworkRequirement.blockedMessage(net.appModeNetworkStatus)
     }
 
     func switchRuntimeMode(to newMode: ProxyRuntimeMode) {
@@ -40,8 +37,20 @@ extension SettingsView {
         modeOperationRunning = true
         Task { @MainActor in
             defer { modeOperationRunning = false }
-            if runtimeMode.mode == .developerTunnel {
-                await RouteLocationSetupStore.shared.clear()
+            let cleanup = RuntimeModeSwitchCleanup.required(from: runtimeMode.mode, to: newMode)
+            if cleanup.contains(.developerSimulation) {
+                if let failure = await RouteLocationSetupStore.shared.clear() {
+                    presentDeveloperSimulationClearBlocked(failure)
+                    return
+                }
+            }
+            if cleanup.contains(.thirdPartyWLOC) {
+                do {
+                    try await thirdPartyProxy.clear()
+                } catch {
+                    presentThirdPartyCoordinateClearBlocked(destination: newMode, error: error)
+                    return
+                }
             }
             switch newMode {
             case .thirdParty:
@@ -77,13 +86,6 @@ extension SettingsView {
                 }
             case .localWiFi:
                 ThirdPartyModuleRuntime.shutdown()
-                do {
-                    try await thirdPartyProxy.clear()
-                } catch {
-                    RuntimeLogger.warning("APP", "Mode", "切换 APP 模式前无法清除第三方坐标", details: [
-                        "错误": error.localizedDescription
-                    ])
-                }
                 runtimeMode.setMode(.localWiFi)
                 await setup.prepareLocalServices()
                 if runtimeMode.isInitialized(.localWiFi) {
@@ -99,6 +101,37 @@ extension SettingsView {
                 }
             }
         }
+    }
+
+    func presentThirdPartyCoordinateClearBlocked(destination: ProxyRuntimeMode, error: Error) {
+        let diagnosis = ThirdPartyProxyError.diagnosis(for: error)
+        let followUp: String
+        switch destination {
+        case .localWiFi:
+            followUp = "请处理后重试，避免旧坐标与 APP 模式同时拦截。"
+        case .developerTunnel:
+            followUp = "请处理后重试，避免第三方客户端中的旧坐标在开发者隧道模式下继续生效。"
+        case .thirdParty:
+            followUp = "请处理后重试。"
+        }
+        RuntimeLogger.warning("APP", "Mode", "切换模式前无法清除第三方坐标", details: [
+            "目标模式": destination.displayName,
+            "错误": error.localizedDescription,
+            "原因": diagnosis.title,
+            "处理建议": ThirdPartyProxyError.recoverySuggestion(for: error)
+        ])
+        proxyOperationAlertTitle = destination == .localWiFi
+            ? "未能切换到 APP 模式"
+            : "未能切换到\(destination.displayName)"
+        proxyOperationError = "无法清除第三方客户端坐标，已保持当前模式。\(diagnosis.summary) \(followUp)"
+    }
+
+    func presentDeveloperSimulationClearBlocked(_ failure: RouteLocationPushFailure) {
+        RuntimeLogger.warning("APP", "Mode", "切换模式前无法关闭系统模拟定位", details: [
+            "错误": failure.message
+        ])
+        proxyOperationAlertTitle = "未能切换模式"
+        proxyOperationError = "无法关闭系统模拟定位，已保持开发者隧道模式。\(failure.message)"
     }
 
     func presentThirdPartyUnavailable(for error: Error) {

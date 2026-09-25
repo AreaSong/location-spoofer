@@ -47,7 +47,7 @@ final class LocationActionCoordinatorTests: XCTestCase {
         let coordinator = LocationActionCoordinator(proxy: proxy, settings: settings)
         let favorite = FavoriteLocation(name: "深圳湾", latitude: 22.494, longitude: 113.951, accuracy: 20)
 
-        XCTAssertFalse(coordinator.applyVerified(favorite))
+        XCTAssertNil(coordinator.applyVerified(favorite))
         XCTAssertNil(proxy.lastCoordinates)
         XCTAssertNil(settings.saved)
     }
@@ -79,6 +79,10 @@ final class LocationActionCoordinatorTests: XCTestCase {
         XCTAssertEqual(proxy.lastCoordinates?.longitude, favorite.coordinatePair.wgs84.longitude - 0.02)
         XCTAssertEqual(settings.saved?.latitude, favorite.coordinatePair.wgs84.latitude + 0.01)
         XCTAssertEqual(settings.saved?.longitude, favorite.coordinatePair.wgs84.longitude - 0.02)
+        XCTAssertEqual(settings.saved?.anchorLatitude, favorite.coordinatePair.wgs84.latitude)
+        XCTAssertEqual(settings.saved?.anchorLongitude, favorite.coordinatePair.wgs84.longitude)
+        XCTAssertEqual(settings.saved?.switchLatitude, favorite.coordinatePair.wgs84.latitude)
+        XCTAssertEqual(settings.saved?.switchLongitude, favorite.coordinatePair.wgs84.longitude)
     }
 
     func testUpdateSpoofedWGS84WritesExactCoordinatesWithoutRadius() {

@@ -1,7 +1,7 @@
 import Foundation
 
 enum SpoofSelectionSwitch {
-    /// 切换按钮比较的是已经写入的坐标，不是路线播放里每秒插值的位置。
+    /// 比较用户提交时选中的目标。随机偏移后的实际写入点不参与比较，否则按钮会一直显示。
     static func needsSwitch(
         isActive: Bool,
         writtenLatitude: Double?,

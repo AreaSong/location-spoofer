@@ -9,8 +9,7 @@ final class LocationUseAvailabilityTests: XCTestCase {
         )
         let block = LocationUseAvailability.current(
             mode: .localWiFi,
-            wifiEnabled: false,
-            cellularEnabled: true,
+            network: .cellularOnly,
             runtimeFailure: .thirdParty("模块没有拦住请求"),
             signing: signing
         )
@@ -21,8 +20,7 @@ final class LocationUseAvailabilityTests: XCTestCase {
     func testAppModeWithoutWiFiBlocksAndIgnoresThirdPartyFailure() {
         let block = LocationUseAvailability.current(
             mode: .localWiFi,
-            wifiEnabled: false,
-            cellularEnabled: true,
+            network: .cellularOnly,
             runtimeFailure: .thirdParty("模块没有拦住请求"),
             signing: .unknownStatus
         )
@@ -34,13 +32,27 @@ final class LocationUseAvailabilityTests: XCTestCase {
         )
     }
 
+    func testAppModeBlocksWhenWiFiInterfaceExistsButPathIsUnsatisfied() {
+        let block = LocationUseAvailability.current(
+            mode: .localWiFi,
+            network: AppModeNetworkStatus(pathSatisfied: false, wifiEnabled: true, cellularEnabled: false),
+            runtimeFailure: nil,
+            signing: .unknownStatus
+        )
+        XCTAssertEqual(
+            block,
+            .appModeNeedsWiFi(
+                "当前 Wi-Fi 网络不可用。APP 模式需要可用的 Wi-Fi；没有网络时请改用第三方代理模式并保持小火箭开启。"
+            )
+        )
+    }
+
     func testThirdPartyFailureOnlyAppliesInThirdPartyMode() {
         let failure = LocationRuntimeFailure.thirdParty("模块没有拦住请求")
         XCTAssertEqual(
             LocationUseAvailability.current(
                 mode: .thirdParty,
-                wifiEnabled: false,
-                cellularEnabled: true,
+                network: .cellularOnly,
                 runtimeFailure: failure,
                 signing: .unknownStatus
             ),
@@ -49,8 +61,7 @@ final class LocationUseAvailabilityTests: XCTestCase {
         XCTAssertNil(
             LocationUseAvailability.current(
                 mode: .localWiFi,
-                wifiEnabled: true,
-                cellularEnabled: false,
+                network: .satisfiedWiFi,
                 runtimeFailure: failure,
                 signing: .unknownStatus
             )
@@ -61,13 +72,25 @@ final class LocationUseAvailabilityTests: XCTestCase {
         XCTAssertNil(
             LocationUseAvailability.current(
                 mode: .localWiFi,
-                wifiEnabled: true,
-                cellularEnabled: false,
+                network: .satisfiedWiFi,
                 runtimeFailure: nil,
                 signing: .unknownStatus
             )
         )
     }
+}
+
+private extension AppModeNetworkStatus {
+    static let cellularOnly = AppModeNetworkStatus(
+        pathSatisfied: true,
+        wifiEnabled: false,
+        cellularEnabled: true
+    )
+    static let satisfiedWiFi = AppModeNetworkStatus(
+        pathSatisfied: true,
+        wifiEnabled: true,
+        cellularEnabled: false
+    )
 }
 
 private extension SigningExpiryStatus {

@@ -65,7 +65,7 @@ final class LocationActionCoordinator: ObservableObject {
                 finishCancelledApply()
                 return false
             }
-            return commit(favorite)
+            return commit(favorite) != nil
         } catch {
             failApply(error)
             return false
@@ -75,12 +75,12 @@ final class LocationActionCoordinator: ObservableObject {
     /// Commits a target after SetupCoordinator has completed verification.
     /// This method is synchronous on MainActor so selection revision validation
     /// and the final settings/proxy write cannot be interleaved by a newer map event.
-    func applyVerified(_ favorite: FavoriteLocation) -> Bool {
+    func applyVerified(_ favorite: FavoriteLocation) -> (latitude: Double, longitude: Double)? {
         guard proxy.isRunning else {
             failApply(ProxyError.startFailed)
-            return false
+            return nil
         }
-        guard beginApply() else { return false }
+        guard beginApply() else { return nil }
         return commit(favorite)
     }
 
@@ -119,7 +119,7 @@ final class LocationActionCoordinator: ObservableObject {
         return true
     }
 
-    private func commit(_ favorite: FavoriteLocation) -> Bool {
+    private func commit(_ favorite: FavoriteLocation) -> (latitude: Double, longitude: Double)? {
         // WLOC 合约固定使用持久化的 WGS-84 值，不依赖当前地图地图坐标标准。
         let original = favorite.coordinatePair.wgs84
         let radius = randomRadiusMeters()
@@ -128,7 +128,9 @@ final class LocationActionCoordinator: ObservableObject {
             longitude: wgs.longitude,
             latitude: wgs.latitude,
             accuracy: favorite.accuracy,
-            enabled: true
+            enabled: true,
+            anchorLatitude: original.latitude,
+            anchorLongitude: original.longitude
         )
         settings.save(value)
         _ = proxy.setCoords(
@@ -160,7 +162,7 @@ final class LocationActionCoordinator: ObservableObject {
         state = .idle
         virtualLocationEnabled = true
         message = "虚拟定位已开启"
-        return true
+        return (wgs.latitude, wgs.longitude)
     }
 
     private func finishCancelledApply() {

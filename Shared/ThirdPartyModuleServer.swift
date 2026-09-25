@@ -14,12 +14,11 @@ enum ThirdPartyModuleRuntime {
     static func prepareForImport() {
         startServer()
         guard ThirdPartyModuleSourceStore.shared.distribution == .onDevice else { return }
-        BackgroundKeepAlive.shared.start()
+        BackgroundKeepAlive.shared.retain(.thirdPartyImport)
     }
 
     static func endImportKeepAlive() {
-        guard !ProxyManager.shared.isRunning else { return }
-        BackgroundKeepAlive.shared.stop()
+        BackgroundKeepAlive.shared.release(.thirdPartyImport)
     }
 
     static func shutdown() {

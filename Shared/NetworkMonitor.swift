@@ -17,6 +17,14 @@ final class NetworkMonitor: ObservableObject {
     @Published private(set) var usesCellular = false
     @Published private(set) var currentSSID: String?
 
+    var appModeNetworkStatus: AppModeNetworkStatus {
+        AppModeNetworkStatus(
+            pathSatisfied: isSatisfied,
+            wifiEnabled: isWiFiEnabled,
+            cellularEnabled: usesCellular
+        )
+    }
+
     /// Wi-Fi 重连、接口切换或 SSID 变化时触发。调用方必须在离开页面时移除订阅。
     private var wifiChangeHandlers: [UUID: @MainActor (WiFiChangeReason) -> Void] = [:]
 

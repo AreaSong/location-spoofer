@@ -25,7 +25,7 @@ final class SpoofSession: ObservableObject {
         var accuracyMeters: () -> Int
         var pauseRoute: () -> Void
         var verify: () async -> VerificationResult
-        var applyVerified: (FavoriteLocation) -> Bool
+        var applyVerified: (FavoriteLocation) -> (latitude: Double, longitude: Double)?
         var updateLocalWGS84: (Double, Double, Int) -> Bool
         var clearLocal: () -> Void
         var saveThirdParty: (FavoriteLocation, Double?) async throws -> ThirdPartyProxySettingsResponse
@@ -35,13 +35,16 @@ final class SpoofSession: ObservableObject {
         var recordThirdPartyFailure: (Error) -> Void
         var recordThirdPartyMessage: (String) -> Void
         var pushDeveloper: (FavoriteLocation) async -> RouteLocationPushFailure?
-        var clearDeveloper: () async -> Void
+        var clearDeveloper: () async -> RouteLocationPushFailure?
     }
 
     @Published private(set) var state: SpoofState
-    /// 已经写入代理或第三方客户端的坐标，不跟随路线播放的插值。
+    /// 已经写入代理或第三方客户端的坐标（含随机偏移），不跟随路线播放的插值。
     @Published private(set) var writtenLatitude: Double?
     @Published private(set) var writtenLongitude: Double?
+    /// 「切换到此处」比较的目标。随机偏移时这是用户选中的点，不是偏移后的写入值。
+    @Published private(set) var switchLatitude: Double?
+    @Published private(set) var switchLongitude: Double?
     @Published private(set) var effectRevision: UInt64 = 0
 
     private var services: Services?
@@ -52,11 +55,15 @@ final class SpoofSession: ObservableObject {
     init(
         state: SpoofState = .idle,
         writtenLatitude: Double? = nil,
-        writtenLongitude: Double? = nil
+        writtenLongitude: Double? = nil,
+        switchLatitude: Double? = nil,
+        switchLongitude: Double? = nil
     ) {
         self.state = state
         self.writtenLatitude = writtenLatitude
         self.writtenLongitude = writtenLongitude
+        self.switchLatitude = switchLatitude ?? writtenLatitude
+        self.switchLongitude = switchLongitude ?? writtenLongitude
     }
 
     func bind(_ services: Services) {
@@ -73,8 +80,12 @@ final class SpoofSession: ObservableObject {
         operationTask?.cancel()
         operationTask = nil
         state = active ? .active : .idle
-        writtenLatitude = active ? latitude : nil
-        writtenLongitude = active ? longitude : nil
+        remember(
+            writtenLatitude: active ? latitude : nil,
+            writtenLongitude: active ? longitude : nil,
+            switchLatitude: active ? latitude : nil,
+            switchLongitude: active ? longitude : nil
+        )
         effectRevision &+= 1
     }
 
@@ -128,8 +139,7 @@ final class SpoofSession: ObservableObject {
             break
         }
         services.clearLocal()
-        writtenLatitude = nil
-        writtenLongitude = nil
+        clearWrittenCoordinate()
         state = .idle
         enqueue(.resetLocalDiagnosis, .deactivationSucceeded)
     }
@@ -152,8 +162,7 @@ final class SpoofSession: ObservableObject {
     func cancelForModeChange() {
         guard let services else { return }
         invalidateOperation()
-        writtenLatitude = nil
-        writtenLongitude = nil
+        clearWrittenCoordinate()
         if services.mode() == .localWiFi {
             state = services.localSpoofEnabled() ? .active : .idle
         } else {
@@ -175,13 +184,21 @@ final class SpoofSession: ObservableObject {
         guard let services else { return }
         let failure = await services.pushDeveloper(target)
         guard accept(operationID), services.mode() == .developerTunnel else { return }
+        if failure == .superseded {
+            finish(operationID)
+            return
+        }
         if let failure {
             state = wasActive ? .active : .idle
             enqueue(.developerPushFailed(failure.message))
         } else {
             state = .active
-            writtenLatitude = target.latitude
-            writtenLongitude = target.longitude
+            remember(
+                writtenLatitude: target.latitude,
+                writtenLongitude: target.longitude,
+                switchLatitude: target.latitude,
+                switchLongitude: target.longitude
+            )
             enqueue(.activationSucceeded)
         }
         finish(operationID)
@@ -189,8 +206,18 @@ final class SpoofSession: ObservableObject {
 
     private func clearDeveloperLocation(operationID: UInt64) async {
         guard let services else { return }
-        await services.clearDeveloper()
+        let failure = await services.clearDeveloper()
         guard accept(operationID) else { return }
+        if failure == .superseded {
+            finish(operationID)
+            return
+        }
+        if let failure {
+            state = .active
+            enqueue(.developerPushFailed(failure.message))
+            finish(operationID)
+            return
+        }
         clearWrittenCoordinate()
         state = .idle
         enqueue(.deactivationSucceeded)
@@ -209,8 +236,12 @@ final class SpoofSession: ObservableObject {
             let response = try await performSave(target, randomRadius: radius)
             guard accept(operationID), services.mode() == .thirdParty else { return }
             state = .active
-            writtenLatitude = response.latitude
-            writtenLongitude = response.longitude
+            remember(
+                writtenLatitude: response.latitude,
+                writtenLongitude: response.longitude,
+                switchLatitude: target.latitude,
+                switchLongitude: target.longitude
+            )
             services.clearThirdPartyFailure()
             logThirdPartySave(services, selectionChanged: selectionRevision != services.selectionRevision())
             enqueue(.activationSucceeded, .offerCommunityContribution)
@@ -254,16 +285,26 @@ final class SpoofSession: ObservableObject {
     }
 
     private func applyLocalVerification(_ target: FavoriteLocation, services: Services) {
-        let applied = services.applyVerified(target)
-        state = applied ? .active : .idle
-        if applied {
-            writtenLatitude = target.latitude
-            writtenLongitude = target.longitude
-            enqueue(.resetLocalDiagnosis, .activationSucceeded)
+        guard let written = services.applyVerified(target) else {
+            state = .idle
+            RuntimeLogger.info("APP", "定位", "验证结果", details: [
+                "success": "true",
+                "applied": "false",
+                "spoofState": String(describing: state)
+            ])
+            return
         }
+        state = .active
+        remember(
+            writtenLatitude: written.latitude,
+            writtenLongitude: written.longitude,
+            switchLatitude: target.latitude,
+            switchLongitude: target.longitude
+        )
+        enqueue(.resetLocalDiagnosis, .activationSucceeded)
         RuntimeLogger.info("APP", "定位", "验证结果", details: [
             "success": "true",
-            "applied": String(applied),
+            "applied": "true",
             "spoofState": String(describing: state)
         ])
     }
@@ -312,8 +353,14 @@ final class SpoofSession: ObservableObject {
         let favorite = FavoriteLocation(name: "路线", coordinatePair: pair, accuracy: services.accuracyMeters())
         do {
             let response = try await performSave(favorite, randomRadius: offsetMeters)
-            writtenLatitude = response.latitude ?? pair.wgs84.latitude
-            writtenLongitude = response.longitude ?? pair.wgs84.longitude
+            let latitude = response.latitude ?? pair.wgs84.latitude
+            let longitude = response.longitude ?? pair.wgs84.longitude
+            remember(
+                writtenLatitude: latitude,
+                writtenLongitude: longitude,
+                switchLatitude: latitude,
+                switchLongitude: longitude
+            )
             services.clearThirdPartyFailure()
             return true
         } catch {
@@ -335,8 +382,12 @@ final class SpoofSession: ObservableObject {
         let wgs = written.wgs84
         let applied = services.updateLocalWGS84(wgs.latitude, wgs.longitude, services.accuracyMeters())
         if applied {
-            writtenLatitude = wgs.latitude
-            writtenLongitude = wgs.longitude
+            remember(
+                writtenLatitude: wgs.latitude,
+                writtenLongitude: wgs.longitude,
+                switchLatitude: wgs.latitude,
+                switchLongitude: wgs.longitude
+            )
         }
         return applied
     }
@@ -362,8 +413,12 @@ final class SpoofSession: ObservableObject {
 
     private func applyQuery(_ response: ThirdPartyProxySettingsResponse, services: Services) {
         if response.success, let latitude = response.latitude, let longitude = response.longitude {
-            writtenLatitude = latitude
-            writtenLongitude = longitude
+            remember(
+                writtenLatitude: latitude,
+                writtenLongitude: longitude,
+                switchLatitude: latitude,
+                switchLongitude: longitude
+            )
             state = .active
             services.clearThirdPartyFailure()
             return
@@ -407,8 +462,19 @@ final class SpoofSession: ObservableObject {
     }
 
     private func clearWrittenCoordinate() {
-        writtenLatitude = nil
-        writtenLongitude = nil
+        remember(writtenLatitude: nil, writtenLongitude: nil, switchLatitude: nil, switchLongitude: nil)
+    }
+
+    private func remember(
+        writtenLatitude: Double?,
+        writtenLongitude: Double?,
+        switchLatitude: Double?,
+        switchLongitude: Double?
+    ) {
+        self.writtenLatitude = writtenLatitude
+        self.writtenLongitude = writtenLongitude
+        self.switchLatitude = switchLatitude
+        self.switchLongitude = switchLongitude
     }
 
     private func enqueue(_ effects: SpoofSessionEffect...) {

@@ -26,6 +26,12 @@ struct WlocSettings: Codable {
     var latitude: Double
     var accuracy: Int
     var enabled: Bool
+    /// 用户选中的目标。开启随机偏移后，`latitude`/`longitude` 是实际写入值，比较「切换到此处」要用这里。
+    var anchorLatitude: Double? = nil
+    var anchorLongitude: Double? = nil
+
+    var switchLatitude: Double { anchorLatitude ?? latitude }
+    var switchLongitude: Double { anchorLongitude ?? longitude }
 }
 
 enum WlocSettingsStore {

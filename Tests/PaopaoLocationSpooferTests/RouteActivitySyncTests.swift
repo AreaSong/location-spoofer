@@ -37,8 +37,49 @@ final class RouteActivitySyncTests: XCTestCase {
 
     func testSameMinuteDoesNotPushAgain() {
         let first = playingSnapshot(remainingMeters: 900)
-        let later = playingSnapshot(remainingMeters: 860)
+        var later = first
+        later.progress += 0.009
         XCTAssertFalse(RouteActivitySync.shouldUpdate(first, to: later))
+    }
+
+    func testProgressOrDetailChangePushes() {
+        let first = playingSnapshot(remainingMeters: 900)
+        let detailChanged = playingSnapshot(remainingMeters: 860)
+        XCTAssertNotEqual(first.detailText, detailChanged.detailText)
+        XCTAssertTrue(RouteActivitySync.shouldUpdate(first, to: detailChanged))
+
+        var progressChanged = first
+        progressChanged.progress += RouteActivitySync.minimumProgressDelta
+        XCTAssertTrue(RouteActivitySync.shouldUpdate(first, to: progressChanged))
+    }
+
+    @MainActor
+    func testIslandCommandWaitsUntilHandlersExist() {
+        let suite = "route-activity-command-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        let previous = RouteActivityCommandStore.defaults
+        RouteActivityCommandStore.defaults = defaults
+        defer {
+            RouteActivityCommandStore.defaults = previous
+            defaults.removePersistentDomain(forName: suite)
+            RouteActivityBridge.showSpot = nil
+            RouteActivityBridge.showRoute = nil
+            RouteActivityBridge.primary = nil
+        }
+
+        RouteActivityBridge.showSpot = nil
+        RouteActivityBridge.showRoute = nil
+        RouteActivityBridge.primary = nil
+        var ran = false
+        RouteActivityBridge.submit("primary")
+        XCTAssertFalse(ran)
+
+        RouteActivityBridge.showSpot = {}
+        RouteActivityBridge.showRoute = {}
+        RouteActivityBridge.primary = { ran = true }
+        RouteActivityBridge.drainPending()
+        XCTAssertTrue(ran)
+        XCTAssertNil(RouteActivityCommandStore.consume())
     }
 
     func testMinuteChangePushes() {

@@ -2,6 +2,10 @@ import Combine
 import XCTest
 @testable import PaopaoLocationSpoofer
 
+private final class ActivationGate: @unchecked Sendable {
+    var resume: (() -> Void)?
+}
+
 final class RoutePlaybackTests: XCTestCase {
     func testDistanceUsesWGS84() {
         let start = CoordinateConverter.coordinatePair(
@@ -256,6 +260,53 @@ final class RoutePlaybackControllerTests: XCTestCase {
         XCTAssertEqual(route.progress, 0)
     }
 
+    @MainActor
+    func testExitBeforeActivationStartsDoesNotWrite() async {
+        let route = preparedRoute(repeatMode: .once)
+        var writes = 0
+        route.applyCoordinate = { _ in
+            writes += 1
+            return true
+        }
+        route.requestPlay()
+        route.beginActivation()
+        let pending = route.exit()
+
+        await Task.yield()
+        await pending?.value
+        XCTAssertNil(pending)
+        XCTAssertEqual(writes, 0)
+        XCTAssertEqual(route.phase, .inactive)
+        XCTAssertFalse(route.waitingForActivation)
+    }
+
+    @MainActor
+    func testExitDuringActivationDoesNotStartPlayback() async {
+        let route = preparedRoute(repeatMode: .once)
+        let started = expectation(description: "write started")
+        let gate = ActivationGate()
+        var writes = 0
+        route.applyCoordinate = { _ in
+            writes += 1
+            started.fulfill()
+            await withCheckedContinuation { continuation in
+                gate.resume = { continuation.resume() }
+            }
+            return true
+        }
+        route.requestPlay()
+        route.beginActivation()
+        await fulfillment(of: [started], timeout: 2)
+        let pending = route.exit()
+        gate.resume?()
+
+        await pending?.value
+        XCTAssertNotNil(pending)
+        XCTAssertEqual(writes, 1)
+        XCTAssertEqual(route.phase, .inactive)
+        XCTAssertFalse(route.waitingForActivation)
+    }
+
     func testPlaybackTicksDoNotPublishRouteStructure() async {
         let route = preparedRoute(repeatMode: .once)
         route.tickIntervalNanoseconds = 20_000_000
@@ -357,6 +408,131 @@ final class RoutePlaybackControllerTests: XCTestCase {
         XCTAssertFalse(route.headingForward)
     }
 
+    func testStaleWriteCannotPauseOrMoveTheReplacementRoute() async {
+        let route = preparedRoute(repeatMode: .once)
+        route.ignoresWriteGate = true
+        route.tickIntervalNanoseconds = 1_000_000
+        let entered = expectation(description: "旧写入挂起")
+        let hold = PlaybackWriteHold()
+        route.applyCoordinate = { _ in
+            await hold.wait(entered)
+        }
+        route.requestPlay()
+        route.noteActivated()
+        await fulfillment(of: [entered], timeout: 2)
+
+        let start = CoordinateConverter.coordinatePair(lat: 31.23, lon: 121.47, mapCoordinateSystem: .wgs84)
+        let end = CoordinateConverter.coordinatePair(lat: 31.24, lon: 121.47, mapCoordinateSystem: .wgs84)
+        route.load(SavedRoute(
+            name: "新路线",
+            start: start,
+            end: end,
+            travelMode: .walk,
+            speedKilometersPerHour: 5,
+            offsetMeters: 0,
+            repeatMode: .once,
+            pathPoints: [start, end]
+        ))
+        route.ignoresWriteGate = true
+        let replacementEntered = expectation(description: "新写入挂起")
+        let replacementHold = PlaybackWriteHold()
+        route.applyCoordinate = { _ in
+            await replacementHold.wait(replacementEntered)
+        }
+        route.requestPlay()
+        route.noteActivated()
+        await fulfillment(of: [replacementEntered], timeout: 2)
+
+        hold.resume(returning: true)
+        try? await Task.sleep(nanoseconds: 50_000_000)
+
+        XCTAssertEqual(route.phase, .playing)
+        XCTAssertNotEqual(route.statusMessage, route.pushFailureMessage)
+        XCTAssertEqual(route.current?.wgs84.latitude ?? 0, start.wgs84.latitude, accuracy: 0.000_1)
+        replacementHold.resume(returning: true)
+        route.pause()
+    }
+
+    func testStaleFailureCannotPauseTheReplacementRoute() async {
+        let route = preparedRoute(repeatMode: .once)
+        route.ignoresWriteGate = true
+        let entered = expectation(description: "失败写入挂起")
+        let hold = PlaybackWriteHold()
+        route.applyCoordinate = { _ in
+            await hold.wait(entered)
+        }
+        route.requestPlay()
+        route.noteActivated()
+        await fulfillment(of: [entered], timeout: 2)
+
+        route.load(sampleSavedRoute(repeatMode: .loop))
+        route.ignoresWriteGate = true
+        route.tickIntervalNanoseconds = 60_000_000_000
+        route.applyCoordinate = { _ in true }
+        route.requestPlay()
+        route.noteActivated()
+
+        hold.resume(returning: false)
+        try? await Task.sleep(nanoseconds: 50_000_000)
+
+        XCTAssertEqual(route.phase, .playing)
+        XCTAssertNotEqual(route.statusMessage, route.pushFailureMessage)
+        route.pause()
+    }
+
+    func testStaleFinishedWriteCannotCompleteTheReplacementRoute() async {
+        let route = preparedRoute(repeatMode: .once)
+        let start = CoordinateConverter.coordinatePair(lat: 22.494, lon: 113.951, mapCoordinateSystem: .wgs84)
+        let end = CoordinateConverter.coordinatePair(lat: 22.49415, lon: 113.951, mapCoordinateSystem: .wgs84)
+        route.load(SavedRoute(
+            name: "短路线",
+            start: start,
+            end: end,
+            travelMode: .bike,
+            speedKilometersPerHour: 40,
+            offsetMeters: 0,
+            repeatMode: .once,
+            pathPoints: [start, end]
+        ))
+        route.ignoresWriteGate = true
+        route.tickIntervalNanoseconds = 10_000_000
+        route.setSpeedKilometersPerHour(40)
+        let entered = expectation(description: "终点写入挂起")
+        let hold = PlaybackWriteHold()
+        route.applyCoordinate = { _ in
+            guard route.progress >= 1 else { return true }
+            return await hold.wait(entered)
+        }
+        route.requestPlay()
+        route.noteActivated()
+        await fulfillment(of: [entered], timeout: 3)
+
+        let nextStart = CoordinateConverter.coordinatePair(lat: 31.23, lon: 121.47, mapCoordinateSystem: .wgs84)
+        let nextEnd = CoordinateConverter.coordinatePair(lat: 31.25, lon: 121.47, mapCoordinateSystem: .wgs84)
+        route.load(SavedRoute(
+            name: "下一条",
+            start: nextStart,
+            end: nextEnd,
+            travelMode: .walk,
+            speedKilometersPerHour: 5,
+            offsetMeters: 0,
+            repeatMode: .once,
+            pathPoints: [nextStart, nextEnd]
+        ))
+        route.ignoresWriteGate = true
+        route.tickIntervalNanoseconds = 60_000_000_000
+        route.applyCoordinate = { _ in true }
+        route.requestPlay()
+        route.noteActivated()
+
+        hold.resume(returning: true)
+        try? await Task.sleep(nanoseconds: 50_000_000)
+
+        XCTAssertEqual(route.phase, .playing)
+        XCTAssertFalse(route.statusMessage.contains("已走到终点"))
+        route.pause()
+    }
+
     func testRequestPlayResetsHeadingAfterRoundTripLeg() {
         let route = preparedRoute(repeatMode: .roundTrip)
         XCTAssertFalse(route.handleFinishedLeg())
@@ -443,6 +619,52 @@ final class RoutePlaybackControllerTests: XCTestCase {
         XCTAssertTrue(route.headingForward)
     }
 
+    func testPausedTravelModeChangeKeepsProgress() async {
+        let previous = RouteDirections.provider
+        RouteDirections.provider = DetourRouteDirections()
+        defer { RouteDirections.provider = previous }
+
+        let route = preparedRoute(repeatMode: .once)
+        route.ignoresWriteGate = true
+        route.tickIntervalNanoseconds = 20_000_000
+        route.setSpeedKilometersPerHour(40)
+        route.applyCoordinate = { _ in true }
+        route.requestPlay()
+        route.noteActivated()
+        try? await Task.sleep(nanoseconds: 1_500_000_000)
+        route.pause()
+
+        let pausedProgress = route.progress
+        XCTAssertGreaterThan(pausedProgress, 0.04)
+        let revision = route.pathRevision
+        route.applyTravelMode(.walk)
+
+        let deadline = Date().addingTimeInterval(2)
+        while route.pathRevision == revision, Date() < deadline {
+            await Task.yield()
+        }
+        XCTAssertGreaterThan(route.pathRevision, revision)
+        XCTAssertEqual(route.phase, .paused)
+        XCTAssertEqual(route.progress, pausedProgress, accuracy: 0.000_1)
+
+        let expected = RoutePlayback.interpolate(path: route.path!, progress: pausedProgress)
+        XCTAssertEqual(route.current?.wgs84.latitude ?? 0, expected.wgs84.latitude, accuracy: 0.000_05)
+        XCTAssertEqual(route.current?.wgs84.longitude ?? 0, expected.wgs84.longitude, accuracy: 0.000_05)
+
+        let entered = expectation(description: "恢复后的第一次定位写入")
+        let hold = PlaybackWriteHold()
+        route.applyCoordinate = { _ in
+            await hold.wait(entered)
+        }
+        route.resume()
+        await fulfillment(of: [entered], timeout: 2)
+
+        XCTAssertEqual(route.progress, pausedProgress, accuracy: 0.03)
+        XCTAssertGreaterThan(route.progress, 0.03)
+        hold.resume(returning: true)
+        route.pause()
+    }
+
     func testPreferencesSurviveNewController() {
         let suite = "RoutePlaybackPrefs.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
@@ -498,5 +720,38 @@ final class RoutePlaybackControllerTests: XCTestCase {
             viaPoints: [corner],
             pathPoints: [start, corner, end]
         )
+    }
+}
+
+private struct DetourRouteDirections: RouteDirectionsProviding {
+    @MainActor
+    func routePoints(
+        from start: CoordinatePair,
+        to end: CoordinatePair,
+        mode: RouteTravelMode
+    ) async -> [CoordinatePair]? {
+        let far = CoordinateConverter.coordinatePair(
+            lat: start.wgs84.latitude + 0.1,
+            lon: start.wgs84.longitude,
+            mapCoordinateSystem: .wgs84
+        )
+        return [start, far, end]
+    }
+}
+
+private final class PlaybackWriteHold: @unchecked Sendable {
+    private var continuation: CheckedContinuation<Bool, Never>?
+
+    func wait(_ entered: XCTestExpectation) async -> Bool {
+        await withCheckedContinuation { continuation in
+            self.continuation = continuation
+            entered.fulfill()
+        }
+    }
+
+    func resume(returning value: Bool) {
+        let continuation = continuation
+        self.continuation = nil
+        continuation?.resume(returning: value)
     }
 }

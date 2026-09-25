@@ -61,7 +61,7 @@ final class RealtimeLocationManager: NSObject, ObservableObject, CLLocationManag
     private let driver: RealtimeLocationDriving
     private let oneShotTimeoutNanoseconds: UInt64
     private let fallbackTimeoutNanoseconds: UInt64
-    private let cacheMaxAge: TimeInterval = 20
+    static let cacheMaxAge: TimeInterval = 20
     private var nextRequestID: UInt64 = 0
     private var activeRequest: ActiveRequest?
     private var timeoutTask: Task<Void, Never>?
@@ -116,7 +116,7 @@ final class RealtimeLocationManager: NSObject, ObservableObject, CLLocationManag
             location = cached
             RealtimeLocationTrace.log("使用 CLLocationManager 新鲜缓存", location: cached, details: [
                 "来源": "manager-memory-or-system",
-                "缓存上限秒": String(Int(cacheMaxAge))
+                "缓存上限秒": String(Int(Self.cacheMaxAge))
             ])
             return cached.coordinate
         }
@@ -264,22 +264,24 @@ final class RealtimeLocationManager: NSObject, ObservableObject, CLLocationManag
         }
     }
 
+    func isFreshEnoughForRealtimeRequest(_ location: CLLocation, now: Date = Date()) -> Bool {
+        Self.isValid(location)
+            && abs(location.timestamp.timeIntervalSince(now)) <= Self.cacheMaxAge
+    }
+
     private func freshestCachedLocation(now: Date = Date()) -> CLLocation? {
         let candidates = [location, driver.location].compactMap { $0 }
-        for candidate in candidates {
+        for candidate in candidates where !isFreshEnoughForRealtimeRequest(candidate, now: now) {
             let valid = Self.isValid(candidate)
             let age = abs(candidate.timestamp.timeIntervalSince(now))
-            if !valid || age > cacheMaxAge {
-                RealtimeLocationTrace.log("跳过 CLLocationManager 缓存样本", location: candidate, details: [
-                    "基础校验通过": String(valid),
-                    "缓存时效通过": String(age <= cacheMaxAge),
-                    "缓存上限秒": String(Int(cacheMaxAge))
-                ], level: .warning)
-            }
+            RealtimeLocationTrace.log("跳过 CLLocationManager 缓存样本", location: candidate, details: [
+                "基础校验通过": String(valid),
+                "缓存时效通过": String(age <= Self.cacheMaxAge),
+                "缓存上限秒": String(Int(Self.cacheMaxAge))
+            ], level: .warning)
         }
         return candidates
-            .filter(Self.isValid)
-            .filter { abs($0.timestamp.timeIntervalSince(now)) <= cacheMaxAge }
+            .filter { isFreshEnoughForRealtimeRequest($0, now: now) }
             .max(by: { $0.timestamp < $1.timestamp })
     }
 

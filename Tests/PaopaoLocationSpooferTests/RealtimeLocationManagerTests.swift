@@ -120,6 +120,29 @@ final class RealtimeLocationManagerTests: XCTestCase {
         XCTAssertFalse(manager.isRequesting)
     }
 
+    func testCachedSampleAtMaxAgeIsFreshAndJustBeyondIsNot() {
+        let manager = RealtimeLocationManager(driver: FakeRealtimeLocationDriver(), timeoutNanoseconds: 1_000_000_000)
+        let now = Date()
+
+        XCTAssertTrue(manager.isFreshEnoughForRealtimeRequest(sample(age: -20, now: now), now: now))
+        XCTAssertFalse(manager.isFreshEnoughForRealtimeRequest(sample(age: -20.001, now: now), now: now))
+        XCTAssertFalse(manager.isFreshEnoughForRealtimeRequest(sample(age: -20, now: now, horizontalAccuracy: -1), now: now))
+    }
+
+    func testStaleCachedLocationFallsThroughToOneShot() async {
+        let driver = FakeRealtimeLocationDriver()
+        driver.location = sample(age: -21, now: Date())
+        let manager = RealtimeLocationManager(driver: driver, timeoutNanoseconds: 1_000_000_000)
+
+        let request = Task { await manager.requestLocation() }
+        while !manager.isRequesting { await Task.yield() }
+
+        XCTAssertEqual(driver.requestLocationCallCount, 1)
+        driver.emit(CLLocation(latitude: 22.54, longitude: 113.94))
+        let coordinate = await request.value
+        XCTAssertEqual(coordinate?.latitude ?? 0, 22.54, accuracy: 0.000001)
+    }
+
     func testOldTimestampCannotCompleteNewRequest() async {
         let driver = FakeRealtimeLocationDriver()
         let manager = RealtimeLocationManager(driver: driver, timeoutNanoseconds: 1_000_000_000)
@@ -140,6 +163,17 @@ final class RealtimeLocationManagerTests: XCTestCase {
         let coordinate = await request.value
         XCTAssertEqual(coordinate?.latitude ?? 0, 22.54, accuracy: 0.000001)
     }
+}
+
+@MainActor
+private func sample(age: TimeInterval, now: Date, horizontalAccuracy: CLLocationAccuracy = 12) -> CLLocation {
+    CLLocation(
+        coordinate: .init(latitude: 30.42, longitude: 114.25),
+        altitude: 0,
+        horizontalAccuracy: horizontalAccuracy,
+        verticalAccuracy: 10,
+        timestamp: now.addingTimeInterval(age)
+    )
 }
 
 @MainActor

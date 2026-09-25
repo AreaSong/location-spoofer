@@ -32,6 +32,8 @@ final class RouteLocationSetupStore: ObservableObject, DeveloperLocationPushing 
     private let pairingStore: RoutePairingStore
     private let client: IdeviceLocationPushing
     private let environment: RouteLocationEnvironment
+    /// 持有正在进行的设备调用，clear 或新的 set 可以取消它，避免脱离任务树的旧写入。
+    private var deviceTask: Task<IdeviceCommandOutcome, Error>?
 
     init(
         pairingStore: RoutePairingStore = RoutePairingStore(),
@@ -63,43 +65,120 @@ final class RouteLocationSetupStore: ObservableObject, DeveloperLocationPushing 
         if current != .ready {
             return .notReady(current)
         }
-        var failure = await push(latitude: latitude, longitude: longitude)
-        if failure == .tunnel {
-            try? await Task.sleep(nanoseconds: environment.tunnelRetryDelayNanoseconds)
-            failure = await push(latitude: latitude, longitude: longitude)
-        }
-        guard let failure else {
-            isSimulating = true
-            return nil
-        }
-        // 推送失败先看隧道是不是断了，把具体原因告诉用户。
-        refresh()
-        if readiness != .ready {
-            isSimulating = false
-            return .notReady(readiness)
-        }
-        return failure
-    }
-
-    func clear() async {
-        let client = client
-        await Task.detached {
-            client.clear()
-        }.value
-        isSimulating = false
-    }
-
-    private func push(latitude: Double, longitude: Double) async -> RouteLocationPushFailure? {
-        let client = client
+        let mutation = client.beginMutation()
         let path = pairingStore.pairingURL.path
         let address = environment.deviceAddress
-        return await Task.detached {
-            client.set(
+        let delay = environment.tunnelRetryDelayNanoseconds
+        let client = client
+        let outcome = await performDevice {
+            try await Self.push(
+                client: client,
                 latitude: latitude,
                 longitude: longitude,
                 pairingPath: path,
-                deviceAddress: address
+                deviceAddress: address,
+                mutation: mutation,
+                retryDelayNanoseconds: delay
             )
-        }.value
+        }
+        return applySetResult(outcome, mutation: mutation)
+    }
+
+    func clear() async -> RouteLocationPushFailure? {
+        let mutation = client.beginMutation()
+        let client = client
+        let outcome = await performDevice {
+            client.clear(mutation: mutation)
+        }
+        return applyClearResult(outcome, mutation: mutation)
+    }
+
+    private func applySetResult(
+        _ outcome: IdeviceCommandOutcome,
+        mutation: UInt64
+    ) -> RouteLocationPushFailure? {
+        guard client.currentMutation() == mutation else { return .superseded }
+        switch outcome {
+        case .superseded:
+            return .superseded
+        case .finished(let failure):
+            guard let failure else {
+                isSimulating = true
+                return nil
+            }
+            // 推送失败先看隧道是不是断了，把具体原因告诉用户。
+            refresh()
+            if readiness != .ready {
+                isSimulating = false
+                return .notReady(readiness)
+            }
+            return failure
+        }
+    }
+
+    private func applyClearResult(
+        _ outcome: IdeviceCommandOutcome,
+        mutation: UInt64
+    ) -> RouteLocationPushFailure? {
+        guard client.currentMutation() == mutation else { return .superseded }
+        switch outcome {
+        case .superseded:
+            return .superseded
+        case .finished(let failure):
+            if failure == nil {
+                isSimulating = false
+            }
+            return failure
+        }
+    }
+
+    /// 取消上一次设备调用并持有新任务。父任务取消时，脱离继承链的 detached 任务也会停。
+    private func performDevice(
+        _ operation: @escaping @Sendable () async throws -> IdeviceCommandOutcome
+    ) async -> IdeviceCommandOutcome {
+        deviceTask?.cancel()
+        let task = Task.detached(operation: operation)
+        deviceTask = task
+        return await withTaskCancellationHandler {
+            do {
+                return try await task.value
+            } catch is CancellationError {
+                return .superseded
+            } catch {
+                return .finished(.rejected)
+            }
+        } onCancel: {
+            task.cancel()
+        }
+    }
+
+    nonisolated private static func push(
+        client: IdeviceLocationPushing,
+        latitude: Double,
+        longitude: Double,
+        pairingPath: String,
+        deviceAddress: String,
+        mutation: UInt64,
+        retryDelayNanoseconds: UInt64
+    ) async throws -> IdeviceCommandOutcome {
+        var outcome = client.set(
+            latitude: latitude,
+            longitude: longitude,
+            pairingPath: pairingPath,
+            deviceAddress: deviceAddress,
+            mutation: mutation
+        )
+        if case .finished(.tunnel) = outcome {
+            try await Task.sleep(nanoseconds: retryDelayNanoseconds)
+            try Task.checkCancellation()
+            outcome = client.set(
+                latitude: latitude,
+                longitude: longitude,
+                pairingPath: pairingPath,
+                deviceAddress: deviceAddress,
+                mutation: mutation
+            )
+        }
+        return outcome
     }
 }

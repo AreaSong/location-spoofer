@@ -1,6 +1,6 @@
 import Foundation
 
-enum RouteLocationReadiness: Equatable {
+enum RouteLocationReadiness: Equatable, Sendable {
     case ready
     case needsInstall
     case tunnelDisconnected
@@ -33,11 +33,15 @@ struct RouteLocationStatus: Equatable {
     }
 }
 
-enum RouteLocationPushFailure: Equatable {
+enum RouteLocationPushFailure: Equatable, Sendable {
     case notReady(RouteLocationReadiness)
     case tunnel
     case pairing
     case rejected
+    /// 系统侧 clear 失败。本地句柄还在，模拟定位不能当成已关闭。
+    case clearFailed
+    /// 这次调用已被更新的 set/clear 或取消取代，调用方不要改界面状态。
+    case superseded
 
     var message: String {
         switch self {
@@ -49,6 +53,10 @@ enum RouteLocationPushFailure: Equatable {
             return "配对文件无效，路线已暂停。"
         case .rejected:
             return "系统定位推送失败，已暂停。"
+        case .clearFailed:
+            return "系统定位没有关掉，模拟仍在生效。"
+        case .superseded:
+            return "定位操作已取消。"
         }
     }
 }
@@ -57,7 +65,7 @@ enum RouteLocationPushFailure: Equatable {
 protocol DeveloperLocationPushing: AnyObject {
     var readiness: RouteLocationReadiness { get }
     func set(latitude: Double, longitude: Double) async -> RouteLocationPushFailure?
-    func clear() async
+    func clear() async -> RouteLocationPushFailure?
 }
 
 enum RouteLocationLaunch {
@@ -87,7 +95,13 @@ enum RouteLocationLaunch {
 }
 
 enum RouteLocationStop {
-    static func shouldClearSimulation(from: RoutePhase, to: RoutePhase) -> Bool {
+    /// `activationWritePending`：开启等待时相位仍是 preparing，退出到 inactive 也要清掉可能已经写下的起点。
+    static func shouldClearSimulation(
+        from: RoutePhase,
+        to: RoutePhase,
+        activationWritePending: Bool = false
+    ) -> Bool {
+        if activationWritePending { return true }
         switch (from, to) {
         case (.playing, .inactive), (.paused, .inactive), (.playing, .finished), (.paused, .finished):
             return true

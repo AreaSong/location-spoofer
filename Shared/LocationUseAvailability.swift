@@ -28,8 +28,7 @@ enum LocationRuntimeFailure: Equatable {
 enum LocationUseAvailability {
     static func current(
         mode: ProxyRuntimeMode,
-        wifiEnabled: Bool,
-        cellularEnabled: Bool,
+        network: AppModeNetworkStatus,
         runtimeFailure: LocationRuntimeFailure?,
         signing: SigningExpiryStatus
     ) -> LocationUseBlock? {
@@ -37,10 +36,7 @@ enum LocationUseAvailability {
             return .signingExpired(signing.settingsMessage ?? "免费签名已过期，请用电脑重新签名并安装。")
         }
         if mode == .localWiFi,
-           let wifiMessage = AppModeNetworkRequirement.blockedMessage(
-            wifiEnabled: wifiEnabled,
-            cellularEnabled: cellularEnabled
-           ) {
+           let wifiMessage = AppModeNetworkRequirement.blockedMessage(network) {
             return .appModeNeedsWiFi(wifiMessage)
         }
         switch (mode, runtimeFailure) {

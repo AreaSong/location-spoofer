@@ -80,6 +80,62 @@ final class RouteLocationTests: XCTestCase {
     }
 
     @MainActor
+    func testSetupStoreDoesNotRetryAfterCancellation() async throws {
+        let client = FakeIdeviceClient(results: [.tunnel, nil])
+        let pushed = expectation(description: "first push")
+        client.afterSet = { pushed.fulfill() }
+        let store = try readyStore(client: client, tunnelRetryDelayNanoseconds: 5_000_000_000)
+
+        let task = Task { await store.set(latitude: 22.5, longitude: 113.9) }
+        await fulfillment(of: [pushed], timeout: 2)
+        task.cancel()
+        let failure = await task.value
+
+        XCTAssertEqual(failure, .superseded)
+        XCTAssertEqual(client.pushes.count, 1)
+        XCTAssertFalse(store.isSimulating)
+    }
+
+    @MainActor
+    func testClearSupersedesAnInFlightSet() async throws {
+        let client = FakeIdeviceClient(results: [nil])
+        let entered = expectation(description: "set entered")
+        let resume = DispatchSemaphore(value: 0)
+        client.beforeSet = {
+            entered.fulfill()
+            resume.wait()
+        }
+        let store = try readyStore(client: client)
+
+        let setTask = Task { await store.set(latitude: 22.5, longitude: 113.9) }
+        await fulfillment(of: [entered], timeout: 2)
+        let clearFailure = await store.clear()
+        resume.signal()
+        let setFailure = await setTask.value
+
+        XCTAssertNil(clearFailure)
+        XCTAssertEqual(setFailure, .superseded)
+        XCTAssertEqual(client.clears, 1)
+        XCTAssertTrue(client.pushes.isEmpty)
+        XCTAssertFalse(store.isSimulating)
+    }
+
+    @MainActor
+    func testClearFailureKeepsSimulationActive() async throws {
+        let client = FakeIdeviceClient(results: [nil], clearResults: [.clearFailed])
+        let store = try readyStore(client: client)
+
+        let setFailure = await store.set(latitude: 22.5, longitude: 113.9)
+        let clearFailure = await store.clear()
+
+        XCTAssertNil(setFailure)
+        XCTAssertEqual(clearFailure, .clearFailed)
+        XCTAssertEqual(clearFailure?.message, "系统定位没有关掉，模拟仍在生效。")
+        XCTAssertTrue(store.isSimulating)
+        XCTAssertEqual(client.clears, 1)
+    }
+
+    @MainActor
     func testSetupStoreDoesNotPushBeforeReady() async throws {
         let client = FakeIdeviceClient(results: [nil])
         let store = try readyStore(client: client, isVPNInstalled: { false })
@@ -96,6 +152,14 @@ final class RouteLocationTests: XCTestCase {
         XCTAssertTrue(RouteLocationStop.shouldClearSimulation(from: .playing, to: .finished))
         XCTAssertFalse(RouteLocationStop.shouldClearSimulation(from: .playing, to: .paused))
         XCTAssertFalse(RouteLocationStop.shouldClearSimulation(from: .preparing, to: .playing))
+        XCTAssertFalse(RouteLocationStop.shouldClearSimulation(from: .preparing, to: .inactive))
+        XCTAssertTrue(
+            RouteLocationStop.shouldClearSimulation(
+                from: .preparing,
+                to: .inactive,
+                activationWritePending: true
+            )
+        )
     }
 
     func testPairingStoreRejectsPlainTextAndKeepsAPlist() throws {
@@ -183,7 +247,8 @@ final class RouteLocationTests: XCTestCase {
     private func readyStore(
         client: FakeIdeviceClient,
         isVPNInstalled: @escaping @MainActor () -> Bool = { true },
-        isTunnelConnected: @escaping @MainActor () -> Bool = { true }
+        isTunnelConnected: @escaping @MainActor () -> Bool = { true },
+        tunnelRetryDelayNanoseconds: UInt64 = 1_000_000
     ) throws -> RouteLocationSetupStore {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("RouteLocationSetupStoreTests.\(UUID().uuidString)", isDirectory: true)
@@ -198,7 +263,7 @@ final class RouteLocationTests: XCTestCase {
             isVPNInstalled: isVPNInstalled,
             isTunnelConnected: isTunnelConnected,
             deviceAddress: "10.7.0.1",
-            tunnelRetryDelayNanoseconds: 1_000_000
+            tunnelRetryDelayNanoseconds: tunnelRetryDelayNanoseconds
         )
         return RouteLocationSetupStore(pairingStore: pairingStore, client: client, environment: environment)
     }
@@ -207,29 +272,57 @@ final class RouteLocationTests: XCTestCase {
 private final class FakeIdeviceClient: IdeviceLocationPushing, @unchecked Sendable {
     private let lock = NSLock()
     private var results: [RouteLocationPushFailure?]
+    private var clearResults: [RouteLocationPushFailure?]
+    private var mutation: UInt64 = 0
     private(set) var pushes: [(latitude: Double, longitude: Double)] = []
     private(set) var clears = 0
+    var beforeSet: (@Sendable () -> Void)?
+    var afterSet: (@Sendable () -> Void)?
 
-    init(results: [RouteLocationPushFailure?]) {
+    init(
+        results: [RouteLocationPushFailure?],
+        clearResults: [RouteLocationPushFailure?] = []
+    ) {
         self.results = results
+        self.clearResults = clearResults
+    }
+
+    func beginMutation() -> UInt64 {
+        lock.lock()
+        defer { lock.unlock() }
+        mutation &+= 1
+        return mutation
+    }
+
+    func currentMutation() -> UInt64 {
+        lock.lock()
+        defer { lock.unlock() }
+        return mutation
     }
 
     func set(
         latitude: Double,
         longitude: Double,
         pairingPath: String,
-        deviceAddress: String
-    ) -> RouteLocationPushFailure? {
+        deviceAddress: String,
+        mutation: UInt64
+    ) -> IdeviceCommandOutcome {
+        beforeSet?()
         lock.lock()
         defer { lock.unlock() }
+        guard mutation == self.mutation else { return .superseded }
         pushes.append((latitude, longitude))
-        guard !results.isEmpty else { return nil }
-        return results.removeFirst()
+        afterSet?()
+        guard !results.isEmpty else { return .finished(nil) }
+        return .finished(results.removeFirst())
     }
 
-    func clear() {
+    func clear(mutation: UInt64) -> IdeviceCommandOutcome {
         lock.lock()
         defer { lock.unlock() }
+        guard mutation == self.mutation else { return .superseded }
         clears += 1
+        guard !clearResults.isEmpty else { return .finished(nil) }
+        return .finished(clearResults.removeFirst())
     }
 }

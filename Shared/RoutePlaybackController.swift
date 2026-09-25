@@ -53,6 +53,12 @@ final class RoutePlaybackController: ObservableObject {
     private var elapsed: TimeInterval = 0
     private var playbackOrigin = Date()
     private var playbackTask: Task<Void, Never>?
+    /// 开启等待期间写入起点。退出时要取消，否则播放任务还没创建，旧任务仍会写坐标。
+    private var activationTask: Task<Void, Never>?
+    /// 起点写入已经发出。取消只能挡住还没开始的写入，已经发出的要等它结束再清定位。
+    private var activationDidWrite = false
+    /// 停止或重新开始播放时加一。挂起的写入返回后用它丢掉过期结果。
+    private var playbackGeneration: UInt64 = 0
     private var pathGeneration: UInt64 = 0
     private var writeGate = RouteWriteGate()
     private let preferenceStore: RoutePlaybackPreferenceStore
@@ -134,6 +140,8 @@ final class RoutePlaybackController: ObservableObject {
 
     func enter(start pair: CoordinatePair? = nil) {
         stopPlaybackTask()
+        endRouteKeepAlive()
+        stopActivationTask()
         pathGeneration &+= 1
         headingForward = true
         start = pair
@@ -150,8 +158,11 @@ final class RoutePlaybackController: ObservableObject {
         phase = .preparing
     }
 
-    func load(_ saved: SavedRoute) {
+    @discardableResult
+    func load(_ saved: SavedRoute) -> Task<Void, Never>? {
         stopPlaybackTask()
+        endRouteKeepAlive()
+        let pendingWrite = takePendingActivationWrite()
         pathGeneration &+= 1
         headingForward = true
         waitingForActivation = false
@@ -173,12 +184,13 @@ final class RoutePlaybackController: ObservableObject {
             isRouting = false
             refreshReadyMessage()
             bumpPathRevision()
-            return
+            return pendingWrite
         }
         path = nil
         current = saved.start
         isRouting = false
         Task { await rebuildPath() }
+        return pendingWrite
     }
 
     func makeSavedRoute(name: String, overwrite: Bool = false) -> SavedRoute? {
@@ -287,24 +299,37 @@ final class RoutePlaybackController: ObservableObject {
         statusMessage = "正在开启虚拟定位…"
     }
 
+    /// `requestPlay()` 之后调用。任务挂在控制器上，退出、取消等待和换路线都会取消它。
+    func beginActivation() {
+        stopActivationTask()
+        guard waitingForActivation, let pair = current ?? start else { return }
+        activationTask = Task { [weak self] in
+            await self?.runActivation(pair)
+        }
+    }
+
     func noteActivated() {
         guard waitingForActivation else { return }
         waitingForActivation = false
         startLoop()
     }
 
-    func cancelWaiting() {
+    @discardableResult
+    func cancelWaiting() -> Task<Void, Never>? {
+        let pendingWrite = takePendingActivationWrite()
         waitingForActivation = false
-        if phase == .playing { return }
+        if phase == .playing { return pendingWrite }
         if phase != .inactive {
             phase = .preparing
             statusMessage = "未能开启虚拟定位，路线仍可修改。"
         }
+        return pendingWrite
     }
 
     func pause() {
         guard phase == .playing else { return }
         stopPlaybackTask()
+        endRouteKeepAlive()
         phase = .paused
         statusMessage = "已暂停。"
     }
@@ -314,8 +339,12 @@ final class RoutePlaybackController: ObservableObject {
         startLoop()
     }
 
-    func exit() {
+    /// 返回已经发出、但还没结束的起点写入。调用方应等它完成后再清系统定位。
+    @discardableResult
+    func exit() -> Task<Void, Never>? {
         stopPlaybackTask()
+        endRouteKeepAlive()
+        let pendingWrite = takePendingActivationWrite()
         pathGeneration &+= 1
         headingForward = true
         waitingForActivation = false
@@ -331,6 +360,7 @@ final class RoutePlaybackController: ObservableObject {
         editingSavedRoute = nil
         ignoresWriteGate = false
         phase = .inactive
+        return pendingWrite
     }
 
     func refreshReadyMessage() {
@@ -389,8 +419,15 @@ final class RoutePlaybackController: ObservableObject {
 
     func applyTravelMode(_ mode: RouteTravelMode) {
         travelMode = mode
-        speedKilometersPerHour = mode.kilometersPerHour
+        let next = mode.kilometersPerHour
+        if isPlaybackInProgress {
+            rebaseElapsed(toSpeedKilometersPerHour: next)
+        }
+        speedKilometersPerHour = next
         persistPreferences()
+        if isPlaybackInProgress {
+            statusMessage = phase == .paused ? "已暂停。" : playbackStatusMessage()
+        }
         Task { await rebuildPath() }
     }
 
@@ -408,17 +445,42 @@ final class RoutePlaybackController: ObservableObject {
             refreshReadyMessage()
             return
         }
-        path = RoutePath.make(points)
+        let keepCurrentPath = isPlaybackInProgress && path != nil
+        if !keepCurrentPath {
+            path = RoutePath.make(points)
+        }
         pathGeneration &+= 1
         let generation = pathGeneration
         isRouting = true
         refreshReadyMessage()
+        restorePlaybackStatusIfNeeded()
         let routed = await RouteDirections.waypoints(along: points, mode: travelMode)
         guard generation == pathGeneration else { return }
         path = RoutePath.make(routed)
         isRouting = false
+        if isPlaybackInProgress {
+            rebaseElapsed(toSpeedKilometersPerHour: speedKilometersPerHour)
+            snapCurrentToProgress()
+        }
         refreshReadyMessage()
+        restorePlaybackStatusIfNeeded()
         bumpPathRevision()
+    }
+
+    private var isPlaybackInProgress: Bool {
+        phase == .playing || phase == .paused
+    }
+
+    /// 路径换成另一条以后，标记停在同一进度上，避免还显示旧路线上的点。
+    private func snapCurrentToProgress() {
+        guard let path, path.totalMeters > 0 else { return }
+        let active = headingForward ? path : path.reversed()
+        current = RoutePlayback.interpolate(path: active, progress: progress)
+    }
+
+    private func restorePlaybackStatusIfNeeded() {
+        guard isPlaybackInProgress else { return }
+        statusMessage = phase == .paused ? "已暂停。" : playbackStatusMessage()
     }
 
     /// Returns true when playback should stop after this leg.
@@ -440,18 +502,19 @@ final class RoutePlaybackController: ObservableObject {
 
     private func startLoop() {
         stopPlaybackTask()
+        let generation = playbackGeneration
         writeGate.reset()
-        BackgroundKeepAlive.shared.start()
+        beginRouteKeepAlive()
         phase = .playing
         statusMessage = playbackStatusMessage()
         playbackOrigin = Date().addingTimeInterval(-elapsed)
         playbackTask = Task { [weak self] in
-            await self?.runLoop()
+            await self?.runLoop(generation: generation)
         }
     }
 
-    private func runLoop() async {
-        while !Task.isCancelled, phase == .playing {
+    private func runLoop(generation: UInt64) async {
+        while isPlaybackCurrent(generation), phase == .playing {
             guard let basePath = path, basePath.points.count >= 2 else { break }
             let activePath = headingForward ? basePath : basePath.reversed()
             elapsed = Date().timeIntervalSince(playbackOrigin)
@@ -467,6 +530,8 @@ final class RoutePlaybackController: ObservableObject {
             let due = ignoresWriteGate || writeGate.shouldWrite(tick.coordinatePair, at: now, force: forceWrite)
             if due {
                 let applied = await applyCoordinate?(tick.coordinatePair) ?? false
+                // 写入挂起期间，这一轮可能已取消，或已被新播放替换。
+                guard isPlaybackCurrent(generation) else { return }
                 if !applied {
                     pause()
                     statusMessage = pushFailureMessage
@@ -474,10 +539,12 @@ final class RoutePlaybackController: ObservableObject {
                 }
                 writeGate.markWritten(tick.coordinatePair, at: now)
             }
+            guard isPlaybackCurrent(generation) else { return }
             if tick.isFinished {
                 if handleFinishedLeg() {
                     phase = .finished
                     statusMessage = finishedStatusMessage()
+                    endRouteKeepAlive()
                     return
                 }
                 playbackOrigin = Date()
@@ -489,6 +556,13 @@ final class RoutePlaybackController: ObservableObject {
             statusMessage = playbackStatusMessage()
             try? await Task.sleep(nanoseconds: tickIntervalNanoseconds)
         }
+        if isPlaybackCurrent(generation), phase == .playing {
+            endRouteKeepAlive()
+        }
+    }
+
+    private func isPlaybackCurrent(_ generation: UInt64) -> Bool {
+        generation == playbackGeneration && !Task.isCancelled
     }
 
     func bumpPathRevision() {
@@ -506,8 +580,47 @@ final class RoutePlaybackController: ObservableObject {
         )
     }
 
+    private func runActivation(_ pair: CoordinatePair) async {
+        guard !Task.isCancelled, waitingForActivation else { return }
+        activationDidWrite = true
+        let applied = await applyCoordinate?(pair) ?? false
+        guard !Task.isCancelled, waitingForActivation else { return }
+        activationDidWrite = false
+        if applied {
+            noteActivated()
+        } else {
+            cancelWaiting()
+            statusMessage = pushFailureMessage
+        }
+    }
+
+    /// 写入还没发出时直接丢掉任务；已经发出则把任务交还调用方，等写入落地后再清理。
+    private func takePendingActivationWrite() -> Task<Void, Never>? {
+        let task = activationTask
+        let wrote = activationDidWrite
+        activationTask?.cancel()
+        activationTask = nil
+        activationDidWrite = false
+        return wrote ? task : nil
+    }
+
+    private func stopActivationTask() {
+        activationTask?.cancel()
+        activationTask = nil
+        activationDidWrite = false
+    }
+
     private func stopPlaybackTask() {
+        playbackGeneration &+= 1
         playbackTask?.cancel()
         playbackTask = nil
+    }
+
+    private func beginRouteKeepAlive() {
+        BackgroundKeepAlive.shared.retain(.routePlayback)
+    }
+
+    private func endRouteKeepAlive() {
+        BackgroundKeepAlive.shared.release(.routePlayback)
     }
 }

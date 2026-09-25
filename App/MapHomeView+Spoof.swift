@@ -7,8 +7,8 @@ extension MapHomeView {
     var needsSwitchButton: Bool {
         SpoofSelectionSwitch.needsSwitch(
             isActive: spoofState == .active,
-            writtenLatitude: activeSpoofLat,
-            writtenLongitude: activeSpoofLon,
+            writtenLatitude: session.switchLatitude,
+            writtenLongitude: session.switchLongitude,
             selection: currentSelectionFavorite.coordinatePair
         )
     }
@@ -101,8 +101,7 @@ extension MapHomeView {
         if UIPreview.isEnabled() { return nil }
         return LocationUseAvailability.current(
             mode: runtimeMode.mode,
-            wifiEnabled: net.isWiFiEnabled,
-            cellularEnabled: net.usesCellular,
+            network: net.appModeNetworkStatus,
             runtimeFailure: runtimeFailure.failure,
             signing: signingExpiryStatus
         )
@@ -183,16 +182,22 @@ extension MapHomeView {
         var initialState = SpoofState.idle
         var initialLatitude: Double?
         var initialLongitude: Double?
+        var initialSwitchLatitude: Double?
+        var initialSwitchLongitude: Double?
         if ProxyRuntimeModeStore.shared.mode == .localWiFi,
            let settings = WlocSettingsStore.load(), settings.enabled {
             initialState = .active
             initialLatitude = settings.latitude
             initialLongitude = settings.longitude
+            initialSwitchLatitude = settings.switchLatitude
+            initialSwitchLongitude = settings.switchLongitude
         }
         let session = SpoofSession(
             state: initialState,
             writtenLatitude: initialLatitude,
-            writtenLongitude: initialLongitude
+            writtenLongitude: initialLongitude,
+            switchLatitude: initialSwitchLatitude,
+            switchLongitude: initialSwitchLongitude
         )
         session.bind(spoofServices(setup: setup, actions: actions, route: route, mapState: mapState))
         return session
@@ -212,8 +217,7 @@ extension MapHomeView {
             isUseBlocked: {
                 LocationUseAvailability.current(
                     mode: ProxyRuntimeModeStore.shared.mode,
-                    wifiEnabled: NetworkMonitor.shared.isWiFiEnabled,
-                    cellularEnabled: NetworkMonitor.shared.usesCellular,
+                    network: NetworkMonitor.shared.appModeNetworkStatus,
                     runtimeFailure: failure.failure,
                     signing: SigningExpiry.current()
                 ) != nil

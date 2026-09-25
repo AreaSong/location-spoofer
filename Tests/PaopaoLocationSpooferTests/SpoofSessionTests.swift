@@ -23,6 +23,10 @@ final class SpoofSessionTests: XCTestCase {
         await waitUntil(session, leaves: .verifying)
         XCTAssertEqual(probe.applyCount, 1)
         XCTAssertEqual(probe.updateCount, 0)
+        XCTAssertEqual(session.writtenLatitude ?? 0, 22.504, accuracy: 0.000_001)
+        XCTAssertEqual(session.writtenLongitude ?? 0, 113.931, accuracy: 0.000_001)
+        XCTAssertEqual(session.switchLatitude ?? 0, 22.494, accuracy: 0.000_001)
+        XCTAssertEqual(session.switchLongitude ?? 0, 113.951, accuracy: 0.000_001)
     }
 
     func testSelectionChangeDiscardsAppVerification() async {
@@ -72,6 +76,16 @@ final class SpoofSessionTests: XCTestCase {
         XCTAssertEqual(session.state, .active)
         XCTAssertEqual(session.writtenLatitude, 22.5)
         XCTAssertEqual(session.writtenLongitude, 113.9)
+        XCTAssertEqual(session.switchLatitude ?? 0, 22.494, accuracy: 0.000_001)
+        XCTAssertEqual(session.switchLongitude ?? 0, 113.951, accuracy: 0.000_001)
+        XCTAssertFalse(
+            SpoofSelectionSwitch.needsSwitch(
+                isActive: true,
+                writtenLatitude: session.switchLatitude,
+                writtenLongitude: session.switchLongitude,
+                selection: sampleFavorite().coordinatePair
+            )
+        )
         XCTAssertEqual(probe.applyCount, 0)
     }
 
@@ -93,6 +107,26 @@ final class SpoofSessionTests: XCTestCase {
         XCTAssertEqual(session.state, .idle)
         XCTAssertEqual(probe.developerClears, 1)
         XCTAssertNil(session.writtenLatitude)
+    }
+
+    func testDeveloperTunnelClearFailureStaysActive() async {
+        let probe = SpoofServiceProbe()
+        probe.mode = .developerTunnel
+        let session = makeSession(probe)
+        session.begin(target: sampleFavorite())
+        await waitUntil(session, leaves: .verifying)
+        session.consumeEffects()
+        probe.developerClearFailure = .clearFailed
+
+        session.stop()
+        await waitUntil(session, leaves: .verifying)
+
+        XCTAssertEqual(session.state, .active)
+        XCTAssertEqual(probe.developerClears, 1)
+        XCTAssertEqual(
+            session.consumeEffects(),
+            [.developerPushFailed(RouteLocationPushFailure.clearFailed.message)]
+        )
     }
 
     func testRouteWriteUsesTheSameCoordinateEntry() async {
@@ -198,6 +232,7 @@ private final class SpoofServiceProbe {
     var developerPushes = 0
     var developerClears = 0
     var developerFailure: RouteLocationPushFailure?
+    var developerClearFailure: RouteLocationPushFailure?
 
     func services() -> SpoofSession.Services {
         SpoofSession.Services(
@@ -218,9 +253,9 @@ private final class SpoofServiceProbe {
                 }
                 return .success
             },
-            applyVerified: { _ in
+            applyVerified: { favorite in
                 self.applyCount += 1
-                return true
+                return (favorite.latitude + 0.01, favorite.longitude - 0.02)
             },
             updateLocalWGS84: { _, _, _ in
                 self.updateCount += 1
@@ -248,7 +283,7 @@ private final class SpoofServiceProbe {
             },
             clearDeveloper: {
                 self.developerClears += 1
-                return ()
+                return self.developerClearFailure
             }
         )
     }

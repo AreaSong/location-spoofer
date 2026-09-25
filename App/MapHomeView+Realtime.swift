@@ -23,13 +23,15 @@ extension MapHomeView {
             "选点revision": String(intent.selectionRevision),
             "当前地图标准": CoordinateConverter.currentMapCoordinateSystem.rawValue,
             "蓝点缓存存在": String(mapState.realtimeLocation != nil),
+            "蓝点缓存新鲜": String(mapState.realtimeLocation.map { realtime.isFreshEnoughForRealtimeRequest($0) } ?? false),
             "CLLocationManager请求中": String(realtime.isRequesting)
         ])
-        // 蓝点存在就直接用，不限时（MKMapView 的 userLocation 只在位置变化时才更新）
-        if let loc = mapState.realtimeLocation {
+        // MKMapView 只在位置变化时刷新蓝点，静止时 timestamp 会变旧。与 CLLocationManager 共用 20 秒上限，避免选中过期点。
+        if let loc = mapState.realtimeLocation, realtime.isFreshEnoughForRealtimeRequest(loc) {
             RealtimeLocationTrace.log("实时定位按钮直接使用 MapKit 蓝点缓存", location: loc, details: [
                 "intentID": String(intent.id),
-                "来源": "MapLocationState.realtimeLocation"
+                "来源": "MapLocationState.realtimeLocation",
+                "缓存上限秒": String(Int(RealtimeLocationManager.cacheMaxAge))
             ])
             acceptRealtimeLocation(
                 loc.coordinate,
@@ -39,8 +41,15 @@ extension MapHomeView {
             )
             return
         }
-        RuntimeLogger.info("APP", "实时定位", "MapKit 蓝点尚不可用，启动 CLLocationManager 兜底", details: [
-            "intentID": String(intent.id)
+        if let loc = mapState.realtimeLocation {
+            RealtimeLocationTrace.log("跳过过期 MapKit 蓝点缓存，改走 CLLocationManager", location: loc, details: [
+                "intentID": String(intent.id),
+                "缓存上限秒": String(Int(RealtimeLocationManager.cacheMaxAge))
+            ], level: .warning)
+        }
+        RuntimeLogger.info("APP", "实时定位", "MapKit 蓝点不可用或已过期，启动 CLLocationManager 兜底", details: [
+            "intentID": String(intent.id),
+            "蓝点缓存存在": String(mapState.realtimeLocation != nil)
         ])
         startRealtimeLocationRequest(
             source: "CLLocationManager",
@@ -54,6 +63,13 @@ extension MapHomeView {
         logSpoofCoordinateDiagnosisIfNeeded(location)
         scheduleBluePointMapCoordinateSystemRefresh()
         guard let context = realtimeRequestContext else {
+            return
+        }
+        guard realtime.isFreshEnoughForRealtimeRequest(location) else {
+            RealtimeLocationTrace.log("待处理请求忽略过期 MapKit 蓝点，继续等待 CLLocationManager", location: location, details: [
+                "intentID": String(context.intent.id),
+                "缓存上限秒": String(Int(RealtimeLocationManager.cacheMaxAge))
+            ], level: .warning)
             return
         }
 

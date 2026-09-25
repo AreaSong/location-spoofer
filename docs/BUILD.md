@@ -14,6 +14,8 @@
 
 该脚本会先检查 `xcrun`、`xcodebuild`、`xcodegen` 和 `go`，随后构建 iOS Go 静态库、重新生成 Xcode 工程、构建并输出未签名 IPA。
 
+`Scripts/build-core.sh` 产出两份静态库：真机 `arm64`，以及模拟器通用库（`arm64` + `x86_64`，由 `lipo` 合并）。generic iOS Simulator 目标会同时链接这两个架构；只保留 `arm64` 时，链接阶段会因缺少 `_wloccore_*` 的 `x86_64` 符号失败。
+
 如需在未签名 IPA 已生成后额外运行 `PaopaoLocationSpoofer` 的 iOS Simulator 单元测试：
 
 ```bash

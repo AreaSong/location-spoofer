@@ -161,7 +161,7 @@ In this mode:
 - Modules and scripts are served from this app by default (`127.0.0.1:18766`); keep the app open while importing or updating;
 - The third-party client owns coordinate persistence;
 - Wi-Fi, 4G, and 5G support depends on the client;
-- The configuration may remain active after Location Spoofer closes.
+- The configuration may remain active after Location Spoofer closes. Leaving Third-party Proxy Mode, and switching to APP Mode, first clears the saved WLOC coordinates; if clearing fails, the current mode stays. Leaving Developer Tunnel Mode first turns off system location simulation; if that fails, Developer Tunnel Mode stays.
 
 #### Configuration API and Client Integration
 

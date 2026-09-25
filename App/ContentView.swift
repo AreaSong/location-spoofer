@@ -48,7 +48,7 @@ struct ContentView: View {
                     Task { await SigningExpiryReminderScheduler.sync() }
                 }
                 if ProxyManager.shared.isRunning {
-                    BackgroundKeepAlive.shared.start()
+                    BackgroundKeepAlive.shared.retain(.proxy)
                 }
                 if runtimeMode.mode == .thirdParty {
                     ThirdPartyModuleRuntime.syncServerWithDistribution()

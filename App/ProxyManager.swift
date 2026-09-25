@@ -17,7 +17,7 @@ final class ProxyManager: ObservableObject {
 
     func start() async throws {
         if isRunning {
-            BackgroundKeepAlive.shared.start()
+            BackgroundKeepAlive.shared.retain(.proxy)
             return
         }
         RuntimeLogger.info("APP", "Proxy.start", "启动代理 127.0.0.1:8888")
@@ -49,7 +49,7 @@ final class ProxyManager: ObservableObject {
             proxyHandle = result
             isRunning = true
             error = nil
-            BackgroundKeepAlive.shared.start()
+            BackgroundKeepAlive.shared.retain(.proxy)
             CoreBridge.flushLogs(category: "Proxy")
             RuntimeLogger.info("APP", "Proxy.start", "启动成功")
         } catch {
@@ -63,7 +63,7 @@ final class ProxyManager: ObservableObject {
         guard isRunning, proxyHandle != 0 else { return }
         _ = wloccore_stopproxy(proxyHandle)
         proxyHandle = 0; isRunning = false; error = nil
-        BackgroundKeepAlive.shared.stop()
+        BackgroundKeepAlive.shared.release(.proxy)
         CoreBridge.flushLogs(category: "Proxy")
     }
 

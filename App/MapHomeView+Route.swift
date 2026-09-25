@@ -21,6 +21,7 @@ extension MapHomeView {
         RouteActivityBridge.primary = {
             handlePeekTap()
         }
+        RouteActivityBridge.drainPending()
         syncRouteActivity(clearStale: true)
     }
 
@@ -107,9 +108,9 @@ extension MapHomeView {
 
     func exitRoute() {
         let previous = route.phase
-        route.exit()
-        clearRouteLocationIfNeeded(from: previous, to: route.phase)
+        let pendingWrite = route.exit()
         showsRoutePanel = false
+        settleRouteSimulation(after: pendingWrite, from: previous)
     }
 
     /// 播放中或暂停时退出要先确认；只是摆了图钉的话直接退。
@@ -298,9 +299,7 @@ extension MapHomeView {
         guard let start = route.start, route.canPlay else { return }
         guard beginRouteLocation() else { return }
         route.requestPlay()
-        Task { @MainActor in
-            await activateRouteStart(route.current ?? start)
-        }
+        route.beginActivation()
     }
 
     /// 本机代理和第三方模式：路线和定点走同一条写入通道。
@@ -315,9 +314,7 @@ extension MapHomeView {
         guard let start = route.start, route.canPlay else { return }
         route.requestPlay()
         if spoofState == .active {
-            Task { @MainActor in
-                await activateRouteStart(route.current ?? start)
-            }
+            route.beginActivation()
             return
         }
         let startFavorite = FavoriteLocation(
@@ -326,16 +323,6 @@ extension MapHomeView {
             accuracy: LocationAccuracyStore.shared.meters
         )
         beginLocationOperation(target: startFavorite)
-    }
-
-    private func activateRouteStart(_ pair: CoordinatePair) async {
-        let applied = await applyRouteCoordinate(pair)
-        if applied {
-            route.noteActivated()
-        } else {
-            route.cancelWaiting()
-            route.statusMessage = route.pushFailureMessage
-        }
     }
 
     func beginRouteLocation() -> Bool {
@@ -353,6 +340,7 @@ extension MapHomeView {
         }
         let coordinate = RoutePlayback.offset(pair, radiusMeters: route.offsetMeters).wgs84
         if let failure = await routeLocation.set(latitude: coordinate.latitude, longitude: coordinate.longitude) {
+            if failure == .superseded { return false }
             route.pushFailureMessage = failure.message
             return false
         }
@@ -360,21 +348,39 @@ extension MapHomeView {
     }
 
     /// 只有开发者隧道会占用系统定位。路线结束后，定点仍开启就回到定点，否则清掉模拟。
+    /// 开启等待期间退出时，先等已经发出的起点写入结束，再清，避免清完又被旧任务写回。
+    func settleRouteSimulation(after pendingWrite: Task<Void, Never>?, from previous: RoutePhase) {
+        guard RouteLocationStop.shouldClearSimulation(
+            from: previous,
+            to: route.phase,
+            activationWritePending: pendingWrite != nil
+        ) else { return }
+        Task { @MainActor in
+            await pendingWrite?.value
+            await restoreOrClearRouteSimulation()
+        }
+    }
+
     func clearRouteLocationIfNeeded(from previous: RoutePhase, to next: RoutePhase) {
-        guard !UIPreview.isEnabled(),
-              routeUsesDeveloperTunnel,
-              RouteLocationStop.shouldClearSimulation(from: previous, to: next) else { return }
+        guard RouteLocationStop.shouldClearSimulation(from: previous, to: next) else { return }
+        Task { await restoreOrClearRouteSimulation() }
+    }
+
+    private func restoreOrClearRouteSimulation() async {
+        guard !UIPreview.isEnabled(), routeUsesDeveloperTunnel else { return }
         if spoofState == .active, let latitude = activeSpoofLat, let longitude = activeSpoofLon {
-            Task { _ = await routeLocation.set(latitude: latitude, longitude: longitude) }
+            _ = await routeLocation.set(latitude: latitude, longitude: longitude)
             return
         }
-        Task { await routeLocation.clear() }
+        if let failure = await routeLocation.clear(), failure != .superseded {
+            route.statusMessage = failure.message
+        }
     }
 
     func handleRouteSpoofStateChange(_ state: SpoofState) {
         if routeUsesDeveloperTunnel {
             if state == .idle, route.waitingForActivation {
-                route.cancelWaiting()
+                settleRouteSimulation(after: route.cancelWaiting(), from: .preparing)
             }
             return
         }
@@ -385,7 +391,7 @@ extension MapHomeView {
             }
         case .idle:
             if route.waitingForActivation {
-                route.cancelWaiting()
+                settleRouteSimulation(after: route.cancelWaiting(), from: .preparing)
             }
             route.pause()
         case .verifying:
@@ -447,7 +453,7 @@ extension MapHomeView {
         guard locationUseBlock != nil else { return }
         route.pause()
         if route.waitingForActivation {
-            route.cancelWaiting()
+            settleRouteSimulation(after: route.cancelWaiting(), from: .preparing)
         }
     }
 }

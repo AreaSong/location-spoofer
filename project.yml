@@ -61,6 +61,7 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.paopaolabs.location-spoofer.route-activity
+        CODE_SIGN_ENTITLEMENTS: LiveActivity/RouteLiveActivity.entitlements
         CODE_SIGNING_ALLOWED: "NO"
         CODE_SIGNING_REQUIRED: "NO"
         SKIP_INSTALL: "YES"

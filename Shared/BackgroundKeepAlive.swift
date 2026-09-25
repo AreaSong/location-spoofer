@@ -2,12 +2,19 @@ import AVFoundation
 import Combine
 import UIKit
 
+enum BackgroundKeepAliveOwner: Hashable {
+    case proxy
+    case routePlayback
+    case thirdPartyImport
+}
+
 final class BackgroundKeepAlive: ObservableObject {
     static let shared = BackgroundKeepAlive()
     @Published private(set) var isEnabled = false
     @Published private(set) var isHealthy = false
     private var engine: AVAudioEngine?
     private var playerNode: AVAudioPlayerNode?
+    private var owners: Set<BackgroundKeepAliveOwner> = []
     private var shouldRun = false
     private var isRecovering = false
     private var interruptionActive = false
@@ -41,16 +48,26 @@ final class BackgroundKeepAlive: ObservableObject {
         )
     }
 
-    func start() {
-        shouldRun = true
-        if isPlaybackHealthy {
-            publishStatus()
-            return
-        }
-        recover(reason: "启动")
+    func holds(_ owner: BackgroundKeepAliveOwner) -> Bool {
+        owners.contains(owner)
     }
 
+    /// 登记一位所有者。最后一位离开之前，不会拆掉音频引擎和看门狗。
+    func retain(_ owner: BackgroundKeepAliveOwner) {
+        owners.insert(owner)
+        start()
+    }
+
+    /// 只放弃这一位所有者。其他所有者还在时继续保活。
+    func release(_ owner: BackgroundKeepAliveOwner) {
+        guard owners.remove(owner) != nil else { return }
+        guard owners.isEmpty else { return }
+        stop()
+    }
+
+    /// 模式切换等场景要清掉全部所有者，不能只停其中一位。
     func stop() {
+        owners.removeAll()
         shouldRun = false
         stopWatchdog()
         teardownEngine()
@@ -58,6 +75,15 @@ final class BackgroundKeepAlive: ObservableObject {
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
         publishStatus()
         RuntimeLogger.info("APP", "KeepAlive", "后台保活已停止")
+    }
+
+    private func start() {
+        shouldRun = true
+        if isPlaybackHealthy {
+            publishStatus()
+            return
+        }
+        recover(reason: "启动")
     }
 
     @objc private func handleDidBecomeActive() {

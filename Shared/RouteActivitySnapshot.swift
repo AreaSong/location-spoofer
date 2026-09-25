@@ -95,13 +95,20 @@ enum RouteActivitySync {
         }
     }
 
+    /// 进度不到 1% 时不推送，避免每个定位点都打满灵动岛更新额度。
+    static let minimumProgressDelta = 0.01
+
     static func shouldUpdate(_ previous: RouteActivitySnapshot?, to next: RouteActivitySnapshot) -> Bool {
         guard let previous else { return true }
-        return previous.phaseKey != next.phaseKey
+        if previous.phaseKey != next.phaseKey
             || previous.statusText != next.statusText
             || previous.routeName != next.routeName
             || previous.symbolName != next.symbolName
             || previous.actionTitle != next.actionTitle
+            || previous.detailText != next.detailText {
+            return true
+        }
+        return abs(previous.progress - next.progress) >= minimumProgressDelta
     }
 
     static func preparingSnapshot(

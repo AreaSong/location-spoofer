@@ -77,12 +77,22 @@ final class RouteLiveActivityCenter {
     }
 
     private func ensureActivity(name: String, content: ActivityContent<RouteActivityAttributes.ContentState>) async {
-        if activity == nil {
-            activity = try? Activity.request(
+        guard activity == nil else { return }
+        do {
+            activity = try Activity.request(
                 attributes: RouteActivityAttributes(name: name),
                 content: content,
                 pushType: nil
             )
+        } catch {
+            RuntimeLogger.error(
+                "RouteLiveActivity",
+                "activity",
+                "创建灵动岛失败",
+                error: error,
+                details: ["name": name]
+            )
+            activity = Activity<RouteActivityAttributes>.activities.first
         }
     }
 

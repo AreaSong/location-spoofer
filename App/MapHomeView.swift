@@ -327,7 +327,8 @@ struct MapHomeView: View {
                     SavedRouteListView(
                         store: savedRoutes,
                         onSelect: { saved in
-                            route.load(saved)
+                            let previous = route.phase
+                            settleRouteSimulation(after: route.load(saved), from: previous)
                         }
                     )
                 }
@@ -445,17 +446,18 @@ struct MapHomeView: View {
         .onChange(of: scenePhase) { phase in
             guard phase == .active else {
                 if route.phase == .playing {
-                    BackgroundKeepAlive.shared.start()
+                    BackgroundKeepAlive.shared.retain(.routePlayback)
                 }
                 return
             }
             routeLocation.refresh()
             if runtimeMode.mode == .localWiFi, proxy.isRunning {
-                BackgroundKeepAlive.shared.start()
+                BackgroundKeepAlive.shared.retain(.proxy)
             }
             if route.phase == .playing {
-                BackgroundKeepAlive.shared.start()
+                BackgroundKeepAlive.shared.retain(.routePlayback)
             }
+            RouteActivityBridge.drainPending()
             if runtimeMode.mode == .thirdParty {
                 refreshThirdPartyState()
             }
@@ -476,6 +478,9 @@ struct MapHomeView: View {
             let coordinates = route.overlayCoordinates
             guard coordinates.count >= 2 else { return }
             mapState.fitRoute(coordinates)
+        }
+        .onChange(of: net.isSatisfied) { _ in
+            pauseRouteIfLocationBlocked()
         }
         .onChange(of: net.isWiFiEnabled) { _ in
             pauseRouteIfLocationBlocked()
@@ -513,7 +518,7 @@ struct MapHomeView: View {
             }
             route.pause()
             if route.waitingForActivation {
-                route.cancelWaiting()
+                settleRouteSimulation(after: route.cancelWaiting(), from: .preparing)
             }
         }
         .sheet(isPresented: $showEnableTip) { enableTipSheet }
