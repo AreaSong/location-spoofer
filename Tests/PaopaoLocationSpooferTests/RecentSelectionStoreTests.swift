@@ -53,6 +53,17 @@ final class RecentSelectionStoreTests: XCTestCase {
         XCTAssertEqual(store.items.first?.name, "深圳湾公园")
     }
 
+    func testRemoveAllPersistsEmptyList() {
+        let suite = "RecentSelectionStoreTests.clear.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let store = RecentSelectionStore(defaults: defaults)
+        store.record(name: "甲", coordinatePair: pair(latitude: 22.5, longitude: 113.9))
+        store.removeAll()
+        XCTAssertTrue(store.items.isEmpty)
+        XCTAssertTrue(RecentSelectionStore(defaults: defaults).items.isEmpty)
+    }
+
     private func pair(latitude: Double, longitude: Double) -> CoordinatePair {
         CoordinateConverter.coordinatePair(
             lat: latitude,

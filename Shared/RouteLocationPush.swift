@@ -20,6 +20,35 @@ enum RouteLocationReadiness: Equatable, Sendable {
     }
 }
 
+struct DeveloperTunnelActivity: Equatable {
+    var lastSetAt: Date?
+    var lastClearAt: Date?
+    var lastFailure: RouteLocationPushFailure?
+    /// clear 失败后本地句柄已丢掉，系统模拟可能还开着。下次 clear 必须重连。
+    var simulationMayStillBeActive = false
+
+    var diagnosticText: String {
+        let failure = lastFailure?.message ?? "无"
+        return """
+        最近 set: \(Self.clockText(lastSetAt))
+        最近 clear: \(Self.clockText(lastClearAt))
+        失败原因: \(failure)
+        """
+    }
+
+    private static let clock: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .none
+        formatter.timeStyle = .medium
+        return formatter
+    }()
+
+    private static func clockText(_ date: Date?) -> String {
+        guard let date else { return "无" }
+        return clock.string(from: date)
+    }
+}
+
 struct RouteLocationStatus: Equatable {
     var vpnInstalled: Bool
     var tunnelConnected: Bool

@@ -149,7 +149,8 @@ extension MapHomeView {
     }
 
     var homePeekDisabled: Bool {
-        showsRoutePanelActive ? routePeekDisabled : spoofState == .verifying
+        if routeKeepsRunningWhileSpotShown { return false }
+        return showsRoutePanelActive ? routePeekDisabled : spoofState == .verifying
     }
 
     var homePeekOpensDetail: Bool {
@@ -168,6 +169,12 @@ extension MapHomeView {
 
     var routePeekOpensDetail: Bool { false }
 
+    /// 面板收起后路线仍占着定位：播放、暂停，或正在开启。
+    var routeKeepsRunningWhileSpotShown: Bool {
+        guard !showsRoutePanel else { return false }
+        return route.phase == .playing || route.phase == .paused || route.waitingForActivation
+    }
+
     var routePeekDisabled: Bool {
         if route.phase == .playing { return false }
         if route.phase == .preparing, route.start == nil || route.end == nil || !route.canPlay {
@@ -178,6 +185,10 @@ extension MapHomeView {
 
     func handlePeekTap() {
         guard showsRoutePanelActive else {
+            if routeKeepsRunningWhileSpotShown {
+                showsRoutePanel = true
+                return
+            }
             if needsSwitchButton {
                 beginLocationOperation()
             } else {

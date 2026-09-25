@@ -295,6 +295,21 @@ final class ThirdPartyProxyManagerTests: XCTestCase {
         XCTAssertFalse(manager.isRequesting)
         XCTAssertEqual(manager.connectionState, .connected(active: true))
     }
+
+    func testQueryDecodesMissingReadbackFieldsAsUnreported() throws {
+        let legacy = #"{"success":true,"longitude":113.9,"latitude":22.5,"accuracy":25}"#
+        let decoded = try JSONDecoder().decode(ThirdPartyProxySettingsResponse.self, from: Data(legacy.utf8))
+        XCTAssertNil(decoded.moduleVersion)
+        XCTAssertEqual(decoded.reportedVersion, "未回报")
+        XCTAssertEqual(decoded.appliedOffsetText, "未回报")
+        XCTAssertEqual(decoded.readbackCoordinateText, "22.500000, 113.900000")
+
+        let current = #"{"success":true,"longitude":113.9,"latitude":22.5,"accuracy":25,"randomRadius":50,"moduleVersion":"1.1.0","appliedOffsetMeters":12.5,"appliedLatitude":22.5001,"appliedLongitude":113.9002}"#
+        let reported = try JSONDecoder().decode(ThirdPartyProxySettingsResponse.self, from: Data(current.utf8))
+        XCTAssertEqual(reported.reportedVersion, "1.1.0")
+        XCTAssertEqual(reported.configuredRadiusText, "50 米")
+        XCTAssertEqual(reported.appliedOffsetText, "12.5 米")
+    }
 }
 
 private final class FakeThirdPartyRequester: ThirdPartyProxyRequesting {

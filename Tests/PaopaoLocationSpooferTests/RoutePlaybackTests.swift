@@ -561,6 +561,17 @@ final class RoutePlaybackControllerTests: XCTestCase {
         XCTAssertTrue(route.canPlay)
         XCTAssertTrue(route.headingForward)
         XCTAssertEqual(route.overlayPins.count, 3)
+        XCTAssertNil(route.pathNotice)
+    }
+
+    func testLoadRestoresStraightFallbackNotice() {
+        var saved = sampleSavedRoute(repeatMode: .once)
+        saved.straightFallback = .all
+        let route = makeRoute()
+        route.load(saved)
+        XCTAssertEqual(route.pathNotice, "沿路规划失败，已改用直线")
+        let snapshot = route.makeSavedRoute(name: "学校", overwrite: true)
+        XCTAssertEqual(snapshot?.straightFallback, .all)
     }
 
     func testMakeSavedRouteSnapshotsCurrentSettings() {
@@ -637,14 +648,14 @@ final class RoutePlaybackControllerTests: XCTestCase {
         let pausedProgress = route.progress
         XCTAssertGreaterThan(pausedProgress, 0.04)
         let revision = route.pathRevision
-        route.applyTravelMode(.walk)
-
-        let deadline = Date().addingTimeInterval(2)
-        while route.pathRevision == revision, Date() < deadline {
-            await Task.yield()
-        }
-        XCTAssertGreaterThan(route.pathRevision, revision)
+        let mode = route.travelMode
+        route.applyTravelMode(mode == .walk ? .bike : .walk)
+        route.setStart(CoordinateConverter.coordinatePair(lat: 22.5, lon: 114, mapCoordinateSystem: .wgs84))
+        XCTAssertEqual(route.travelMode, mode)
+        XCTAssertEqual(route.pathRevision, revision)
         XCTAssertEqual(route.phase, .paused)
+        route.setSpeedKilometersPerHour(20)
+        XCTAssertEqual(route.speedKilometersPerHour, 20, accuracy: 0.01)
         XCTAssertEqual(route.progress, pausedProgress, accuracy: 0.000_1)
 
         let expected = RoutePlayback.interpolate(path: route.path!, progress: pausedProgress)

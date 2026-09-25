@@ -184,6 +184,74 @@ final class RouteLocationTests: XCTestCase {
     }
 
     @MainActor
+    func testSetAndClearRecordTimesWithoutOverwritingOnSupersede() async throws {
+        let client = FakeIdeviceClient(results: [nil], clearResults: [.clearFailed])
+        let store = try readyStore(client: client, tunnelRetryDelayNanoseconds: 5_000_000_000)
+        let setFailure = await store.set(latitude: 22.5, longitude: 113.9)
+        XCTAssertNil(setFailure)
+        XCTAssertNotNil(store.activity.lastSetAt)
+        XCTAssertNil(store.activity.lastFailure)
+
+        let failure = await store.clear()
+        XCTAssertEqual(failure, .clearFailed)
+        XCTAssertNotNil(store.activity.lastClearAt)
+        XCTAssertEqual(store.activity.lastFailure, .clearFailed)
+        XCTAssertTrue(store.activity.simulationMayStillBeActive)
+
+        let setAt = store.activity.lastSetAt
+        let clientForCancel = client
+        let entered = expectation(description: "superseded set")
+        clientForCancel.beforeSet = { entered.fulfill() }
+        clientForCancel.results.append(.tunnel)
+        let task = Task { await store.set(latitude: 1, longitude: 2) }
+        await fulfillment(of: [entered], timeout: 2)
+        task.cancel()
+        let superseded = await task.value
+        XCTAssertEqual(superseded, .superseded)
+        XCTAssertEqual(store.activity.lastFailure, .clearFailed)
+        XCTAssertEqual(store.activity.lastSetAt, setAt)
+    }
+
+    @MainActor
+    func testRetryClearReconnectsWhenHandleIsGone() async throws {
+        let client = FakeIdeviceClient(results: [nil], clearResults: [.clearFailed, nil])
+        let store = try readyStore(client: client)
+        let setFailure = await store.set(latitude: 22.5, longitude: 113.9)
+        XCTAssertNil(setFailure)
+        _ = await store.invalidateActiveSession()
+        XCTAssertFalse(client.retainsSimulation)
+        XCTAssertTrue(store.activity.simulationMayStillBeActive)
+
+        let clearFailure = await store.clear()
+        XCTAssertNil(clearFailure)
+        XCTAssertEqual(client.reconnectClears, 1)
+        XCTAssertFalse(store.activity.simulationMayStillBeActive)
+        XCTAssertTrue(client.pushes.last?.pairingPath.contains("rp_pairing_file.plist") == true)
+    }
+
+    @MainActor
+    func testReplaceInvalidatesOldSessionAndDeleteKeepsFileWhenClearFails() async throws {
+        let client = FakeIdeviceClient(results: [nil], clearResults: [.clearFailed, .clearFailed])
+        let store = try readyStore(client: client)
+        let setFailure = await store.set(latitude: 22.5, longitude: 113.9)
+        XCTAssertNil(setFailure)
+        let replacement = try PropertyListSerialization.data(
+            fromPropertyList: ["kind": "replacement"],
+            format: .xml,
+            options: 0
+        )
+        try await store.importPairing(replacement)
+        XCTAssertEqual(client.invalidations, 1)
+        XCTAssertFalse(client.retainsSimulation)
+        XCTAssertTrue(store.status.hasPairing)
+        XCTAssertTrue(store.activity.simulationMayStillBeActive)
+
+        let message = await store.deletePairing()
+        XCTAssertEqual(message, RouteLocationPushFailure.clearFailed.message)
+        XCTAssertTrue(store.status.hasPairing)
+    }
+
+    @MainActor
     func testPushFailurePausesWithTheDeveloperMessage() async {
         let route = loadedRoute()
         route.ignoresWriteGate = true
@@ -271,11 +339,14 @@ final class RouteLocationTests: XCTestCase {
 
 private final class FakeIdeviceClient: IdeviceLocationPushing, @unchecked Sendable {
     private let lock = NSLock()
-    private var results: [RouteLocationPushFailure?]
     private var clearResults: [RouteLocationPushFailure?]
     private var mutation: UInt64 = 0
-    private(set) var pushes: [(latitude: Double, longitude: Double)] = []
+    var results: [RouteLocationPushFailure?]
+    private(set) var pushes: [(latitude: Double, longitude: Double, pairingPath: String)] = []
     private(set) var clears = 0
+    private(set) var reconnectClears = 0
+    private(set) var invalidations = 0
+    var retainsSimulation = false
     var beforeSet: (@Sendable () -> Void)?
     var afterSet: (@Sendable () -> Void)?
 
@@ -311,10 +382,15 @@ private final class FakeIdeviceClient: IdeviceLocationPushing, @unchecked Sendab
         lock.lock()
         defer { lock.unlock() }
         guard mutation == self.mutation else { return .superseded }
-        pushes.append((latitude, longitude))
+        pushes.append((latitude, longitude, pairingPath))
         afterSet?()
-        guard !results.isEmpty else { return .finished(nil) }
-        return .finished(results.removeFirst())
+        guard !results.isEmpty else {
+            retainsSimulation = true
+            return .finished(nil)
+        }
+        let failure = results.removeFirst()
+        if failure == nil { retainsSimulation = true }
+        return .finished(failure)
     }
 
     func clear(mutation: UInt64) -> IdeviceCommandOutcome {
@@ -322,7 +398,40 @@ private final class FakeIdeviceClient: IdeviceLocationPushing, @unchecked Sendab
         defer { lock.unlock() }
         guard mutation == self.mutation else { return .superseded }
         clears += 1
-        guard !clearResults.isEmpty else { return .finished(nil) }
-        return .finished(clearResults.removeFirst())
+        return finishClear()
+    }
+
+    func invalidate(mutation: UInt64) -> IdeviceCommandOutcome {
+        lock.lock()
+        defer { lock.unlock() }
+        guard mutation == self.mutation else { return .superseded }
+        invalidations += 1
+        let outcome = finishClear()
+        retainsSimulation = false
+        return outcome
+    }
+
+    func clearReconnecting(
+        pairingPath: String,
+        deviceAddress: String,
+        mutation: UInt64
+    ) -> IdeviceCommandOutcome {
+        lock.lock()
+        defer { lock.unlock() }
+        guard mutation == self.mutation else { return .superseded }
+        _ = deviceAddress
+        reconnectClears += 1
+        pushes.append((0, 0, pairingPath))
+        return finishClear()
+    }
+
+    private func finishClear() -> IdeviceCommandOutcome {
+        guard !clearResults.isEmpty else {
+            retainsSimulation = false
+            return .finished(nil)
+        }
+        let failure = clearResults.removeFirst()
+        if failure == nil { retainsSimulation = false }
+        return .finished(failure)
     }
 }

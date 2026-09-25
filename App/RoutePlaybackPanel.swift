@@ -92,6 +92,12 @@ struct RoutePlaybackPanel: View {
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
             }
+            if let notice = route.pathNotice {
+                Text(notice)
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+                    .lineLimit(2)
+            }
             actionRow
             settingsDisclosure
             if showsSpeedOffset {
@@ -268,7 +274,7 @@ struct RoutePlaybackPanel: View {
                 items: Array(RouteTravelMode.allCases),
                 title: \.displayName,
                 isSelected: { $0 == route.travelMode },
-                isDisabled: route.phase == .playing || route.isRouting,
+                isDisabled: route.locksPathEdits || route.isRouting,
                 onSelect: { route.applyTravelMode($0) }
             )
             RouteChoiceBar(

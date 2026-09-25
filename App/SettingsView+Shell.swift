@@ -78,6 +78,7 @@ extension SettingsView {
                         }
                     }
                     .disabled(thirdPartyProxy.isRequesting || UIPreview.isEnabled())
+                    thirdPartyReadback
                 }
                 HStack {
                     Label("虚拟定位", systemImage: virtualLocationIsActive ? "location.fill" : "location.slash")

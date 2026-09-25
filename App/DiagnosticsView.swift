@@ -257,6 +257,7 @@ struct RuntimeLogsView: View {
         本机隧道: \(status.tunnelConnected ? "已连接" : "未连接")
         配对文件: \(status.hasPairing ? "已导入" : "未导入")
         结果: \(readiness == .ready ? "就绪，可以开始虚拟定位" : (readiness.blockingMessage ?? "未就绪"))
+        \(store.activity.diagnosticText)
         """
         RuntimeLogger.info("APP", "诊断", "开发者隧道环境检测", details: [
             "LocalDevVPN": String(status.vpnInstalled),
@@ -277,6 +278,10 @@ struct RuntimeLogsView: View {
             请求: wloc-settings/save?action=query
             拦截响应: 有效 JSON
             已保存坐标: \(active ? "是" : "否")
+            模块版本: \(response.reportedVersion)
+            回读坐标: \(response.readbackCoordinateText)
+            设定半径: \(response.configuredRadiusText)
+            实际偏移: \(response.appliedOffsetText)
             """
         } catch {
             let diagnosis = ThirdPartyProxyError.diagnosis(for: error)

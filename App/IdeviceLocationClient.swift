@@ -23,6 +23,16 @@ protocol IdeviceLocationPushing: AnyObject, Sendable {
         mutation: UInt64
     ) -> IdeviceCommandOutcome
     func clear(mutation: UInt64) -> IdeviceCommandOutcome
+    /// 本地是否还握着系统定位模拟句柄。没有句柄时，clear 不能当成已经关掉模拟。
+    var retainsSimulation: Bool { get }
+    /// 尝试 clear，然后丢掉握手。clear 失败时句柄也不再留着，调用方要记「可能仍在生效」。
+    func invalidate(mutation: UInt64) -> IdeviceCommandOutcome
+    /// 句柄已经丢了，用当前配对文件重新连上再 clear。
+    func clearReconnecting(
+        pairingPath: String,
+        deviceAddress: String,
+        mutation: UInt64
+    ) -> IdeviceCommandOutcome
 }
 
 /// 通过 idevice 把坐标推进系统定位。模拟器没有这条通道。
@@ -74,6 +84,49 @@ final class IdeviceLocationClient: IdeviceLocationPushing, @unchecked Sendable {
         queue.sync {
             guard mutation == self.mutation else { return .superseded }
             return .finished(clearLocked())
+        }
+    }
+
+    var retainsSimulation: Bool {
+        #if targetEnvironment(simulator)
+        false
+        #else
+        queue.sync { simulation != nil }
+        #endif
+    }
+
+    func invalidate(mutation: UInt64) -> IdeviceCommandOutcome {
+        queue.sync {
+            guard mutation == self.mutation else { return .superseded }
+            #if targetEnvironment(simulator)
+            return .finished(nil)
+            #else
+            let failure = clearLocked()
+            releaseSession()
+            return .finished(failure)
+            #endif
+        }
+    }
+
+    func clearReconnecting(
+        pairingPath: String,
+        deviceAddress: String,
+        mutation: UInt64
+    ) -> IdeviceCommandOutcome {
+        queue.sync {
+            guard mutation == self.mutation else { return .superseded }
+            #if targetEnvironment(simulator)
+            _ = pairingPath
+            _ = deviceAddress
+            return .finished(.tunnel)
+            #else
+            if simulation == nil {
+                if let failure = connectLocked(pairingPath: pairingPath, deviceAddress: deviceAddress) {
+                    return .finished(failure)
+                }
+            }
+            return .finished(clearLocked())
+            #endif
         }
     }
 
@@ -137,6 +190,18 @@ final class IdeviceLocationClient: IdeviceLocationPushing, @unchecked Sendable {
         pairingPath: String,
         deviceAddress: String
     ) -> RouteLocationPushFailure? {
+        if let failure = connectLocked(pairingPath: pairingPath, deviceAddress: deviceAddress) {
+            return failure
+        }
+        if let setFailed = location_simulation_set(simulation, latitude, longitude) {
+            idevice_error_free(setFailed)
+            releaseSession()
+            return .rejected
+        }
+        return nil
+    }
+
+    private func connectLocked(pairingPath: String, deviceAddress: String) -> RouteLocationPushFailure? {
         var address = sockaddr_in()
         address.sin_family = sa_family_t(AF_INET)
         address.sin_port = Self.tunnelPort.bigEndian
@@ -180,11 +245,6 @@ final class IdeviceLocationClient: IdeviceLocationPushing, @unchecked Sendable {
         }
         if let simulationFailed = location_simulation_new(server, &simulation) {
             idevice_error_free(simulationFailed)
-            releaseSession()
-            return .rejected
-        }
-        if let setFailed = location_simulation_set(simulation, latitude, longitude) {
-            idevice_error_free(setFailed)
             releaseSession()
             return .rejected
         }

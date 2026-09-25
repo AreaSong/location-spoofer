@@ -648,6 +648,17 @@ struct MapHomeView: View {
                 coordinateRow(label: "WGS-84(国际)", system: .wgs84)
             },
             spotContent: {
+                if routeKeepsRunningWhileSpotShown {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("路线仍在运行，定位会继续沿路线更新。")
+                            .font(.caption)
+                            .foregroundStyle(.orange)
+                        Button("回到走路") {
+                            showsRoutePanel = true
+                        }
+                        .buttonStyle(CapsuleChipStyle())
+                    }
+                }
                 MapHomeSelectionChips(
                     hasRecents: !recentSelections.items.isEmpty,
                     favoritesEmpty: favorites.favorites.isEmpty,
@@ -661,7 +672,8 @@ struct MapHomeView: View {
                             favoriteChip(favorite)
                         }
                     },
-                    allFavoritesButton: { allFavoritesButton }
+                    allFavoritesButton: { allFavoritesButton },
+                    onClearRecents: { recentSelections.removeAll() }
                 )
             },
             routePanel: { routeCard },

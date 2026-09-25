@@ -21,6 +21,8 @@ final class RouteLocationSetupStore: ObservableObject, DeveloperLocationPushing 
     static let shared = RouteLocationSetupStore()
 
     @Published private(set) var isSimulating = false
+    @Published private(set) var isClearing = false
+    @Published private(set) var activity = DeveloperTunnelActivity()
     @Published private(set) var status = RouteLocationStatus(
         vpnInstalled: false,
         tunnelConnected: false,
@@ -54,9 +56,35 @@ final class RouteLocationSetupStore: ObservableObject, DeveloperLocationPushing 
         )
     }
 
-    func importPairing(_ data: Data) throws {
+    func importPairing(_ data: Data) async throws {
         try pairingStore.install(data)
         refresh()
+        _ = await invalidateActiveSession()
+    }
+
+    /// 先清模拟定位。清不掉就保留文件，避免下次重试没有配对可用。
+    func deletePairing() async -> String? {
+        if isSimulating || activity.simulationMayStillBeActive || client.retainsSimulation {
+            if let failure = await clear() {
+                return failure.message
+            }
+        }
+        do {
+            try pairingStore.remove()
+            refresh()
+            return nil
+        } catch {
+            return "配对文件没有删除。"
+        }
+    }
+
+    func invalidateActiveSession() async -> RouteLocationPushFailure? {
+        let mutation = client.beginMutation()
+        let client = client
+        let outcome = await performDevice {
+            client.invalidate(mutation: mutation)
+        }
+        return applyInvalidateResult(outcome, mutation: mutation)
     }
 
     func set(latitude: Double, longitude: Double) async -> RouteLocationPushFailure? {
@@ -85,10 +113,22 @@ final class RouteLocationSetupStore: ObservableObject, DeveloperLocationPushing 
     }
 
     func clear() async -> RouteLocationPushFailure? {
+        isClearing = true
+        defer { isClearing = false }
         let mutation = client.beginMutation()
+        let reconnect = activity.simulationMayStillBeActive && !client.retainsSimulation
+        let path = pairingStore.pairingURL.path
+        let address = environment.deviceAddress
         let client = client
         let outcome = await performDevice {
-            client.clear(mutation: mutation)
+            if reconnect {
+                return client.clearReconnecting(
+                    pairingPath: path,
+                    deviceAddress: address,
+                    mutation: mutation
+                )
+            }
+            return client.clear(mutation: mutation)
         }
         return applyClearResult(outcome, mutation: mutation)
     }
@@ -102,8 +142,11 @@ final class RouteLocationSetupStore: ObservableObject, DeveloperLocationPushing 
         case .superseded:
             return .superseded
         case .finished(let failure):
+            activity.lastSetAt = Date()
+            activity.lastFailure = failure
             guard let failure else {
                 isSimulating = true
+                activity.simulationMayStillBeActive = false
                 return nil
             }
             // 推送失败先看隧道是不是断了，把具体原因告诉用户。
@@ -125,8 +168,35 @@ final class RouteLocationSetupStore: ObservableObject, DeveloperLocationPushing 
         case .superseded:
             return .superseded
         case .finished(let failure):
+            activity.lastClearAt = Date()
+            activity.lastFailure = failure
             if failure == nil {
                 isSimulating = false
+                activity.simulationMayStillBeActive = false
+            } else if failure == .clearFailed {
+                activity.simulationMayStillBeActive = true
+            }
+            return failure
+        }
+    }
+
+    private func applyInvalidateResult(
+        _ outcome: IdeviceCommandOutcome,
+        mutation: UInt64
+    ) -> RouteLocationPushFailure? {
+        guard client.currentMutation() == mutation else { return .superseded }
+        switch outcome {
+        case .superseded:
+            return .superseded
+        case .finished(let failure):
+            activity.lastClearAt = Date()
+            activity.lastFailure = failure
+            if failure == nil {
+                isSimulating = false
+                activity.simulationMayStillBeActive = false
+            } else {
+                activity.simulationMayStillBeActive = true
+                isSimulating = true
             }
             return failure
         }

@@ -25,6 +25,16 @@ extension MapHomeView {
                         }
                         .contentShape(Rectangle())
                     }.buttonStyle(.plain)
+                    Button { copySearchCoordinate(r) } label: {
+                        Image(systemName: "doc.on.doc").frame(width: 36, height: 36).contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("复制坐标")
+                    Button { saveSearchResult(r) } label: {
+                        Image(systemName: "star").frame(width: 36, height: 36).contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("收藏")
                     Button(role: .destructive) { deleteSearchResult(r) } label: {
                         Image(systemName: "trash").frame(width: 36, height: 36).contentShape(Rectangle())
                     }.buttonStyle(.plain).foregroundStyle(.red)
@@ -371,6 +381,36 @@ extension MapHomeView {
         searchText = result.name
         searchResults = []
         searchError = ""
+    }
+
+    func copySearchCoordinate(_ result: SearchLocationResult) {
+        let pair = CoordinatePair(
+            mapCoordinate: result.coordinate,
+            mapCoordinateSystem: result.mapCoordinateSystem
+        )
+        let gcj = pair.gcj02
+        let wgs = pair.wgs84
+        UIPasteboard.general.string = String(
+            format: "GCJ-02 %.6f, %.6f\nWGS-84 %.6f, %.6f",
+            gcj.latitude, gcj.longitude, wgs.latitude, wgs.longitude
+        )
+    }
+
+    func saveSearchResult(_ result: SearchLocationResult) {
+        let pair = CoordinatePair(
+            mapCoordinate: result.coordinate,
+            mapCoordinateSystem: result.mapCoordinateSystem
+        )
+        let favorite = favorites.save(
+            name: result.name,
+            coordinatePair: pair,
+            accuracy: LocationAccuracyStore.shared.meters
+        )
+        mapState.selectFavorite(
+            pair.coordinate(for: CoordinateConverter.currentMapCoordinateSystem),
+            id: favorite.id,
+            name: favorite.name
+        )
     }
 
     func deleteSearchResult(_ result: SearchLocationResult) {

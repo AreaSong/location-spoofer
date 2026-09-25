@@ -43,6 +43,7 @@ extension MapHomeView {
     }
 
     var spotPeekTitle: String {
+        if routeKeepsRunningWhileSpotShown { return "路线仍在运行" }
         if needsSwitchButton { return "切换到此处" }
         if needsTunnelBeforeStart { return "连接隧道" }
         if runtimeMode.mode == .thirdParty {
@@ -72,6 +73,10 @@ extension MapHomeView {
     }
 
     func handleMainButtonTap() {
+        if routeKeepsRunningWhileSpotShown {
+            showsRoutePanel = true
+            return
+        }
         if UIPreview.isEnabled() {
             if spoofState == .active, !needsSwitchButton {
                 session.setPreviewActive(false, latitude: nil, longitude: nil)

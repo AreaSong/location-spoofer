@@ -54,6 +54,12 @@ final class RecentSelectionStore: ObservableObject {
         persist()
     }
 
+    func removeAll() {
+        guard !items.isEmpty else { return }
+        items = []
+        persist()
+    }
+
     func updateNameIfPresent(for coordinatePair: CoordinatePair, name: String) {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty,

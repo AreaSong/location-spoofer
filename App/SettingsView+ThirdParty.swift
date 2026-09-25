@@ -129,6 +129,18 @@ extension SettingsView {
         }
     }
 
+    var thirdPartyReadback: some View {
+        let settings = thirdPartyProxy.activeSettings
+        return VStack(alignment: .leading, spacing: 4) {
+            Text("模块版本 \(settings?.reportedVersion ?? "未回报")")
+            Text("回读坐标 \(settings?.readbackCoordinateText ?? "未回报")")
+            Text("设定半径 \(settings?.configuredRadiusText ?? "未回报")")
+            Text("实际偏移 \(settings?.appliedOffsetText ?? "未回报")")
+        }
+        .font(.caption)
+        .foregroundStyle(.secondary)
+    }
+
     var thirdPartyStatusText: String {
         switch thirdPartyProxy.connectionState {
         case .unknown: return "未检测"

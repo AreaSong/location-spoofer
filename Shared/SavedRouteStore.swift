@@ -12,6 +12,8 @@ struct SavedRoute: Codable, Identifiable, Equatable {
     var repeatMode: RouteRepeatMode
     var viaPoints: [CoordinatePair]
     var pathPoints: [CoordinatePair]?
+    /// 规划降级。旧存档没有这个字段，加载后不显示直线提示。
+    var straightFallback: RoutePathFallback?
     var createdAt: Date
 
     init(
@@ -25,6 +27,7 @@ struct SavedRoute: Codable, Identifiable, Equatable {
         repeatMode: RouteRepeatMode,
         viaPoints: [CoordinatePair] = [],
         pathPoints: [CoordinatePair]?,
+        straightFallback: RoutePathFallback? = nil,
         createdAt: Date = Date()
     ) {
         self.id = id
@@ -37,12 +40,13 @@ struct SavedRoute: Codable, Identifiable, Equatable {
         self.repeatMode = repeatMode
         self.viaPoints = viaPoints
         self.pathPoints = pathPoints
+        self.straightFallback = straightFallback
         self.createdAt = createdAt
     }
 
     private enum CodingKeys: String, CodingKey {
         case id, name, start, end, travelMode, speedKilometersPerHour
-        case offsetMeters, repeatMode, viaPoints, pathPoints, createdAt
+        case offsetMeters, repeatMode, viaPoints, pathPoints, straightFallback, createdAt
     }
 
     init(from decoder: Decoder) throws {
@@ -57,6 +61,7 @@ struct SavedRoute: Codable, Identifiable, Equatable {
         repeatMode = try container.decode(RouteRepeatMode.self, forKey: .repeatMode)
         viaPoints = try container.decodeIfPresent([CoordinatePair].self, forKey: .viaPoints) ?? []
         pathPoints = try container.decodeIfPresent([CoordinatePair].self, forKey: .pathPoints)
+        straightFallback = try container.decodeIfPresent(RoutePathFallback.self, forKey: .straightFallback)
         createdAt = try container.decode(Date.self, forKey: .createdAt)
     }
 
@@ -72,6 +77,7 @@ struct SavedRoute: Codable, Identifiable, Equatable {
         try container.encode(repeatMode, forKey: .repeatMode)
         try container.encode(viaPoints, forKey: .viaPoints)
         try container.encodeIfPresent(pathPoints, forKey: .pathPoints)
+        try container.encodeIfPresent(straightFallback, forKey: .straightFallback)
         try container.encode(createdAt, forKey: .createdAt)
     }
 

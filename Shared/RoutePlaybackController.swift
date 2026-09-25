@@ -26,6 +26,7 @@ final class RoutePlaybackController: ObservableObject {
     @Published private(set) var end: CoordinatePair?
     @Published private(set) var vias: [CoordinatePair] = []
     @Published private(set) var path: RoutePath?
+    @Published private(set) var pathFallback: RoutePathFallback?
     private(set) var progress: Double = 0 {
         didSet { clock.setProgress(progress) }
     }
@@ -89,6 +90,12 @@ final class RoutePlaybackController: ObservableObject {
     }
 
     var canOverwriteSavedRoute: Bool { editingSavedRoute != nil }
+
+    var pathNotice: String? { pathFallback?.notice }
+
+    var locksPathEdits: Bool {
+        phase == .playing || phase == .paused
+    }
 
     var anchors: [CoordinatePair] {
         guard let start, let end else { return [] }
@@ -154,6 +161,7 @@ final class RoutePlaybackController: ObservableObject {
         waitingForActivation = false
         isRouting = false
         editingSavedRoute = nil
+        pathFallback = nil
         refreshReadyMessage()
         phase = .preparing
     }
@@ -177,6 +185,7 @@ final class RoutePlaybackController: ObservableObject {
         elapsed = 0
         phase = .preparing
         editingSavedRoute = saved
+        pathFallback = saved.straightFallback
         persistPreferences()
         if let points = saved.pathPoints, points.count >= 2 {
             path = RoutePath.make(points)
@@ -209,6 +218,7 @@ final class RoutePlaybackController: ObservableObject {
             repeatMode: repeatMode,
             viaPoints: vias,
             pathPoints: (points?.count ?? 0) >= 2 ? points : nil,
+            straightFallback: pathFallback,
             createdAt: replacing?.createdAt ?? Date()
         )
     }
@@ -218,18 +228,20 @@ final class RoutePlaybackController: ObservableObject {
     }
 
     func setStart(_ pair: CoordinatePair) {
+        guard !locksPathEdits else { return }
         start = pair
         current = pair
         Task { await rebuildPath() }
     }
 
     func setEnd(_ pair: CoordinatePair) {
+        guard !locksPathEdits else { return }
         end = pair
         Task { await rebuildPath() }
     }
 
     func addVia(_ pair: CoordinatePair) {
-        guard canEditVias, let start else { return }
+        guard !locksPathEdits, canEditVias, let start else { return }
         if let index = indexOfVia(near: pair, within: 20) {
             vias[index] = pair
             statusMessage = "已更新途经 \(index + 1)。"
@@ -250,7 +262,7 @@ final class RoutePlaybackController: ObservableObject {
     }
 
     func removeVia(at index: Int) {
-        guard phase == .preparing, vias.indices.contains(index) else { return }
+        guard !locksPathEdits, phase == .preparing, vias.indices.contains(index) else { return }
         vias.remove(at: index)
         statusMessage = vias.isEmpty ? "已删除途经点。" : "已删除途经 \(index + 1)。"
         Task { await rebuildPath() }
@@ -268,7 +280,7 @@ final class RoutePlaybackController: ObservableObject {
     }
 
     func reverseDirection() {
-        guard canReverse, let start, let end else { return }
+        guard !locksPathEdits, canReverse, let start, let end else { return }
         headingForward = true
         elapsed = 0
         progress = 0
@@ -358,6 +370,7 @@ final class RoutePlaybackController: ObservableObject {
         elapsed = 0
         statusMessage = ""
         editingSavedRoute = nil
+        pathFallback = nil
         ignoresWriteGate = false
         phase = .inactive
         return pendingWrite
@@ -418,6 +431,7 @@ final class RoutePlaybackController: ObservableObject {
     }
 
     func applyTravelMode(_ mode: RouteTravelMode) {
+        guard !locksPathEdits else { return }
         travelMode = mode
         let next = mode.kilometersPerHour
         if isPlaybackInProgress {
@@ -442,6 +456,7 @@ final class RoutePlaybackController: ObservableObject {
         let points = anchors
         guard points.count >= 2 else {
             path = nil
+            pathFallback = nil
             refreshReadyMessage()
             return
         }
@@ -456,7 +471,8 @@ final class RoutePlaybackController: ObservableObject {
         restorePlaybackStatusIfNeeded()
         let routed = await RouteDirections.waypoints(along: points, mode: travelMode)
         guard generation == pathGeneration else { return }
-        path = RoutePath.make(routed)
+        path = RoutePath.make(routed.points)
+        pathFallback = routed.fallback
         isRouting = false
         if isPlaybackInProgress {
             rebaseElapsed(toSpeedKilometersPerHour: speedKilometersPerHour)

@@ -1,6 +1,35 @@
 import Foundation
 import MapKit
 
+enum RoutePathFallback: String, Codable, Equatable {
+    case all
+    case partial
+
+    var notice: String {
+        switch self {
+        case .all:
+            return "沿路规划失败，已改用直线"
+        case .partial:
+            return "部分路段规划失败，已改用直线"
+        }
+    }
+
+    static func from(straightLegCount: Int, legCount: Int) -> RoutePathFallback? {
+        guard straightLegCount > 0, legCount > 0 else { return nil }
+        return straightLegCount >= legCount ? .all : .partial
+    }
+}
+
+struct RoutePlan: Equatable {
+    var points: [CoordinatePair]
+    var straightLegCount: Int
+    var legCount: Int
+
+    var fallback: RoutePathFallback? {
+        RoutePathFallback.from(straightLegCount: straightLegCount, legCount: legCount)
+    }
+}
+
 protocol RouteDirectionsProviding {
     @MainActor
     func routePoints(
@@ -93,19 +122,29 @@ enum RouteDirections {
         along anchors: [CoordinatePair],
         mode: RouteTravelMode,
         provider: (any RouteDirectionsProviding)? = nil
-    ) async -> [CoordinatePair] {
-        guard anchors.count >= 2 else { return anchors }
+    ) async -> RoutePlan {
+        guard anchors.count >= 2 else {
+            return RoutePlan(points: anchors, straightLegCount: 0, legCount: 0)
+        }
         let directions = provider ?? Self.provider
         var combined: [CoordinatePair] = []
-        for index in 0..<(anchors.count - 1) {
-            let leg = await waypoints(from: anchors[index], to: anchors[index + 1], mode: mode, provider: directions)
+        var straightLegCount = 0
+        let legCount = anchors.count - 1
+        for index in 0..<legCount {
+            let leg = await waypoints(
+                from: anchors[index],
+                to: anchors[index + 1],
+                mode: mode,
+                provider: directions
+            )
+            straightLegCount += leg.straightLegCount
             if combined.isEmpty {
-                combined = leg
-            } else if leg.count > 1 {
-                combined.append(contentsOf: leg.dropFirst())
+                combined = leg.points
+            } else if leg.points.count > 1 {
+                combined.append(contentsOf: leg.points.dropFirst())
             }
         }
-        return combined
+        return RoutePlan(points: combined, straightLegCount: straightLegCount, legCount: legCount)
     }
 
     @MainActor
@@ -114,12 +153,12 @@ enum RouteDirections {
         to end: CoordinatePair,
         mode: RouteTravelMode,
         provider: (any RouteDirectionsProviding)? = nil
-    ) async -> [CoordinatePair] {
+    ) async -> RoutePlan {
         let directions = provider ?? Self.provider
         if let points = await directions.routePoints(from: start, to: end, mode: mode),
            RoutePath.make(points).totalMeters >= RoutePlayback.minimumDistanceMeters {
-            return points
+            return RoutePlan(points: points, straightLegCount: 0, legCount: 1)
         }
-        return [start, end]
+        return RoutePlan(points: [start, end], straightLegCount: 1, legCount: 1)
     }
 }

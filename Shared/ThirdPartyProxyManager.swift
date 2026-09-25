@@ -7,6 +7,57 @@ struct ThirdPartyProxySettingsResponse: Decodable, Equatable {
     let accuracy: Int?
     let error: String?
     let motionSimulationEnabled: Bool?
+    let randomRadius: Double?
+    let updatedAt: String?
+    let moduleVersion: String?
+    let appliedOffsetMeters: Double?
+    let appliedLatitude: Double?
+    let appliedLongitude: Double?
+
+    init(
+        success: Bool,
+        longitude: Double?,
+        latitude: Double?,
+        accuracy: Int?,
+        error: String?,
+        motionSimulationEnabled: Bool?,
+        randomRadius: Double? = nil,
+        updatedAt: String? = nil,
+        moduleVersion: String? = nil,
+        appliedOffsetMeters: Double? = nil,
+        appliedLatitude: Double? = nil,
+        appliedLongitude: Double? = nil
+    ) {
+        self.success = success
+        self.longitude = longitude
+        self.latitude = latitude
+        self.accuracy = accuracy
+        self.error = error
+        self.motionSimulationEnabled = motionSimulationEnabled
+        self.randomRadius = randomRadius
+        self.updatedAt = updatedAt
+        self.moduleVersion = moduleVersion
+        self.appliedOffsetMeters = appliedOffsetMeters
+        self.appliedLatitude = appliedLatitude
+        self.appliedLongitude = appliedLongitude
+    }
+
+    var reportedVersion: String { moduleVersion ?? "未回报" }
+
+    var readbackCoordinateText: String {
+        guard let latitude, let longitude else { return "未回报" }
+        return String(format: "%.6f, %.6f", latitude, longitude)
+    }
+
+    var configuredRadiusText: String {
+        guard let randomRadius else { return "未回报" }
+        return String(format: "%.0f 米", randomRadius)
+    }
+
+    var appliedOffsetText: String {
+        guard let appliedOffsetMeters else { return "未回报" }
+        return String(format: "%.1f 米", appliedOffsetMeters)
+    }
 }
 
 enum ThirdPartyProxyConnectionState: Equatable {

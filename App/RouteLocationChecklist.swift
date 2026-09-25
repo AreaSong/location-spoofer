@@ -7,6 +7,7 @@ struct RouteLocationChecklist: View {
     @ObservedObject var setup = RouteLocationSetupStore.shared
     @Environment(\.scenePhase) private var scenePhase
     @State private var showsImporter = false
+    @State private var showsDeleteConfirm = false
     @State private var importError = ""
 
     var body: some View {
@@ -28,14 +29,22 @@ struct RouteLocationChecklist: View {
                 actionDisabled: !setup.status.vpnInstalled,
                 action: LocalDevVPN.openOrInstall
             )
+            tunnelActivity
             checklistRow(
                 title: "配对文件",
                 ready: setup.status.hasPairing,
                 readyText: "已导入",
                 missingText: "未导入",
-                actionTitle: setup.status.hasPairing ? "重新导入" : "导入",
+                actionTitle: setup.status.hasPairing ? "替换" : "导入",
                 action: { showsImporter = true }
             )
+            if setup.status.hasPairing {
+                Button("删除配对文件", role: .destructive) {
+                    showsDeleteConfirm = true
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+            }
             Text("路线播放会把坐标推进系统定位，不用反复开关定位服务。请先连上 LocalDevVPN，并导入 RPPairing 文件。iOS 18 到 26 用电脑生成一次即可。需要 iOS 18 或更新的系统。")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
@@ -52,6 +61,28 @@ struct RouteLocationChecklist: View {
         }
         .fileImporter(isPresented: $showsImporter, allowedContentTypes: Self.pairingTypes) { result in
             importPairing(result)
+        }
+        .confirmationDialog("删除配对文件？", isPresented: $showsDeleteConfirm, titleVisibility: .visible) {
+            Button("删除", role: .destructive) {
+                Task { await deletePairing() }
+            }
+            Button("取消", role: .cancel) {}
+        } message: {
+            Text("会先关掉系统模拟定位。关不掉时文件会留下来，方便重试清除。")
+        }
+    }
+
+    private var tunnelActivity: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(setup.activity.diagnosticText)
+                .font(.caption.monospaced())
+                .foregroundStyle(.secondary)
+            Button(setup.isClearing ? "正在清除…" : "重试清除") {
+                Task { _ = await setup.clear() }
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+            .disabled(setup.isClearing)
         }
     }
 
@@ -85,20 +116,33 @@ struct RouteLocationChecklist: View {
         .accessibilityElement(children: .combine)
     }
 
+    private func deletePairing() async {
+        if let message = await setup.deletePairing() {
+            importError = message
+        } else {
+            importError = ""
+        }
+    }
+
     private func importPairing(_ result: Result<URL, Error>) {
-        switch result {
-        case .failure:
+        guard case .success(let url) = result else {
             importError = "没有读到配对文件。"
-        case .success(let url):
-            let accessing = url.startAccessingSecurityScopedResource()
+            return
+        }
+        let accessing = url.startAccessingSecurityScopedResource()
+        Task {
             defer { if accessing { url.stopAccessingSecurityScopedResource() } }
-            do {
-                let data = try Data(contentsOf: url)
-                try setup.importPairing(data)
-                importError = ""
-            } catch {
-                importError = "这份文件不是配对文件。"
-            }
+            await importPairingFile(url)
+        }
+    }
+
+    private func importPairingFile(_ url: URL) async {
+        do {
+            let data = try Data(contentsOf: url)
+            try await setup.importPairing(data)
+            importError = ""
+        } catch {
+            importError = "这份文件不是配对文件。"
         }
     }
 

@@ -15,6 +15,33 @@ final class SavedRouteStoreTests: XCTestCase {
         XCTAssertEqual(restored.repeatMode, .roundTrip)
         XCTAssertEqual(restored.pathPoints!.count, 2)
         XCTAssertEqual(restored.viaPoints.count, 1)
+        XCTAssertNil(restored.straightFallback)
+    }
+
+    func testOldRouteWithoutFallbackDecodesAsNil() throws {
+        let suite = "SavedRouteStoreTests.legacy.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let saved = sampleRoute(name: "旧路线")
+        let data = try JSONEncoder().encode([saved])
+        var object = try JSONSerialization.jsonObject(with: data) as! [[String: Any]]
+        object[0].removeValue(forKey: "straightFallback")
+        let legacy = try JSONSerialization.data(withJSONObject: object)
+        defaults.set(legacy, forKey: "saved_routes_v1")
+        let restored = SavedRouteStore(defaults: defaults).routes.first
+        XCTAssertEqual(restored?.name, "旧路线")
+        XCTAssertNil(restored?.straightFallback)
+    }
+
+    func testStraightFallbackRoundTrips() {
+        let suite = "SavedRouteStoreTests.fallback.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        var route = sampleRoute(name: "直线")
+        route.straightFallback = .partial
+        SavedRouteStore(defaults: defaults).save(route)
+        XCTAssertEqual(SavedRouteStore(defaults: defaults).routes.first?.straightFallback, .partial)
+        XCTAssertEqual(RoutePathFallback.partial.notice, "部分路段规划失败，已改用直线")
     }
 
     func testSaveInsertsNewestFirstAndCapsAtLimit() {

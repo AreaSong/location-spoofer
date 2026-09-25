@@ -364,19 +364,23 @@ struct MapHomeSelectionChips<RecentChips: View, FavoriteChips: View, AllFavorite
     let recentChips: RecentChips
     let favoriteChips: FavoriteChips
     let allFavoritesButton: AllFavorites
+    let onClearRecents: () -> Void
+    @State private var showsClearRecents = false
 
     init(
         hasRecents: Bool,
         favoritesEmpty: Bool,
         @ViewBuilder recentChips: () -> RecentChips,
         @ViewBuilder favoriteChips: () -> FavoriteChips,
-        @ViewBuilder allFavoritesButton: () -> AllFavorites
+        @ViewBuilder allFavoritesButton: () -> AllFavorites,
+        onClearRecents: @escaping () -> Void = {}
     ) {
         self.hasRecents = hasRecents
         self.favoritesEmpty = favoritesEmpty
         self.recentChips = recentChips()
         self.favoriteChips = favoriteChips()
         self.allFavoritesButton = allFavoritesButton()
+        self.onClearRecents = onClearRecents
     }
 
     var body: some View {
@@ -386,12 +390,20 @@ struct MapHomeSelectionChips<RecentChips: View, FavoriteChips: View, AllFavorite
                     Text("最近")
                         .font(.caption2.weight(.semibold))
                         .foregroundStyle(.secondary)
+                    Button("清空") { showsClearRecents = true }
+                        .font(.caption2.weight(.semibold))
+                        .buttonStyle(.plain)
+                        .foregroundStyle(.secondary)
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 8) {
                             recentChips
                         }
                         .padding(.vertical, 2)
                     }
+                }
+                .confirmationDialog("清空最近选点？", isPresented: $showsClearRecents, titleVisibility: .visible) {
+                    Button("清空", role: .destructive) { onClearRecents() }
+                    Button("取消", role: .cancel) {}
                 }
             }
             if favoritesEmpty {
