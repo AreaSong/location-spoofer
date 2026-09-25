@@ -97,8 +97,21 @@ struct RouteActivityWidget: Widget {
 
     private func compactText(_ state: RouteActivityAttributes.ContentState, isStale: Bool) -> String {
         if isStale { return "已中断" }
+        switch state.phase {
+        case "systemFault", "retrying", "finished", "stopped", "actionFailed":
+            return state.statusText
+        default:
+            break
+        }
         if state.kind == "route", !state.timeText.isEmpty { return state.timeText }
         return state.statusText
+    }
+
+    private func submittedAction(_ action: String, state: RouteActivityAttributes.ContentState) -> String {
+        if action == "retry", !state.retryCommand.isEmpty {
+            return state.retryCommand
+        }
+        return action
     }
 
     private func statusIcon(_ state: RouteActivityAttributes.ContentState, isStale: Bool) -> some View {
@@ -118,7 +131,7 @@ struct RouteActivityWidget: Widget {
         if #available(iOS 17.0, *), !state.primaryAction.isEmpty || !state.secondaryAction.isEmpty {
             HStack(spacing: 8) {
                 if !state.primaryAction.isEmpty {
-                    Button(intent: IslandActionIntent(action: state.primaryAction)) {
+                    Button(intent: IslandActionIntent(action: submittedAction(state.primaryAction, state: state))) {
                         Text(state.primaryTitle)
                             .frame(maxWidth: .infinity)
                             .frame(height: 36)
@@ -126,7 +139,7 @@ struct RouteActivityWidget: Widget {
                     .buttonStyle(.borderedProminent)
                 }
                 if !state.secondaryAction.isEmpty {
-                    Button(intent: IslandActionIntent(action: state.secondaryAction)) {
+                    Button(intent: IslandActionIntent(action: submittedAction(state.secondaryAction, state: state))) {
                         Text(state.secondaryTitle)
                             .frame(maxWidth: .infinity)
                             .frame(height: 36)

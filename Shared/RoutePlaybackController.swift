@@ -360,6 +360,25 @@ final class RoutePlaybackController: ObservableObject {
         captureSession(force: true)
     }
 
+    /// 定位通道被挡住时停住播放，但不要记成用户暂停，否则灵动岛会给出「继续」。
+    func pauseBecauseLocationBlocked() {
+        guard phase == .playing else { return }
+        stopPlaybackTask()
+        endRouteKeepAlive()
+        phase = .paused
+        interruption = .pushFailed
+        statusMessage = RouteActivitySync.locationBlockedMessage
+        captureSession(force: true)
+    }
+
+    func markActivationFailed(_ message: String) {
+        guard phase == .preparing || phase == .paused else { return }
+        phase = .preparing
+        interruption = .activationFailed
+        statusMessage = message
+        captureSession(force: true)
+    }
+
     /// 停下播放，保留已写下的虚拟定位。回到可编辑，不走退出清理。
     func stopPlaybackKeepingLocation() {
         guard phase == .playing || phase == .paused else { return }

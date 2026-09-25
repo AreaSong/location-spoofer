@@ -120,7 +120,7 @@ enum RouteActivityCommandStore {
     static var defaults = UserDefaults(suiteName: suiteName) ?? .standard
 
     static let allowedActions: Set<String> = [
-        "switchHere", "stopSpoof", "retry", "openApp", "pause", "resume", "stopRoute"
+        "switchHere", "stopSpoof", "retry", "openApp", "pause", "resume", "stopRoute", "play", "begin"
     ]
 
     static func enqueue(_ action: String) {

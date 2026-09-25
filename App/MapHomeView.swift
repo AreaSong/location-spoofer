@@ -83,6 +83,12 @@ struct MapHomeView: View {
     @State var activeTip: TipKind?
     @State var manualHint = ""
     @State var spotIslandFailed = false
+    @State var spotStopPending = false
+    @State var spotSwitchPending = false
+    @State var spotActionFailed = false
+    @State var spotFailureMessage = ""
+    @State var spotRetryCommand = ""
+    @State var spotStoppedConfirmUntil: Date?
     let tipPreferences = VirtualLocationTipPreferences()
     let communityPromptPreferences = ThirdPartyCommunityPromptPreferences()
     @State var pendingCommunityContributionClient: ThirdPartyProxyClient?
@@ -425,9 +431,21 @@ struct MapHomeView: View {
         .onReceive(route.clock.$statusMessage) { _ in
             syncRouteActivity()
         }
-        .onChange(of: session.state) { _ in
-            if session.state == .active || session.state == .verifying {
+        .onChange(of: session.state) { state in
+            switch state {
+            case .active:
+                if spotStopPending {
+                    noteSpotActionFailure(message: "停止虚拟定位失败，定位仍保持。", command: "stopSpoof")
+                }
+            case .idle:
+                if spotStopPending {
+                    spotStopPending = false
+                    spotSwitchPending = false
+                    spotStoppedConfirmUntil = Date().addingTimeInterval(3)
+                }
+            case .verifying:
                 spotIslandFailed = false
+                spotActionFailed = false
             }
             syncRouteActivity()
         }

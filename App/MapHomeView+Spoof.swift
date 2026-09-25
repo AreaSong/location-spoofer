@@ -141,35 +141,107 @@ extension MapHomeView {
     }
 
     func beginLocationOperation(target overrideTarget: FavoriteLocation? = nil) {
+        spotStopPending = false
+        spotStoppedConfirmUntil = nil
+        spotActionFailed = false
+        spotIslandFailed = false
+        spotFailureMessage = ""
+        spotRetryCommand = ""
+        spotSwitchPending = spoofState == .active
         if UIPreview.isEnabled() {
             let coordinate = (overrideTarget?.coordinatePair ?? currentSelectionPair).wgs84
             session.setPreviewActive(true, latitude: coordinate.latitude, longitude: coordinate.longitude)
+            if spoofState != .verifying {
+                spotSwitchPending = false
+            }
             return
         }
         session.begin(target: overrideTarget ?? currentSelectionFavorite)
+        if spoofState != .verifying {
+            spotSwitchPending = false
+        }
     }
 
     func stopSpoofing() {
+        spotSwitchPending = false
+        spotActionFailed = false
+        spotIslandFailed = false
+        spotFailureMessage = ""
+        spotRetryCommand = ""
+        spotStoppedConfirmUntil = nil
+        if runtimeMode.mode == .thirdParty || runtimeMode.mode == .developerTunnel {
+            spotStopPending = true
+        }
         session.stop()
+        if session.state == .idle {
+            spotStopPending = false
+            spotStoppedConfirmUntil = Date().addingTimeInterval(3)
+        }
+        syncRouteActivity()
+    }
+
+    func noteSpotActionFailure(message: String, command: String) {
+        spotActionFailed = true
+        spotIslandFailed = false
+        spotFailureMessage = message
+        spotRetryCommand = command
+        spotStopPending = false
+        spotSwitchPending = false
+    }
+
+    func noteSpotNotApplied(message: String) {
+        spotActionFailed = false
+        spotIslandFailed = true
+        spotFailureMessage = message
+        spotRetryCommand = "begin"
+        spotStopPending = false
+        spotSwitchPending = false
     }
 
     func handleSpoofEffects(_ effects: [SpoofSessionEffect]) {
         for effect in effects {
             switch effect {
             case .activationSucceeded:
+                spotStopPending = false
+                spotSwitchPending = false
+                spotActionFailed = false
+                spotIslandFailed = false
+                spotFailureMessage = ""
+                spotRetryCommand = ""
+                spotStoppedConfirmUntil = nil
                 presentSuccessfulOperationTip(.activation)
             case .deactivationSucceeded:
+                spotStopPending = false
+                spotSwitchPending = false
+                spotActionFailed = false
+                spotIslandFailed = false
+                spotFailureMessage = ""
+                spotRetryCommand = ""
+                spotStoppedConfirmUntil = Date().addingTimeInterval(3)
                 presentSuccessfulOperationTip(.deactivation)
             case .offerCommunityContribution:
                 queueCommunityContributionPrompt(for: thirdPartyClient.selectedClient)
             case .developerPushFailed(let message):
                 developerLocationError = message
-                spotIslandFailed = true
+                if spotStopPending || spotRetryCommand == "stopSpoof" {
+                    noteSpotActionFailure(message: message, command: "stopSpoof")
+                } else if spoofState == .active {
+                    noteSpotActionFailure(message: message, command: spotSwitchPending ? "switchHere" : "begin")
+                } else {
+                    noteSpotNotApplied(message: message)
+                }
                 syncRouteActivity()
             case .localVerificationFailed(let result):
                 activeTip = nil
-                spotIslandFailed = true
                 setup.applyVerificationResult(result, presentSetup: false)
+                if spoofState == .active {
+                    noteSpotActionFailure(
+                        message: "定位没有生效。",
+                        command: spotSwitchPending ? "switchHere" : "begin"
+                    )
+                } else {
+                    noteSpotNotApplied(message: "定位没有生效。")
+                }
                 syncRouteActivity()
             case .resetLocalDiagnosis:
                 lastSpoofDiagnosisSystem = nil

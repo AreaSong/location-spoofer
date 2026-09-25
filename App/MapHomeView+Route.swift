@@ -26,6 +26,10 @@ extension MapHomeView {
             playRoute()
         case "retry":
             retryIslandAction()
+        case "play":
+            playRoute()
+        case "begin":
+            beginLocationOperation()
         case "stopRoute":
             route.stopPlaybackKeepingLocation()
         case "stopSpoof":
@@ -40,6 +44,10 @@ extension MapHomeView {
     }
 
     private func retryIslandAction() {
+        if route.interruption == .activationFailed {
+            playRoute()
+            return
+        }
         if route.phase == .paused {
             playRoute()
             return
@@ -51,15 +59,22 @@ extension MapHomeView {
         guard #available(iOS 16.2, *) else { return }
         let travelSymbol = route.travelMode == .bike ? "bicycle" : "figure.walk"
         let routeName = route.editingSavedRoute?.name ?? route.travelMode.displayName
+        let confirmStopped = route.phase == .preparing
+            && route.interruption != .activationFailed
+            && route.statusMessage == RouteActivitySync.stoppedMessage
         let liveRoute = RouteActivitySync.snapshot(
             phase: route.phase,
+            interruption: route.interruption,
             statusMessage: route.statusMessage,
             routeName: routeName,
             remainingMeters: route.remainingMeters,
             speedMetersPerSecond: route.speedMetersPerSecond,
             progress: route.progress,
-            symbolName: travelSymbol
+            symbolName: travelSymbol,
+            confirmStopped: confirmStopped
         )
+        let spotStopped = spoofState == .idle
+            && spotStoppedConfirmUntil.map { $0 > Date() } == true
         let spotSnapshot = liveRoute == nil ? SpotActivitySync.snapshot(
             isVerifying: spoofState == .verifying,
             isActive: spoofState == .active,
@@ -67,7 +82,13 @@ extension MapHomeView {
             failed: spotIslandFailed,
             placeName: mapState.displayName ?? "当前选点",
             coordinateStandard: CoordinateConverter.currentMapCoordinateSystem.rawValue,
-            accuracyMeters: LocationAccuracyStore.shared.meters
+            accuracyMeters: LocationAccuracyStore.shared.meters,
+            isSwitching: spotSwitchPending,
+            isStopping: spotStopPending,
+            isStopped: spotStopped,
+            actionFailed: spotActionFailed,
+            errorText: spotFailureMessage,
+            retryCommand: spotRetryCommand
         ) : nil
         Task {
             let keepForRecovery = route.phase == .inactive && route.sessionStore.load() != nil
@@ -484,9 +505,13 @@ struct HomePeekCaption: View {
 extension MapHomeView {
     func pauseRouteIfLocationBlocked() {
         guard locationUseBlock != nil else { return }
-        route.pause()
+        if route.phase == .playing {
+            route.pauseBecauseLocationBlocked()
+        }
         if route.waitingForActivation {
-            settleRouteSimulation(after: route.cancelWaiting(), from: .preparing)
+            let pendingWrite = route.cancelWaiting()
+            route.markActivationFailed(RouteActivitySync.locationBlockedMessage)
+            settleRouteSimulation(after: pendingWrite, from: .preparing)
         }
     }
 }

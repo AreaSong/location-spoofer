@@ -371,6 +371,75 @@ final class RouteActivitySyncTests: XCTestCase {
         XCTAssertEqual(normalized.secondaryAction, "")
     }
 
+    func testRetryingHasNoButtons() {
+        let snapshot = RouteActivitySync.snapshot(
+            phase: .paused,
+            interruption: .pushFailed,
+            statusMessage: "系统定位推送失败，已暂停。",
+            routeName: "步行路线",
+            remainingMeters: 800,
+            speedMetersPerSecond: 1.4,
+            progress: 0.2,
+            symbolName: "figure.walk",
+            isRetrying: true
+        )
+        XCTAssertEqual(snapshot?.phaseKey, .retrying)
+        XCTAssertEqual(snapshot?.statusText, "重试中")
+        XCTAssertEqual(snapshot?.primaryAction, "")
+        XCTAssertEqual(snapshot?.secondaryAction, "")
+        XCTAssertEqual(snapshot?.timeText, "10分")
+    }
+
+    func testCommandFailureKeepsTheFailedCommand() {
+        let snapshot = RouteActivitySync.snapshot(
+            phase: .playing,
+            statusMessage: "暂停没有执行。",
+            routeName: "步行路线",
+            remainingMeters: 800,
+            speedMetersPerSecond: 1.4,
+            progress: 0.2,
+            symbolName: "figure.walk",
+            commandFailed: true,
+            failedCommand: "pause"
+        )
+        XCTAssertEqual(snapshot?.phaseKey, .actionFailed)
+        XCTAssertEqual(snapshot?.primaryAction, "retry")
+        XCTAssertEqual(snapshot?.secondaryAction, "openApp")
+        XCTAssertEqual(snapshot?.retryCommand, "pause")
+        XCTAssertNotEqual(snapshot?.primaryTitle, "继续")
+    }
+
+    func testSpotSwitchingAndStoppedHaveNoButtons() {
+        let switching = SpotActivitySync.snapshot(
+            isVerifying: true,
+            isActive: false,
+            needsSwitch: true,
+            failed: false,
+            placeName: "深圳湾",
+            coordinateStandard: "GCJ-02",
+            accuracyMeters: 25,
+            isSwitching: true
+        )
+        XCTAssertEqual(switching?.status, .switching)
+        XCTAssertEqual(switching?.statusText, "切换中")
+        XCTAssertEqual(switching?.primaryAction, "")
+
+        let stopped = SpotActivitySync.snapshot(
+            isVerifying: false,
+            isActive: false,
+            needsSwitch: false,
+            failed: false,
+            placeName: "深圳湾",
+            coordinateStandard: "GCJ-02",
+            accuracyMeters: 25,
+            isStopped: true
+        )
+        XCTAssertEqual(stopped?.status, .stopped)
+        XCTAssertEqual(stopped?.statusText, "已停止")
+        XCTAssertEqual(stopped?.primaryAction, "")
+        XCTAssertNil(SpotActivitySync.staleDate(for: stopped!, now: Date(timeIntervalSince1970: 1_000)))
+    }
+
     private func playingSnapshot(remainingMeters: Double) -> RouteActivitySnapshot {
         RouteActivitySync.snapshot(
             phase: .playing,
