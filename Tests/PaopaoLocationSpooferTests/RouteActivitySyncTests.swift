@@ -77,10 +77,12 @@ final class RouteActivitySyncTests: XCTestCase {
             RouteActivityCommandStore.defaults = previous
             defaults.removePersistentDomain(forName: suite)
             RouteActivityBridge.handler = nil
+            RouteActivityBridge.expirationHandler = nil
             RouteActivityBridge.inFlightAction = nil
         }
 
         RouteActivityBridge.handler = nil
+        RouteActivityBridge.expirationHandler = nil
         RouteActivityBridge.inFlightAction = nil
         var ran = false
         XCTAssertEqual(RouteActivityBridge.submit("pause"), .queued)
@@ -111,9 +113,27 @@ final class RouteActivitySyncTests: XCTestCase {
         RouteActivityCommandStore.enqueue("resume")
         RouteActivityCommandStore.now = { issued.addingTimeInterval(RouteActivityCommandStore.maxAge + 1) }
         XCTAssertNil(RouteActivityCommandStore.consume())
+        XCTAssertEqual(RouteActivityCommandStore.takeExpiredAction(), "resume")
 
         defaults.set("resume", forKey: RouteActivityCommandStore.pendingKey)
         XCTAssertNil(RouteActivityCommandStore.consume())
+        XCTAssertEqual(RouteActivityCommandStore.takeExpiredAction(), "resume")
+    }
+
+    func testNewerIslandCommandReplacesTheQueuedOne() {
+        let suite = "route-activity-replace-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        let previous = RouteActivityCommandStore.defaults
+        RouteActivityCommandStore.defaults = defaults
+        defer {
+            RouteActivityCommandStore.defaults = previous
+            defaults.removePersistentDomain(forName: suite)
+        }
+
+        RouteActivityCommandStore.enqueue("pause")
+        RouteActivityCommandStore.enqueue("stopRoute")
+        XCTAssertEqual(RouteActivityCommandStore.peek(), "stopRoute")
+        XCTAssertEqual(RouteActivityCommandStore.consume(), "stopRoute")
     }
 
     func testMinuteChangePushes() {
@@ -378,8 +398,9 @@ final class RouteActivitySyncTests: XCTestCase {
             secondaryTitle: "停止路线",
             isStale: true
         )
-        XCTAssertEqual(paused.primaryAction, "")
-        XCTAssertEqual(paused.secondaryAction, "")
+        XCTAssertEqual(paused.primaryAction, "resume")
+        XCTAssertEqual(paused.primaryTitle, "继续")
+        XCTAssertEqual(paused.secondaryAction, "openApp")
     }
 
     func testActionChangePushes() {

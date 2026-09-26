@@ -153,6 +153,90 @@ final class IslandActivityReliabilityTests: XCTestCase {
         XCTAssertTrue(ActivityRunPolicy.updateAccepted(.active))
         XCTAssertTrue(ActivityRunPolicy.updateAccepted(.stale))
         XCTAssertEqual(ActivityRunPolicy.idsToEnd(existing: ["old", "new"], keeping: "new"), ["old"])
+        XCTAssertTrue(ActivityRunPolicy.shouldPublish(contentChanged: false, runtime: .stale))
+        XCTAssertFalse(ActivityRunPolicy.shouldPublish(contentChanged: false, runtime: .active))
+        XCTAssertTrue(ActivityRunPolicy.shouldPublish(contentChanged: true, runtime: .active))
+        XCTAssertFalse(IslandHandoffPolicy.opensAppToDeliver(canContinueInForeground: true))
+        XCTAssertTrue(IslandHandoffPolicy.opensAppToDeliver(canContinueInForeground: false))
+    }
+
+    func testStaleUserPauseKeepsResumeAndOpenApp() {
+        let buttons = RouteIslandActions.buttons(
+            phase: "userPaused",
+            primaryAction: "resume",
+            primaryTitle: "继续",
+            secondaryAction: "stopRoute",
+            secondaryTitle: "停止路线",
+            isStale: true
+        )
+        XCTAssertEqual(buttons.primaryAction, "resume")
+        XCTAssertEqual(buttons.primaryTitle, "继续")
+        XCTAssertEqual(buttons.secondaryAction, "openApp")
+        XCTAssertNotEqual(buttons.primaryAction, "stopRoute")
+    }
+
+    func testBlockedLocationDoesNotStartSpot() {
+        let message = "免费签名已过期，请用电脑重新签名并安装。"
+        let idle = islandContext(
+            spoofState: .idle,
+            locationBlocked: true,
+            locationBlockMessage: message
+        )
+        XCTAssertEqual(IslandCommandRouter.decide("begin", context: idle), .unavailable(message))
+
+        let moved = islandContext(
+            spoofState: .active,
+            needsSwitch: true,
+            locationBlocked: true,
+            locationBlockMessage: message
+        )
+        XCTAssertEqual(IslandCommandRouter.decide("switchHere", context: moved), .unavailable(message))
+
+        let locating = islandContext(
+            spoofState: .active,
+            locationBlocked: true,
+            locationBlockMessage: message
+        )
+        XCTAssertEqual(IslandCommandRouter.decide("stopSpoof", context: locating), .run)
+        XCTAssertEqual(IslandCommandRouter.decide("begin", context: locating), .alreadySatisfied)
+
+        let blank = islandContext(locationBlocked: true, locationBlockMessage: "  ")
+        XCTAssertEqual(IslandCommandRouter.decide("begin", context: blank), .unavailable("现在不能开始定位。"))
+    }
+
+    @MainActor
+    func testExpiredCommandIsReportedInsteadOfRunning() {
+        let suite = "island-expired-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        let previousDefaults = RouteActivityCommandStore.defaults
+        let previousNow = RouteActivityCommandStore.now
+        RouteActivityCommandStore.defaults = defaults
+        RouteActivityBridge.handler = nil
+        RouteActivityBridge.expirationHandler = nil
+        RouteActivityBridge.inFlightAction = nil
+        defer {
+            RouteActivityCommandStore.defaults = previousDefaults
+            RouteActivityCommandStore.now = previousNow
+            defaults.removePersistentDomain(forName: suite)
+            RouteActivityBridge.handler = nil
+            RouteActivityBridge.expirationHandler = nil
+            RouteActivityBridge.inFlightAction = nil
+        }
+
+        let issued = Date(timeIntervalSince1970: 2_000)
+        RouteActivityCommandStore.now = { issued }
+        XCTAssertEqual(RouteActivityBridge.submit("resume"), .queued)
+        RouteActivityCommandStore.now = { issued.addingTimeInterval(RouteActivityCommandStore.maxAge + 1) }
+
+        var ran = false
+        var expired: String?
+        RouteActivityBridge.handler = { _ in ran = true }
+        RouteActivityBridge.expirationHandler = { action in expired = action }
+        RouteActivityBridge.drainPending()
+        XCTAssertFalse(ran)
+        XCTAssertEqual(expired, "resume")
+        XCTAssertNil(RouteActivityCommandStore.peek())
+        XCTAssertNil(RouteActivityCommandStore.takeExpiredAction())
     }
 
     @MainActor
@@ -165,9 +249,11 @@ final class IslandActivityReliabilityTests: XCTestCase {
             RouteActivityCommandStore.defaults = previous
             defaults.removePersistentDomain(forName: suite)
             RouteActivityBridge.handler = nil
+            RouteActivityBridge.expirationHandler = nil
             RouteActivityBridge.inFlightAction = nil
         }
         RouteActivityBridge.handler = nil
+        RouteActivityBridge.expirationHandler = nil
         RouteActivityBridge.inFlightAction = nil
 
         XCTAssertEqual(RouteActivityBridge.submit("not-an-action"), .rejected)
@@ -196,7 +282,9 @@ final class IslandActivityReliabilityTests: XCTestCase {
         needsSwitch: Bool = false,
         spotStopPending: Bool = false,
         spotSwitchPending: Bool = false,
-        retryCommand: String = ""
+        retryCommand: String = "",
+        locationBlocked: Bool = false,
+        locationBlockMessage: String = ""
     ) -> IslandCommandContext {
         IslandCommandContext(
             routePhase: routePhase,
@@ -207,7 +295,9 @@ final class IslandActivityReliabilityTests: XCTestCase {
             needsSwitch: needsSwitch,
             spotStopPending: spotStopPending,
             spotSwitchPending: spotSwitchPending,
-            retryCommand: retryCommand
+            retryCommand: retryCommand,
+            locationBlocked: locationBlocked,
+            locationBlockMessage: locationBlockMessage
         )
     }
 }

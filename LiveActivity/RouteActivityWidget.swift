@@ -1,4 +1,5 @@
 import ActivityKit
+import AppIntents
 import SwiftUI
 import WidgetKit
 
@@ -158,12 +159,14 @@ struct RouteActivityWidget: Widget {
     @available(iOS 17.0, *)
     @ViewBuilder
     private func spotCommandButton(title: String, action: String, prominent: Bool) -> some View {
-        if prominent {
-            Button(intent: IslandCommandIntent(action: action)) { spotButtonTitle(title) }
-                .buttonStyle(.borderedProminent)
+        if commandOpensApp {
+            islandIntentButton(IslandOpeningCommandIntent(action: action), prominent: prominent) {
+                spotButtonTitle(title)
+            }
         } else {
-            Button(intent: IslandCommandIntent(action: action)) { spotButtonTitle(title) }
-                .buttonStyle(.bordered)
+            islandIntentButton(IslandCommandIntent(action: action), prominent: prominent) {
+                spotButtonTitle(title)
+            }
         }
     }
 
@@ -321,11 +324,36 @@ struct RouteActivityWidget: Widget {
     @available(iOS 17.0, *)
     @ViewBuilder
     private func commandButton(title: String, action: String, prominent: Bool) -> some View {
+        if commandOpensApp {
+            islandIntentButton(IslandOpeningCommandIntent(action: action), prominent: prominent) {
+                buttonTitle(title)
+            }
+        } else {
+            islandIntentButton(IslandCommandIntent(action: action), prominent: prominent) {
+                buttonTitle(title)
+            }
+        }
+    }
+
+    private var commandOpensApp: Bool {
+        if #available(iOS 26.0, *) {
+            return IslandHandoffPolicy.opensAppToDeliver(canContinueInForeground: true)
+        }
+        return IslandHandoffPolicy.opensAppToDeliver(canContinueInForeground: false)
+    }
+
+    @available(iOS 17.0, *)
+    @ViewBuilder
+    private func islandIntentButton<I: LiveActivityIntent>(
+        _ intent: I,
+        prominent: Bool,
+        label: () -> some View
+    ) -> some View {
         if prominent {
-            Button(intent: IslandCommandIntent(action: action)) { buttonTitle(title) }
+            Button(intent: intent, label: label)
                 .buttonStyle(.borderedProminent)
         } else {
-            Button(intent: IslandCommandIntent(action: action)) { buttonTitle(title) }
+            Button(intent: intent, label: label)
                 .buttonStyle(.bordered)
         }
     }

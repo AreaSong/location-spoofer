@@ -81,7 +81,8 @@ final class RouteLiveActivityCenter {
     private func presentRoute(_ next: RouteActivitySnapshot, token: Int) async {
         if ActivityRunPolicy.blocksNewWork(holdingFinished: holdingFinished) { return }
         holdingFinished = false
-        guard RouteActivitySync.shouldUpdate(lastRoute, to: next) || lastSpot != nil else { return }
+        let contentChanged = RouteActivitySync.shouldUpdate(lastRoute, to: next) || lastSpot != nil
+        guard needsPublish(contentChanged: contentChanged) else { return }
         let next = RouteActivitySync.normalized(next)
         if next.phaseKey == .finished || next.phaseKey == .stopped {
             if activity == nil, closedRouteTerminal == next.phaseKey {
@@ -146,7 +147,8 @@ final class RouteLiveActivityCenter {
         } else {
             closedSpotStop = false
         }
-        guard SpotActivitySync.shouldUpdate(lastSpot, to: next) || lastRoute != nil else { return }
+        let contentChanged = SpotActivitySync.shouldUpdate(lastSpot, to: next) || lastRoute != nil
+        guard needsPublish(contentChanged: contentChanged) else { return }
         if next.status == .actionFailed || next.status == .notApplied, lastSpot?.status != next.status {
             UINotificationFeedbackGenerator().notificationOccurred(.error)
         }
@@ -269,6 +271,13 @@ final class RouteLiveActivityCenter {
             return false
         }
         return true
+    }
+
+    private func needsPublish(contentChanged: Bool) -> Bool {
+        ActivityRunPolicy.shouldPublish(
+            contentChanged: contentChanged,
+            runtime: activity.flatMap { runtimeState(of: $0) }
+        )
     }
 
     private func runtimeState(of activity: Activity<RouteActivityAttributes>) -> ActivityRuntimeState? {

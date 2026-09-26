@@ -17,6 +17,8 @@ struct IslandCommandContext: Equatable {
     var spotStopPending: Bool
     var spotSwitchPending: Bool
     var retryCommand: String
+    var locationBlocked = false
+    var locationBlockMessage = ""
 }
 
 enum IslandCommandRouter {
@@ -103,16 +105,27 @@ enum IslandCommandRouter {
 
     private static func switchDecision(_ context: IslandCommandContext) -> IslandCommandDecision {
         if let blocked = blockedSpotStart(context) { return blocked }
-        if context.spoofState == .active, context.needsSwitch { return .run }
-        if context.spoofState == .active { return .alreadySatisfied }
-        return .unavailable("现在不能切换定位。")
+        if context.spoofState == .active, !context.needsSwitch { return .alreadySatisfied }
+        guard context.spoofState == .active else {
+            return .unavailable("现在不能切换定位。")
+        }
+        if let blocked = unavailableBecauseLocationBlocked(context) { return blocked }
+        return .run
     }
 
     private static func beginDecision(_ context: IslandCommandContext) -> IslandCommandDecision {
         if let blocked = blockedSpotStart(context) { return blocked }
-        if context.spoofState == .active, context.needsSwitch { return .run }
-        if context.spoofState == .active { return .alreadySatisfied }
+        if context.spoofState == .active, !context.needsSwitch { return .alreadySatisfied }
+        if let blocked = unavailableBecauseLocationBlocked(context) { return blocked }
         return .run
+    }
+
+    private static func unavailableBecauseLocationBlocked(
+        _ context: IslandCommandContext
+    ) -> IslandCommandDecision? {
+        guard context.locationBlocked else { return nil }
+        let message = context.locationBlockMessage.trimmingCharacters(in: .whitespacesAndNewlines)
+        return .unavailable(message.isEmpty ? "现在不能开始定位。" : message)
     }
 
     private static func blockedSpotStart(_ context: IslandCommandContext) -> IslandCommandDecision? {
@@ -161,6 +174,11 @@ enum ActivityRunPolicy {
         case nil, .ended, .dismissed:
             return false
         }
+    }
+
+    /// 内容没变时，过期的活动仍要再发布一次，否则重试无法解除系统的过期标记。
+    static func shouldPublish(contentChanged: Bool, runtime: ActivityRuntimeState?) -> Bool {
+        contentChanged || runtime == .stale
     }
 
     /// 完成态标记不能挡住下一次定点或路线。

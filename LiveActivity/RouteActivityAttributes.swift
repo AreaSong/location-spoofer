@@ -122,7 +122,7 @@ struct RouteActivityAttributes: ActivityAttributes {
 }
 
 enum IslandActionPresentation {
-    /// 过期后撤下暂停、继续、停止和切换。失败态和仍在进行的状态改为重试加打开 App。
+    /// 过期后撤下暂停和停止。用户暂停保留继续，失败态和仍在进行的状态改为重试，并都可以打开 App。
     static func buttons(
         phase: String,
         primaryAction: String,
@@ -135,8 +135,10 @@ enum IslandActionPresentation {
             return (primaryAction, primaryTitle, secondaryAction, secondaryTitle)
         }
         switch phase {
-        case "userPaused", "finished", "stopped":
+        case "finished", "stopped":
             return ("", "", "", "")
+        case "userPaused":
+            return ("resume", "继续", "openApp", "打开 App")
         default:
             return ("retry", "重试", "openApp", "打开 App")
         }
@@ -309,7 +311,8 @@ enum RouteIslandActions {
             if isStale || phase == "systemFault" || phase == "actionFailed" { return ("", "") }
             return (action, title.isEmpty ? "暂停" : title)
         case "resume":
-            if isStale || phase == "systemFault" || phase == "actionFailed" { return ("", "") }
+            if phase == "systemFault" || phase == "actionFailed" { return ("", "") }
+            if isStale, phase != "userPaused" { return ("", "") }
             return (action, "继续")
         case "stopRoute":
             if isStale || phase == "systemFault" || phase == "actionFailed" { return ("", "") }
@@ -335,8 +338,15 @@ enum RouteActivityCommandStore {
         "switchHere", "stopSpoof", "retry", "openApp", "pause", "resume", "stopRoute", "play", "begin"
     ]
 
+    static let expiredActionKey = "routeActivity.expiredCommand"
+
     static func enqueue(_ action: String) {
         guard allowedActions.contains(action) else { return }
+        if let pending = peek(), pending != action {
+            islandCommandLog.info(
+                "尚未执行的灵动岛动作被新动作替换 \(pending, privacy: .public) -> \(action, privacy: .public)"
+            )
+        }
         defaults.set(action, forKey: pendingKey)
         defaults.set(now().timeIntervalSince1970, forKey: pendingAtKey)
     }
@@ -350,8 +360,23 @@ enum RouteActivityCommandStore {
         let storedAt = defaults.object(forKey: pendingAtKey) as? Double
         defaults.removeObject(forKey: pendingKey)
         defaults.removeObject(forKey: pendingAtKey)
-        guard let storedAt else { return nil }
-        guard now().timeIntervalSince1970 - storedAt <= maxAge else { return nil }
+        guard let storedAt, now().timeIntervalSince1970 - storedAt <= maxAge else {
+            rememberExpired(action)
+            return nil
+        }
+        return action
+    }
+
+    static func rememberExpired(_ action: String, log: Bool = true) {
+        defaults.set(action, forKey: expiredActionKey)
+        if log {
+            islandCommandLog.error("灵动岛动作已过期，不会执行 \(action, privacy: .public)")
+        }
+    }
+
+    static func takeExpiredAction() -> String? {
+        guard let action = defaults.string(forKey: expiredActionKey) else { return nil }
+        defaults.removeObject(forKey: expiredActionKey)
         return action
     }
 }
@@ -368,6 +393,8 @@ enum RouteActivityBridge {
     static var handler: ((String) -> Void)?
     /// 同一个动作还在处理时，第二次不再转交，避免连点启动两条路线或两次定位。
     static var inFlightAction: String?
+    /// 队列里的动作过期后通知界面，避免点击被静默丢掉。
+    static var expirationHandler: ((String) -> Void)?
 
     static func submit(_ action: String) -> IslandCommandDelivery {
         let trimmed = action.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -394,13 +421,33 @@ enum RouteActivityBridge {
     static func drainPending() {
         guard handler != nil else { return }
         guard inFlightAction == nil else { return }
-        guard let action = RouteActivityCommandStore.consume() else { return }
+        reportExpiredAction()
+        guard let action = RouteActivityCommandStore.consume() else {
+            reportExpiredAction()
+            return
+        }
         inFlightAction = action
         handler?(action)
         inFlightAction = nil
         if handler != nil, RouteActivityCommandStore.peek() != nil {
             drainPending()
         }
+    }
+
+    private static func reportExpiredAction() {
+        guard let action = RouteActivityCommandStore.takeExpiredAction() else { return }
+        guard let expirationHandler else {
+            RouteActivityCommandStore.rememberExpired(action, log: false)
+            return
+        }
+        expirationHandler(action)
+    }
+}
+
+enum IslandHandoffPolicy {
+    /// 不能把执行交回前台时，只能打开 App。否则进程刚被拉起、界面还没注册桥接，动作会停在队列里直到过期。
+    static func opensAppToDeliver(canContinueInForeground: Bool) -> Bool {
+        !canContinueInForeground
     }
 }
 
@@ -426,28 +473,64 @@ struct IslandCommandIntent: LiveActivityIntent {
     }
 
     func perform() async throws -> some IntentResult {
-        let name = action
-        let delivery = await MainActor.run {
-            RouteActivityBridge.submit(name)
-        }
-        if delivery == .queued {
-            await handoffQueuedCommand()
+        await deliverIslandCommand(action) {
+            if #available(iOS 26.0, *) {
+                try await self.continueInForeground(
+                    IntentDialog("打开 App 以完成这个操作"),
+                    alwaysConfirm: false
+                )
+            }
         }
         return .result()
     }
+}
 
-    /// 桥接还没接上时，命令已经在 App Group 里。iOS 26 把 App 带到前台后再排空，避免扩展进程里静默丢掉。
-    private func handoffQueuedCommand() async {
-        if #available(iOS 26.0, *) {
-            do {
-                try await continueInForeground(IntentDialog("打开 App 以完成这个操作"), alwaysConfirm: false)
-            } catch {
-                islandCommandLog.error("灵动岛动作无法交回前台")
-            }
+/// iOS 26 之前没有 continueInForeground。这个意图打开 App，让界面注册桥接后再排空队列。
+@available(iOS 17.0, *)
+struct IslandOpeningCommandIntent: LiveActivityIntent {
+    static var title: LocalizedStringResource = "灵动岛操作"
+    static var openAppWhenRun = true
+
+    @available(iOS 26.0, *)
+    static var supportedModes: IntentModes {
+        .foreground(.immediate)
+    }
+
+    @Parameter(title: "动作")
+    var action: String
+
+    init() {
+        action = ""
+    }
+
+    init(action: String) {
+        self.action = action
+    }
+
+    func perform() async throws -> some IntentResult {
+        await deliverIslandCommand(action) { }
+        return .result()
+    }
+}
+
+@available(iOS 17.0, *)
+private func deliverIslandCommand(
+    _ action: String,
+    openForeground: () async throws -> Void
+) async {
+    let delivery = await MainActor.run {
+        RouteActivityBridge.submit(action)
+    }
+    guard delivery == .queued else { return }
+    if #available(iOS 26.0, *) {
+        do {
+            try await openForeground()
+        } catch {
+            islandCommandLog.error("灵动岛动作无法交回前台 \(action, privacy: .public)")
         }
-        await MainActor.run {
-            RouteActivityBridge.drainPending()
-        }
+    }
+    await MainActor.run {
+        RouteActivityBridge.drainPending()
     }
 }
 

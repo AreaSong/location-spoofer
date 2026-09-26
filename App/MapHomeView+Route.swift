@@ -14,6 +14,9 @@ extension MapHomeView {
         RouteActivityBridge.handler = { action in
             handleIslandAction(action)
         }
+        RouteActivityBridge.expirationHandler = { action in
+            noteIslandRejection(action, "这个操作已过期，请再试一次。")
+        }
         RouteActivityBridge.drainPending()
         syncRouteActivity(clearStale: true)
     }
@@ -54,6 +57,7 @@ extension MapHomeView {
 
     private func islandCommandContext() -> IslandCommandContext {
         let retryCommand = routeCommand.failedCommand.isEmpty ? spotRetryCommand : routeCommand.failedCommand
+        let block = locationUseBlock
         return IslandCommandContext(
             routePhase: route.phase,
             interruption: route.interruption,
@@ -63,7 +67,9 @@ extension MapHomeView {
             needsSwitch: needsSwitchButton,
             spotStopPending: spotStopPending,
             spotSwitchPending: spotSwitchPending,
-            retryCommand: retryCommand
+            retryCommand: retryCommand,
+            locationBlocked: block != nil,
+            locationBlockMessage: block?.message ?? ""
         )
     }
 
