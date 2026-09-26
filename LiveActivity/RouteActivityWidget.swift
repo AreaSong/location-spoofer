@@ -52,26 +52,36 @@ struct RouteActivityWidget: Widget {
     }
 
     private func spotExpanded(_ state: RouteActivityAttributes.ContentState, isStale: Bool) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(state.title)
-                .font(.headline)
-                .lineLimit(1)
-                .truncationMode(.tail)
-            statusLabel(state, isStale: isStale)
-            if !state.detailText.isEmpty {
-                Text(state.detailText)
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
+        let status = displayedStatus(state, isStale: isStale)
+        return VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text(state.title)
+                    .font(.headline)
                     .lineLimit(1)
                     .truncationMode(.tail)
+                statusLabel(status, warns: warns(state, isStale: isStale))
+                if !state.detailText.isEmpty {
+                    Text(state.detailText)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                }
+                if !state.errorText.isEmpty {
+                    Text(state.errorText)
+                        .font(.subheadline)
+                        .foregroundStyle(Color.orange)
+                        .lineLimit(2)
+                        .truncationMode(.tail)
+                }
             }
-            if !state.errorText.isEmpty {
-                Text(state.errorText)
-                    .font(.subheadline)
-                    .foregroundStyle(Color.orange)
-                    .lineLimit(2)
-                    .truncationMode(.tail)
-            }
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel(IslandAccessibility.expandedLabel(
+                title: state.title,
+                status: status,
+                detail: state.detailText,
+                error: state.errorText
+            ))
             spotActionRow(state, isStale: isStale)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -85,14 +95,21 @@ struct RouteActivityWidget: Widget {
                 .lineLimit(1)
                 .truncationMode(.tail)
         }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(IslandAccessibility.compactLabel(
+            title: state.title,
+            status: displayedStatus(state, isStale: isStale)
+        ))
     }
 
     private func spotCompactStatus(_ state: RouteActivityAttributes.ContentState, isStale: Bool) -> some View {
-        Text(isStale ? "已中断" : state.statusText)
+        let status = displayedStatus(state, isStale: isStale)
+        return Text(status)
             .font(.caption.weight(.semibold))
-            .foregroundStyle(isStale || state.isWarning ? Color.orange : Color.primary)
+            .foregroundStyle(warns(state, isStale: isStale) ? Color.orange : Color.primary)
             .lineLimit(1)
             .minimumScaleFactor(0.8)
+            .accessibilityLabel(status)
     }
 
     @ViewBuilder
@@ -150,9 +167,11 @@ struct RouteActivityWidget: Widget {
         if prominent {
             Button(intent: IslandOpenAppIntent()) { spotButtonTitle(title) }
                 .buttonStyle(.borderedProminent)
+                .accessibilityHint(IslandAccessibility.buttonHint(action: "openApp"))
         } else {
             Button(intent: IslandOpenAppIntent()) { spotButtonTitle(title) }
                 .buttonStyle(.bordered)
+                .accessibilityHint(IslandAccessibility.buttonHint(action: "openApp"))
         }
     }
 
@@ -160,11 +179,11 @@ struct RouteActivityWidget: Widget {
     @ViewBuilder
     private func spotCommandButton(title: String, action: String, prominent: Bool) -> some View {
         if commandOpensApp {
-            islandIntentButton(IslandOpeningCommandIntent(action: action), prominent: prominent) {
+            islandIntentButton(IslandOpeningCommandIntent(action: action), action: action, prominent: prominent) {
                 spotButtonTitle(title)
             }
         } else {
-            islandIntentButton(IslandCommandIntent(action: action), prominent: prominent) {
+            islandIntentButton(IslandCommandIntent(action: action), action: action, prominent: prominent) {
                 spotButtonTitle(title)
             }
         }
@@ -186,27 +205,38 @@ struct RouteActivityWidget: Widget {
             timeText: state.timeText,
             statusText: state.statusText
         )
+        let status = displayedStatus(state, isStale: isStale)
+        let warning = warns(state, isStale: isStale)
         return VStack(alignment: .leading, spacing: 8) {
-            Text(state.title)
-                .font(.headline)
-                .lineLimit(1)
-                .truncationMode(.tail)
-            statusLabel(state, isStale: isStale)
-            Text(metric)
-                .font(.subheadline.weight(.semibold))
-                .lineLimit(1)
-                .truncationMode(.tail)
-            if state.showsProgress {
-                ProgressView(value: min(max(state.progress, 0), 1))
-                    .tint(isStale || state.isWarning ? Color.orange : Color.accentColor)
-            }
-            if !state.errorText.isEmpty, state.errorText != metric {
-                Text(state.errorText)
-                    .font(.subheadline)
-                    .foregroundStyle(Color.orange)
-                    .lineLimit(2)
+            VStack(alignment: .leading, spacing: 8) {
+                Text(state.title)
+                    .font(.headline)
+                    .lineLimit(1)
                     .truncationMode(.tail)
+                statusLabel(status, warns: warning)
+                Text(metric)
+                    .font(.subheadline.weight(.semibold))
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                if state.showsProgress {
+                    ProgressView(value: min(max(state.progress, 0), 1))
+                        .tint(warning ? Color.orange : Color.accentColor)
+                }
+                if !state.errorText.isEmpty, state.errorText != metric {
+                    Text(state.errorText)
+                        .font(.subheadline)
+                        .foregroundStyle(Color.orange)
+                        .lineLimit(2)
+                        .truncationMode(.tail)
+                }
             }
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel(IslandAccessibility.expandedLabel(
+                title: state.title,
+                status: status,
+                detail: metric,
+                error: state.errorText == metric ? "" : state.errorText
+            ))
             actionRow(state, isStale: isStale)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -215,29 +245,43 @@ struct RouteActivityWidget: Widget {
     private func routeCompactIdentity(_ state: RouteActivityAttributes.ContentState, isStale: Bool) -> some View {
         HStack(spacing: 4) {
             Image(systemName: RouteIslandLayout.compactSymbol(
+                phase: state.phase,
                 modeSymbolName: state.modeSymbolName,
                 symbolName: state.symbolName,
                 isStale: isStale
             ))
-            .foregroundStyle(isStale || state.isWarning ? Color.orange : Color.primary)
+            .foregroundStyle(warns(state, isStale: isStale) ? Color.orange : Color.primary)
             Text(state.title)
                 .font(.caption.weight(.semibold))
                 .lineLimit(1)
                 .truncationMode(.tail)
         }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(IslandAccessibility.compactLabel(
+            title: state.title,
+            status: RouteIslandLayout.compactTrailing(
+                phase: state.phase,
+                timeText: state.timeText,
+                statusText: state.statusText,
+                isStale: isStale
+            )
+        ))
     }
 
     private func routeCompactStatus(_ state: RouteActivityAttributes.ContentState, isStale: Bool) -> some View {
-        Text(RouteIslandLayout.compactTrailing(
+        let trailing = RouteIslandLayout.compactTrailing(
+            phase: state.phase,
             timeText: state.timeText,
             statusText: state.statusText,
             isStale: isStale
-        ))
-        .font(.caption.weight(.semibold))
-        .foregroundStyle(isStale || state.isWarning ? Color.orange : Color.primary)
-        .lineLimit(1)
-        .minimumScaleFactor(0.8)
-        .layoutPriority(1)
+        )
+        return Text(trailing)
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(warns(state, isStale: isStale) ? Color.orange : Color.primary)
+            .lineLimit(1)
+            .minimumScaleFactor(0.8)
+            .layoutPriority(1)
+            .accessibilityLabel(trailing)
     }
 
     private func submittedAction(_ action: String, state: RouteActivityAttributes.ContentState) -> String {
@@ -249,15 +293,35 @@ struct RouteActivityWidget: Widget {
     }
 
     private func statusIcon(_ state: RouteActivityAttributes.ContentState, isStale: Bool) -> some View {
-        Image(systemName: isStale ? "exclamationmark.triangle.fill" : state.symbolName)
-            .foregroundStyle(isStale || state.isWarning ? Color.orange : Color.primary)
+        let status = displayedStatus(state, isStale: isStale)
+        return Image(systemName: IslandStalePresentation.usesStaleSymbol(phase: state.phase, isStale: isStale)
+            ? "exclamationmark.triangle.fill"
+            : state.symbolName)
+            .foregroundStyle(warns(state, isStale: isStale) ? Color.orange : Color.primary)
+            .accessibilityLabel(status)
     }
 
-    private func statusLabel(_ state: RouteActivityAttributes.ContentState, isStale: Bool) -> some View {
-        Text(isStale ? "已中断" : state.statusText)
+    private func statusLabel(_ text: String, warns: Bool) -> some View {
+        Text(text)
             .font(.subheadline.weight(.semibold))
-            .foregroundStyle(isStale || state.isWarning ? Color.orange : Color.primary)
+            .foregroundStyle(warns ? Color.orange : Color.primary)
             .lineLimit(1)
+    }
+
+    private func displayedStatus(_ state: RouteActivityAttributes.ContentState, isStale: Bool) -> String {
+        IslandStalePresentation.statusText(
+            phase: state.phase,
+            statusText: state.statusText,
+            isStale: isStale
+        )
+    }
+
+    private func warns(_ state: RouteActivityAttributes.ContentState, isStale: Bool) -> Bool {
+        IslandStalePresentation.usesWarningAppearance(
+            phase: state.phase,
+            isWarning: state.isWarning,
+            isStale: isStale
+        )
     }
 
     @ViewBuilder
@@ -315,9 +379,11 @@ struct RouteActivityWidget: Widget {
         if prominent {
             Button(intent: IslandOpenAppIntent()) { buttonTitle(title) }
                 .buttonStyle(.borderedProminent)
+                .accessibilityHint(IslandAccessibility.buttonHint(action: "openApp"))
         } else {
             Button(intent: IslandOpenAppIntent()) { buttonTitle(title) }
                 .buttonStyle(.bordered)
+                .accessibilityHint(IslandAccessibility.buttonHint(action: "openApp"))
         }
     }
 
@@ -325,11 +391,11 @@ struct RouteActivityWidget: Widget {
     @ViewBuilder
     private func commandButton(title: String, action: String, prominent: Bool) -> some View {
         if commandOpensApp {
-            islandIntentButton(IslandOpeningCommandIntent(action: action), prominent: prominent) {
+            islandIntentButton(IslandOpeningCommandIntent(action: action), action: action, prominent: prominent) {
                 buttonTitle(title)
             }
         } else {
-            islandIntentButton(IslandCommandIntent(action: action), prominent: prominent) {
+            islandIntentButton(IslandCommandIntent(action: action), action: action, prominent: prominent) {
                 buttonTitle(title)
             }
         }
@@ -346,15 +412,19 @@ struct RouteActivityWidget: Widget {
     @ViewBuilder
     private func islandIntentButton<I: LiveActivityIntent>(
         _ intent: I,
+        action: String,
         prominent: Bool,
         label: () -> some View
     ) -> some View {
+        let hint = IslandAccessibility.buttonHint(action: action)
         if prominent {
             Button(intent: intent, label: label)
                 .buttonStyle(.borderedProminent)
+                .accessibilityHint(hint)
         } else {
             Button(intent: intent, label: label)
                 .buttonStyle(.bordered)
+                .accessibilityHint(hint)
         }
     }
 

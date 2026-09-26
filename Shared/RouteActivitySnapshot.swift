@@ -147,6 +147,7 @@ enum RouteActivitySync {
     static let keptLocationDetail = "定位仍保持"
     static let stoppedConfirmInterval: TimeInterval = 3
     static let locationBlockedMessage = "当前不能继续定位。"
+    /// 只有重试中这种短暂过程才用短过期。进行中的走路可以持续很久，不能 45 秒就标成中断。
     static let playingStaleInterval: TimeInterval = 45
     static let failureStaleInterval: TimeInterval = 120
     /// 与路线规划时写入的状态文案一致，用来把规划中送上路线岛。
@@ -191,11 +192,11 @@ enum RouteActivitySync {
 
     static func staleDate(for snapshot: RouteActivitySnapshot, now: Date = Date()) -> Date? {
         switch snapshot.phaseKey {
-        case .playing, .retrying:
+        case .retrying:
             return now.addingTimeInterval(playingStaleInterval)
         case .systemFault, .actionFailed:
             return now.addingTimeInterval(failureStaleInterval)
-        case .userPaused, .finished, .stopped, .planning:
+        case .playing, .userPaused, .finished, .stopped, .planning:
             return nil
         }
     }
@@ -628,18 +629,28 @@ struct SpotActivitySnapshot: Equatable {
 
 enum SpotActivitySync {
     static let spotActions: Set<String> = ["switchHere", "stopSpoof", "retry", "openApp"]
+    static let fallbackPlaceName = "当前选点"
     static let locatingStaleInterval: TimeInterval = 120
     static let busyStaleInterval: TimeInterval = 45
 
+    /// 定位中和待切换可以持续很久。只有失败态才用过期时间把岛标成中断。
     static func staleDate(for snapshot: SpotActivitySnapshot, now: Date = Date()) -> Date? {
         switch snapshot.status {
-        case .locating, .needsSwitch, .notApplied, .actionFailed:
+        case .notApplied, .actionFailed:
             return now.addingTimeInterval(locatingStaleInterval)
         case .verifying, .switching, .stopping:
             return now.addingTimeInterval(busyStaleInterval)
-        case .stopped:
+        case .locating, .needsSwitch, .stopped:
             return nil
         }
+    }
+
+    /// 坐标串在紧凑态会变成「37.7756,...」，岛上改用「当前选点」。
+    static func islandPlaceName(_ raw: String) -> String {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty { return fallbackPlaceName }
+        if looksLikeCoordinatePair(trimmed) { return fallbackPlaceName }
+        return trimmed
     }
 
     static func snapshot(
@@ -657,6 +668,7 @@ enum SpotActivitySync {
         errorText: String = "",
         retryCommand: String = ""
     ) -> SpotActivitySnapshot? {
+        let placeName = islandPlaceName(placeName)
         let caption = standardCaption(coordinateStandard, accuracyMeters: accuracyMeters)
         if actionFailed {
             return spot(.actionFailed, placeName: placeName, statusText: "操作失败", symbolName: "exclamationmark.triangle.fill", isWarning: true, caption: caption, errorText: errorText, primaryAction: "retry", primaryTitle: "重试", secondaryAction: "openApp", secondaryTitle: "打开 App", retryCommand: retryCommand)
@@ -721,6 +733,18 @@ enum SpotActivitySync {
         let trimmed = standard.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return accuracy }
         return "\(trimmed) · \(accuracy)"
+    }
+
+    private static func looksLikeCoordinatePair(_ text: String) -> Bool {
+        let parts = text.split(separator: ",", omittingEmptySubsequences: false)
+        guard parts.count == 2,
+              let latitude = Double(parts[0].trimmingCharacters(in: .whitespacesAndNewlines)),
+              let longitude = Double(parts[1].trimmingCharacters(in: .whitespacesAndNewlines)),
+              (-90...90).contains(latitude),
+              (-180...180).contains(longitude) else {
+            return false
+        }
+        return true
     }
 
     private static func spot(

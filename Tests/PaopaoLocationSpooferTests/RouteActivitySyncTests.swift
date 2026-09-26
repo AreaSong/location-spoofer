@@ -297,9 +297,21 @@ final class RouteActivitySyncTests: XCTestCase {
             progress: 0.2,
             symbolName: "figure.walk"
         )!
-        XCTAssertEqual(RouteActivitySync.staleDate(for: playing, now: now), now.addingTimeInterval(45))
+        XCTAssertNil(RouteActivitySync.staleDate(for: playing, now: now))
         XCTAssertNil(RouteActivitySync.staleDate(for: paused, now: now))
         XCTAssertEqual(RouteActivitySync.staleDate(for: failed, now: now), now.addingTimeInterval(120))
+        let retrying = RouteActivitySync.snapshot(
+            phase: .paused,
+            interruption: .pushFailed,
+            statusMessage: "系统定位推送失败，已暂停。",
+            routeName: "步行路线",
+            remainingMeters: 800,
+            speedMetersPerSecond: 1.4,
+            progress: 0.2,
+            symbolName: "figure.walk",
+            isRetrying: true
+        )!
+        XCTAssertEqual(RouteActivitySync.staleDate(for: retrying, now: now), now.addingTimeInterval(45))
     }
 
     func testActivationFailureStaysOnTheIsland() {
@@ -380,7 +392,7 @@ final class RouteActivitySyncTests: XCTestCase {
         XCTAssertFalse(RouteActivitySync.suppressStoppedRoute(confirmUntil: nil, now: until, spotStillActive: true))
     }
 
-    func testStaleIslandDropsPauseAndKeepsRetry() {
+    func testStaleIslandKeepsLiveSessionActions() {
         let playing = IslandActionPresentation.buttons(
             phase: "playing",
             primaryAction: "pause",
@@ -389,13 +401,9 @@ final class RouteActivitySyncTests: XCTestCase {
             secondaryTitle: "停止路线",
             isStale: true
         )
-        XCTAssertEqual(playing.primaryAction, "retry")
-        XCTAssertEqual(playing.primaryTitle, "重试")
-        XCTAssertEqual(playing.secondaryAction, "openApp")
-        XCTAssertEqual(
-            IslandActionPresentation.submittedAction(action: playing.primaryAction, phase: "playing", retryCommand: ""),
-            "play"
-        )
+        XCTAssertEqual(playing.primaryAction, "pause")
+        XCTAssertEqual(playing.secondaryAction, "stopRoute")
+        XCTAssertNotEqual(playing.primaryAction, "retry")
 
         let locating = IslandActionPresentation.buttons(
             phase: "locating",
@@ -405,12 +413,20 @@ final class RouteActivitySyncTests: XCTestCase {
             secondaryTitle: "",
             isStale: true
         )
-        XCTAssertEqual(locating.primaryAction, "retry")
-        XCTAssertEqual(locating.secondaryAction, "openApp")
-        XCTAssertEqual(
-            IslandActionPresentation.submittedAction(action: locating.primaryAction, phase: "locating", retryCommand: ""),
-            "begin"
+        XCTAssertEqual(locating.primaryAction, "stopSpoof")
+        XCTAssertEqual(locating.primaryTitle, "停止虚拟定位")
+        XCTAssertEqual(locating.secondaryAction, "")
+
+        let needsSwitch = IslandActionPresentation.buttons(
+            phase: "needsSwitch",
+            primaryAction: "switchHere",
+            primaryTitle: "切换到此处",
+            secondaryAction: "stopSpoof",
+            secondaryTitle: "停止虚拟定位",
+            isStale: true
         )
+        XCTAssertEqual(needsSwitch.primaryAction, "switchHere")
+        XCTAssertEqual(needsSwitch.secondaryAction, "stopSpoof")
 
         let fault = IslandActionPresentation.buttons(
             phase: "systemFault",
@@ -607,6 +623,27 @@ final class RouteActivitySyncTests: XCTestCase {
         XCTAssertEqual(stopped?.statusText, "已停止")
         XCTAssertEqual(stopped?.primaryAction, "")
         XCTAssertNil(SpotActivitySync.staleDate(for: stopped!, now: Date(timeIntervalSince1970: 1_000)))
+
+        let locating = SpotActivitySync.snapshot(
+            isVerifying: false,
+            isActive: true,
+            needsSwitch: false,
+            failed: false,
+            placeName: "深圳湾",
+            coordinateStandard: "GCJ-02",
+            accuracyMeters: 25
+        )!
+        XCTAssertNil(SpotActivitySync.staleDate(for: locating, now: Date(timeIntervalSince1970: 1_000)))
+        let pendingSwitch = SpotActivitySync.snapshot(
+            isVerifying: false,
+            isActive: true,
+            needsSwitch: true,
+            failed: false,
+            placeName: "深圳湾",
+            coordinateStandard: "GCJ-02",
+            accuracyMeters: 25
+        )!
+        XCTAssertNil(SpotActivitySync.staleDate(for: pendingSwitch, now: Date(timeIntervalSince1970: 1_000)))
     }
 
     func testSpotIslandActionsFollowStatus() {
@@ -1040,19 +1077,31 @@ final class RouteActivitySyncTests: XCTestCase {
 
     func testRouteCompactFallsBackWhenTimeIsMissing() {
         XCTAssertEqual(
-            RouteIslandLayout.compactTrailing(timeText: "12分", statusText: "进行中", isStale: false),
+            RouteIslandLayout.compactTrailing(phase: "playing", timeText: "12分", statusText: "进行中", isStale: false),
             "12分"
         )
         XCTAssertEqual(
-            RouteIslandLayout.compactTrailing(timeText: "", statusText: "已完成", isStale: false),
+            RouteIslandLayout.compactTrailing(phase: "finished", timeText: "", statusText: "已完成", isStale: false),
             "已完成"
         )
         XCTAssertEqual(
-            RouteIslandLayout.compactTrailing(timeText: "12分", statusText: "进行中", isStale: true),
+            RouteIslandLayout.compactTrailing(phase: "playing", timeText: "12分", statusText: "进行中", isStale: true),
+            "12分"
+        )
+        XCTAssertEqual(
+            RouteIslandLayout.compactTrailing(phase: "retrying", timeText: "12分", statusText: "重试中", isStale: true),
             "已中断"
         )
         XCTAssertEqual(
-            RouteIslandLayout.compactSymbol(modeSymbolName: "bicycle", symbolName: "pause.fill", isStale: false),
+            RouteIslandLayout.compactSymbol(phase: "playing", modeSymbolName: "bicycle", symbolName: "pause.fill", isStale: true),
+            "bicycle"
+        )
+        XCTAssertEqual(
+            RouteIslandLayout.compactSymbol(phase: "retrying", modeSymbolName: "bicycle", symbolName: "pause.fill", isStale: true),
+            "exclamationmark.triangle.fill"
+        )
+        XCTAssertEqual(
+            RouteIslandLayout.compactSymbol(phase: "playing", modeSymbolName: "bicycle", symbolName: "pause.fill", isStale: false),
             "bicycle"
         )
         XCTAssertEqual(
@@ -1075,6 +1124,96 @@ final class RouteActivitySyncTests: XCTestCase {
             ),
             "还剩 800 米 · 10分"
         )
+    }
+
+    func testCoordinatePlaceNamesBecomeCurrentSelection() {
+        XCTAssertEqual(SpotActivitySync.islandPlaceName("37.7756, -122.4074"), SpotActivitySync.fallbackPlaceName)
+        XCTAssertEqual(SpotActivitySync.islandPlaceName("  22.5,113.9  "), SpotActivitySync.fallbackPlaceName)
+        XCTAssertEqual(SpotActivitySync.islandPlaceName(""), SpotActivitySync.fallbackPlaceName)
+        XCTAssertEqual(SpotActivitySync.islandPlaceName("深圳湾"), "深圳湾")
+        let snapshot = SpotActivitySync.snapshot(
+            isVerifying: false,
+            isActive: true,
+            needsSwitch: false,
+            failed: false,
+            placeName: "37.7756, -122.4074",
+            coordinateStandard: "WGS-84",
+            accuracyMeters: 25
+        )
+        XCTAssertEqual(snapshot?.placeName, "当前选点")
+        XCTAssertEqual(snapshot?.statusText, "定位中")
+        XCTAssertFalse(snapshot?.placeName.contains("37.") == true)
+    }
+
+    func testStableSpotAndRouteActionsSurviveStale() {
+        let locating = SpotIslandActions.buttons(
+            phase: "locating",
+            primaryAction: "stopSpoof",
+            primaryTitle: "停止虚拟定位",
+            secondaryAction: "",
+            secondaryTitle: "",
+            isStale: true
+        )
+        XCTAssertEqual(locating.primaryAction, "stopSpoof")
+        XCTAssertEqual(locating.secondaryAction, "")
+        XCTAssertEqual(
+            IslandStalePresentation.statusText(phase: "locating", statusText: "定位中", isStale: true),
+            "定位中"
+        )
+
+        let needsSwitch = SpotIslandActions.buttons(
+            phase: "needsSwitch",
+            primaryAction: "switchHere",
+            primaryTitle: "切换到此处",
+            secondaryAction: "stopSpoof",
+            secondaryTitle: "停止虚拟定位",
+            isStale: true
+        )
+        XCTAssertEqual(needsSwitch.primaryAction, "switchHere")
+        XCTAssertEqual(needsSwitch.secondaryAction, "stopSpoof")
+
+        let playing = RouteIslandActions.buttons(
+            phase: "playing",
+            primaryAction: "pause",
+            primaryTitle: "暂停",
+            secondaryAction: "stopRoute",
+            secondaryTitle: "停止路线",
+            isStale: true
+        )
+        XCTAssertEqual(playing.primaryAction, "pause")
+        XCTAssertEqual(playing.secondaryAction, "stopRoute")
+        XCTAssertEqual(
+            IslandStalePresentation.statusText(phase: "playing", statusText: "进行中", isStale: true),
+            "进行中"
+        )
+        XCTAssertEqual(
+            IslandStalePresentation.statusText(phase: "retrying", statusText: "重试中", isStale: true),
+            "已中断"
+        )
+        XCTAssertFalse(IslandStalePresentation.treatsAsInterrupted(phase: "locating"))
+        XCTAssertFalse(IslandStalePresentation.treatsAsInterrupted(phase: "needsSwitch"))
+        XCTAssertFalse(IslandStalePresentation.treatsAsInterrupted(phase: "playing"))
+        XCTAssertTrue(IslandStalePresentation.treatsAsInterrupted(phase: "systemFault"))
+    }
+
+    func testIslandAccessibilityLabelsDescribeStatusAndActions() {
+        XCTAssertEqual(
+            IslandAccessibility.compactLabel(title: "当前选点", status: "定位中"),
+            "当前选点，定位中"
+        )
+        XCTAssertEqual(
+            IslandAccessibility.expandedLabel(
+                title: "当前选点",
+                status: "待切换",
+                detail: "WGS-84 · 精度 25 米",
+                error: ""
+            ),
+            "当前选点，待切换，WGS-84 · 精度 25 米"
+        )
+        XCTAssertEqual(IslandAccessibility.buttonHint(action: "stopSpoof"), "结束当前虚拟定位")
+        XCTAssertEqual(IslandAccessibility.buttonHint(action: "stopRoute"), "停止路线，不关闭当前虚拟定位")
+        XCTAssertEqual(IslandAccessibility.buttonHint(action: "switchHere"), "把虚拟定位切换到当前选点")
+        XCTAssertEqual(IslandAccessibility.buttonHint(action: "pause"), "暂停路线行走")
     }
 
     private func playingSnapshot(remainingMeters: Double) -> RouteActivitySnapshot {

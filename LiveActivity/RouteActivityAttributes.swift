@@ -121,8 +121,65 @@ struct RouteActivityAttributes: ActivityAttributes {
     var name: String
 }
 
+enum IslandStalePresentation {
+    /// 过程超时或异常才显示中断。定位中、待切换和走路进行中仍是有效会话。
+    static func treatsAsInterrupted(phase: String) -> Bool {
+        switch phase {
+        case "systemFault", "actionFailed", "retrying", "verifying", "switching", "stopping", "planning":
+            return true
+        default:
+            return false
+        }
+    }
+
+    static func statusText(phase: String, statusText: String, isStale: Bool) -> String {
+        if isStale, treatsAsInterrupted(phase: phase) {
+            return "已中断"
+        }
+        return statusText
+    }
+
+    static func usesWarningAppearance(phase: String, isWarning: Bool, isStale: Bool) -> Bool {
+        isWarning || (isStale && treatsAsInterrupted(phase: phase))
+    }
+
+    static func usesStaleSymbol(phase: String, isStale: Bool) -> Bool {
+        isStale && treatsAsInterrupted(phase: phase)
+    }
+}
+
+enum IslandAccessibility {
+    static func compactLabel(title: String, status: String) -> String {
+        let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedStatus = status.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmedTitle.isEmpty { return trimmedStatus }
+        if trimmedStatus.isEmpty { return trimmedTitle }
+        return "\(trimmedTitle)，\(trimmedStatus)"
+    }
+
+    static func expandedLabel(title: String, status: String, detail: String, error: String) -> String {
+        [title, status, detail, error]
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+            .joined(separator: "，")
+    }
+
+    static func buttonHint(action: String) -> String {
+        switch action {
+        case "pause": return "暂停路线行走"
+        case "resume": return "继续路线行走"
+        case "stopRoute": return "停止路线，不关闭当前虚拟定位"
+        case "stopSpoof": return "结束当前虚拟定位"
+        case "switchHere": return "把虚拟定位切换到当前选点"
+        case "retry": return "再试一次刚才的操作"
+        case "openApp": return "打开 App"
+        default: return ""
+        }
+    }
+}
+
 enum IslandActionPresentation {
-    /// 过期后撤下暂停和停止。用户暂停保留继续，失败态和仍在进行的状态改为重试，并都可以打开 App。
+    /// 过期后，只有异常和过程超时才改成重试。定位中、待切换和走路进行中保留原来的动作。
     static func buttons(
         phase: String,
         primaryAction: String,
@@ -140,7 +197,10 @@ enum IslandActionPresentation {
         case "userPaused":
             return ("resume", "继续", "openApp", "打开 App")
         default:
-            return ("retry", "重试", "openApp", "打开 App")
+            if IslandStalePresentation.treatsAsInterrupted(phase: phase) {
+                return ("retry", "重试", "openApp", "打开 App")
+            }
+            return (primaryAction, primaryTitle, secondaryAction, secondaryTitle)
         }
     }
 
@@ -190,7 +250,7 @@ enum SpotIslandActions {
             secondaryTitle: secondaryTitle,
             isStale: isStale
         )
-        guard phase == "locating", !isStale else { return presented }
+        guard phase == "locating" else { return presented }
         return withoutSwitch(presented)
     }
 
@@ -239,15 +299,19 @@ enum RouteIslandLayout {
         }
     }
 
-    static func compactTrailing(timeText: String, statusText: String, isStale: Bool) -> String {
-        if isStale { return "已中断" }
+    static func compactTrailing(phase: String, timeText: String, statusText: String, isStale: Bool) -> String {
+        if isStale, IslandStalePresentation.treatsAsInterrupted(phase: phase) {
+            return "已中断"
+        }
         if !timeText.isEmpty { return timeText }
         if !statusText.isEmpty { return statusText }
         return "路线"
     }
 
-    static func compactSymbol(modeSymbolName: String, symbolName: String, isStale: Bool) -> String {
-        if isStale { return "exclamationmark.triangle.fill" }
+    static func compactSymbol(phase: String, modeSymbolName: String, symbolName: String, isStale: Bool) -> String {
+        if IslandStalePresentation.usesStaleSymbol(phase: phase, isStale: isStale) {
+            return "exclamationmark.triangle.fill"
+        }
         if !modeSymbolName.isEmpty { return modeSymbolName }
         return symbolName.isEmpty ? "figure.walk" : symbolName
     }
@@ -308,14 +372,16 @@ enum RouteIslandActions {
     ) -> (action: String, title: String) {
         switch action {
         case "pause":
-            if isStale || phase == "systemFault" || phase == "actionFailed" { return ("", "") }
+            if phase == "systemFault" || phase == "actionFailed" { return ("", "") }
+            if isStale, IslandStalePresentation.treatsAsInterrupted(phase: phase) { return ("", "") }
             return (action, title.isEmpty ? "暂停" : title)
         case "resume":
             if phase == "systemFault" || phase == "actionFailed" { return ("", "") }
             if isStale, phase != "userPaused" { return ("", "") }
             return (action, "继续")
         case "stopRoute":
-            if isStale || phase == "systemFault" || phase == "actionFailed" { return ("", "") }
+            if phase == "systemFault" || phase == "actionFailed" { return ("", "") }
+            if isStale, IslandStalePresentation.treatsAsInterrupted(phase: phase) { return ("", "") }
             return (action, "停止路线")
         case "retry", "openApp":
             return (action, title)
