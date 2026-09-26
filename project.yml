@@ -56,6 +56,8 @@ targets:
       path: LiveActivity/Info.plist
       properties:
         CFBundleDisplayName: 路线
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
         NSExtension:
           NSExtensionPointIdentifier: com.apple.widgetkit-extension
     settings:
