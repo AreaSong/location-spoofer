@@ -30,6 +30,10 @@ extension MapHomeView {
             performIslandCommand(concrete)
         case .alreadySatisfied:
             RuntimeLogger.info("RouteLiveActivity", "action", "灵动岛动作已经生效", details: ["action": concrete])
+            let cleared = routeCommand.clearingSatisfied(concrete)
+            if cleared != routeCommand {
+                routeCommand = cleared
+            }
             syncRouteActivity()
         case .leaveCurrent:
             RuntimeLogger.info("RouteLiveActivity", "action", "保留当前异常状态", details: ["action": concrete])
@@ -85,12 +89,8 @@ extension MapHomeView {
                 statusMessage: route.statusMessage
             )
             syncRouteActivity()
-        case "resume":
-            playRoute()
-            noteRouteAttempt("resume")
-        case "play":
-            playRoute()
-            noteRouteAttempt("play")
+        case "resume", "play":
+            performRoutePlayback(action)
         case "begin", "switchHere":
             beginLocationOperation()
         case "stopRoute":
@@ -113,20 +113,47 @@ extension MapHomeView {
         }
     }
 
+    private func performRoutePlayback(_ command: String) {
+        if RoutePlaybackDeferral.waitsForSpotVerification(
+            isVerifying: spoofState == .verifying,
+            usesDeveloperTunnel: routeUsesDeveloperTunnel
+        ) {
+            syncRouteActivity()
+            return
+        }
+        playRoute()
+        noteRouteAttempt(command)
+    }
+
     private func noteIslandRejection(_ action: String, _ message: String) {
         switch action {
         case "pause", "resume", "play", "stopRoute":
-            routeCommand = RouteCommandTracking(commandFailed: true, failedCommand: action, errorText: message)
+            let updated = routeRejection(action, message)
+            guard updated != routeCommand else { return }
+            routeCommand = updated
         case "stopSpoof", "switchHere", "begin":
             noteSpotActionFailure(message: message, command: action)
         default:
             if spoofState != .idle {
                 noteSpotActionFailure(message: message, command: "begin")
             } else {
-                routeCommand = RouteCommandTracking(commandFailed: true, failedCommand: "play", errorText: message)
+                let updated = routeRejection("play", message)
+                guard updated != routeCommand else { return }
+                routeCommand = updated
             }
         }
         syncRouteActivity()
+    }
+
+    private func routeRejection(_ action: String, _ message: String) -> RouteCommandTracking {
+        RouteCommandTracking.rejectionResult(
+            current: routeCommand,
+            action: action,
+            message: message,
+            phase: route.phase,
+            interruption: route.interruption,
+            waitingForActivation: route.waitingForActivation
+        )
     }
 
     private func noteRouteAttempt(_ command: String) {

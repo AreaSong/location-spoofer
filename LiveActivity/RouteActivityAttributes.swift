@@ -451,6 +451,13 @@ enum IslandHandoffPolicy {
     }
 }
 
+enum IslandCommandHandoff {
+    /// 桥接还没接上时，动作只在队列里。必须把 App 拉到前台，界面注册后再排空。
+    static func needsForeground(_ delivery: IslandCommandDelivery) -> Bool {
+        delivery == .queued
+    }
+}
+
 @available(iOS 17.0, *)
 struct IslandCommandIntent: LiveActivityIntent {
     static var title: LocalizedStringResource = "灵动岛操作"
@@ -521,7 +528,7 @@ private func deliverIslandCommand(
     let delivery = await MainActor.run {
         RouteActivityBridge.submit(action)
     }
-    guard delivery == .queued else { return }
+    guard IslandCommandHandoff.needsForeground(delivery) else { return }
     if #available(iOS 26.0, *) {
         do {
             try await openForeground()

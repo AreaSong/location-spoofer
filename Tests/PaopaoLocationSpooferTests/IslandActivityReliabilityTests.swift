@@ -156,8 +156,33 @@ final class IslandActivityReliabilityTests: XCTestCase {
         XCTAssertTrue(ActivityRunPolicy.shouldPublish(contentChanged: false, runtime: .stale))
         XCTAssertFalse(ActivityRunPolicy.shouldPublish(contentChanged: false, runtime: .active))
         XCTAssertTrue(ActivityRunPolicy.shouldPublish(contentChanged: true, runtime: .active))
+        XCTAssertTrue(ActivityRunPolicy.shouldPublish(contentChanged: false, runtime: nil, activityMissing: true))
         XCTAssertFalse(IslandHandoffPolicy.opensAppToDeliver(canContinueInForeground: true))
         XCTAssertTrue(IslandHandoffPolicy.opensAppToDeliver(canContinueInForeground: false))
+        XCTAssertEqual(ActivityRunPolicy.creationPlan(failureCount: 1), .retryImmediately)
+        XCTAssertEqual(ActivityRunPolicy.creationPlan(failureCount: 2), .retryLater)
+        XCTAssertEqual(ActivityRunPolicy.creationPlan(failureCount: 3), .stop)
+        XCTAssertTrue(ActivityRunPolicy.shouldResetCreationFailures(previousKey: nil, key: "spot:locating:stopSpoof"))
+        XCTAssertFalse(
+            ActivityRunPolicy.shouldResetCreationFailures(
+                previousKey: "spot:locating:stopSpoof",
+                key: "spot:locating:stopSpoof"
+            )
+        )
+        XCTAssertTrue(
+            ActivityRunPolicy.shouldResetCreationFailures(
+                previousKey: "spot:locating:stopSpoof",
+                key: "route:playing:pause"
+            )
+        )
+        XCTAssertEqual(ActivityRunPolicy.idsToEnd(existing: ["left", "kept"], keeping: nil), ["left", "kept"])
+        XCTAssertTrue(IslandCommandHandoff.needsForeground(.queued))
+        XCTAssertFalse(IslandCommandHandoff.needsForeground(.performed))
+        XCTAssertFalse(IslandCommandHandoff.needsForeground(.rejected))
+        XCTAssertFalse(IslandCommandHandoff.needsForeground(.duplicate))
+        XCTAssertTrue(RoutePlaybackDeferral.waitsForSpotVerification(isVerifying: true, usesDeveloperTunnel: false))
+        XCTAssertFalse(RoutePlaybackDeferral.waitsForSpotVerification(isVerifying: true, usesDeveloperTunnel: true))
+        XCTAssertFalse(RoutePlaybackDeferral.waitsForSpotVerification(isVerifying: false, usesDeveloperTunnel: false))
     }
 
     func testStaleUserPauseKeepsResumeAndOpenApp() {

@@ -23,6 +23,11 @@ final class RouteLiveActivityCenter {
     private var draining = false
     private var closedRouteTerminal: RouteActivityPhaseKey?
     private var closedSpotStop = false
+    private var creationFailures = 0
+    private var failedCreationKey: String?
+    private var creationRetryTask: Task<Void, Never>?
+    private var pendingCreation: SyncRequest?
+    private var allowDeferredCreationAttempt = false
 
     func sync(route: RouteActivitySnapshot?, spot: SpotActivitySnapshot?, keepForRecovery: Bool = false) async {
         enqueue(route: route, spot: spot, keepForRecovery: keepForRecovery)
@@ -61,6 +66,9 @@ final class RouteLiveActivityCenter {
     }
 
     private func apply(_ request: SyncRequest) async {
+        guard !superseded(request.token) else { return }
+        pendingCreation = request
+        prepareCreationBudget(for: request)
         if let route = request.route {
             await presentRoute(route, token: request.token)
             return
@@ -97,7 +105,7 @@ final class RouteLiveActivityCenter {
         lastSpot = nil
         let state = routeState(next)
         let content = ActivityContent(state: state, staleDate: RouteActivitySync.staleDate(for: next))
-        await ensureActivity(name: next.routeName, content: content)
+        await ensureActivity(name: next.routeName, content: content, token: token)
         guard !superseded(token), let activity else { return }
         if becomingTerminal {
             await finishRoute(next, activity: activity, content: content, token: token)
@@ -129,8 +137,13 @@ final class RouteLiveActivityCenter {
         guard !superseded(token) else { return }
         guard dismissed else { return }
         let seconds: TimeInterval = next.phaseKey == .finished ? 30 : RouteActivitySync.stoppedConfirmInterval
+        let endedID = activity.id
         await activity.end(content, dismissalPolicy: .after(Date().addingTimeInterval(seconds)))
-        self.activity = nil
+        if self.activity?.id == endedID {
+            self.activity = nil
+        }
+        guard !superseded(token) else { return }
+        await endActivities(except: endedID)
         guard !superseded(token) else { return }
         lastRoute = nil
         closedRouteTerminal = next.phaseKey
@@ -156,7 +169,7 @@ final class RouteLiveActivityCenter {
         closedRouteTerminal = nil
         let state = spotState(next)
         let content = ActivityContent(state: state, staleDate: SpotActivitySync.staleDate(for: next))
-        await ensureActivity(name: next.placeName, content: content)
+        await ensureActivity(name: next.placeName, content: content, token: token)
         guard !superseded(token), let activity else { return }
         if next.status == .stopped {
             await finishSpot(activity, content: content, token: token)
@@ -179,48 +192,145 @@ final class RouteLiveActivityCenter {
         guard !superseded(token) else { return }
         guard await publish(activity, content, alert: false) else { return }
         guard !superseded(token) else { return }
+        let endedID = activity.id
         await activity.end(content, dismissalPolicy: .after(Date().addingTimeInterval(3)))
-        self.activity = nil
+        if self.activity?.id == endedID {
+            self.activity = nil
+        }
+        guard !superseded(token) else { return }
+        await endActivities(except: endedID)
         guard !superseded(token) else { return }
         lastSpot = nil
         closedSpotStop = true
     }
 
-    private func ensureActivity(name: String, content: ActivityContent<RouteActivityAttributes.ContentState>) async {
+    private func ensureActivity(
+        name: String,
+        content: ActivityContent<RouteActivityAttributes.ContentState>,
+        token: Int
+    ) async {
         if let activity {
             if ActivityRunPolicy.shouldReplace(runtimeState(of: activity)) {
                 await activity.end(nil, dismissalPolicy: .immediate)
                 self.activity = nil
             } else {
                 await endActivities(except: activity.id)
+                noteCreationSucceeded()
                 return
             }
         }
-        do {
-            let created = try Activity.request(
-                attributes: RouteActivityAttributes(name: name),
-                content: content,
-                pushType: nil
-            )
-            activity = created
-            await endActivities(except: created.id)
-        } catch {
-            RuntimeLogger.error(
-                "RouteLiveActivity",
-                "activity",
-                "创建灵动岛失败",
-                error: error,
-                details: ["phase": content.state.phase]
-            )
-            activity = await adoptedActivity()
-            if activity == nil {
+        await requestActivity(name: name, content: content, token: token)
+    }
+
+    /// 创建失败先立刻再试一次，仍失败就延后重放当前快照。次数用完后停止，避免空转。
+    private func requestActivity(
+        name: String,
+        content: ActivityContent<RouteActivityAttributes.ContentState>,
+        token: Int
+    ) async {
+        while !superseded(token) {
+            if !allowDeferredCreationAttempt, creationFailures > 0 {
+                switch ActivityRunPolicy.creationPlan(failureCount: creationFailures) {
+                case .retryImmediately:
+                    break
+                case .retryLater:
+                    scheduleCreationRetry()
+                    return
+                case .stop:
+                    return
+                }
+            }
+            allowDeferredCreationAttempt = false
+            do {
+                let created = try Activity.request(
+                    attributes: RouteActivityAttributes(name: name),
+                    content: content,
+                    pushType: nil
+                )
+                guard !superseded(token) else {
+                    await created.end(nil, dismissalPolicy: .immediate)
+                    return
+                }
+                activity = created
+                noteCreationSucceeded()
+                await endActivities(except: created.id)
+                return
+            } catch {
+                RuntimeLogger.error(
+                    "RouteLiveActivity",
+                    "activity",
+                    "创建灵动岛失败",
+                    error: error,
+                    details: ["phase": content.state.phase]
+                )
+                guard !superseded(token) else { return }
+                activity = await adoptedActivity()
+                if activity != nil {
+                    noteCreationSucceeded()
+                    return
+                }
+                creationFailures += 1
                 RuntimeLogger.error(
                     "RouteLiveActivity",
                     "activity",
                     "创建灵动岛失败，且没有可接管的活动",
-                    details: ["phase": content.state.phase]
+                    details: ["phase": content.state.phase, "failures": String(creationFailures)]
                 )
+                switch ActivityRunPolicy.creationPlan(failureCount: creationFailures) {
+                case .retryImmediately:
+                    continue
+                case .retryLater:
+                    scheduleCreationRetry()
+                    return
+                case .stop:
+                    return
+                }
             }
+        }
+    }
+
+    private func noteCreationSucceeded() {
+        creationFailures = 0
+        failedCreationKey = nil
+        creationRetryTask?.cancel()
+        creationRetryTask = nil
+    }
+
+    /// 进度刷新会反复同步同一条快照。已安排的延后重试不重置，避免每次都重新创建。
+    private func prepareCreationBudget(for request: SyncRequest) {
+        let key = creationKey(for: request)
+        guard ActivityRunPolicy.shouldResetCreationFailures(previousKey: failedCreationKey, key: key) else { return }
+        failedCreationKey = key
+        creationFailures = 0
+        creationRetryTask?.cancel()
+        creationRetryTask = nil
+    }
+
+    private func creationKey(for request: SyncRequest) -> String {
+        if let route = request.route {
+            return "route:\(route.phaseKey.rawValue):\(route.statusText):\(route.primaryAction)"
+        }
+        if let spot = request.spot {
+            return "spot:\(spot.status.rawValue):\(spot.statusText):\(spot.primaryAction)"
+        }
+        return "idle"
+    }
+
+    private func scheduleCreationRetry() {
+        guard creationRetryTask == nil else { return }
+        creationRetryTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 1_500_000_000)
+            guard !Task.isCancelled else { return }
+            self.creationRetryTask = nil
+            guard self.activity == nil, var request = self.pendingCreation else { return }
+            guard ActivityRunPolicy.creationPlan(failureCount: self.creationFailures) == .retryLater else { return }
+            guard self.queued == nil, !self.draining else {
+                self.scheduleCreationRetry()
+                return
+            }
+            request.token = self.generation
+            self.allowDeferredCreationAttempt = true
+            await self.apply(request)
         }
     }
 
@@ -274,9 +384,11 @@ final class RouteLiveActivityCenter {
     }
 
     private func needsPublish(contentChanged: Bool) -> Bool {
-        ActivityRunPolicy.shouldPublish(
+        let runtime = activity.flatMap { runtimeState(of: $0) }
+        return ActivityRunPolicy.shouldPublish(
             contentChanged: contentChanged,
-            runtime: activity.flatMap { runtimeState(of: $0) }
+            runtime: runtime,
+            activityMissing: activity == nil && creationFailures > 0
         )
     }
 
@@ -330,12 +442,18 @@ final class RouteLiveActivityCenter {
     }
 
     private func endNow(token: Int) async {
-        guard !superseded(token), let activity else { return }
-        await activity.end(nil, dismissalPolicy: .immediate)
-        self.activity = nil
+        guard !superseded(token) else { return }
+        if let activity {
+            await activity.end(nil, dismissalPolicy: .immediate)
+            self.activity = nil
+        }
+        guard !superseded(token) else { return }
+        await endActivities(except: nil)
         guard !superseded(token) else { return }
         lastRoute = nil
         lastSpot = nil
+        closedRouteTerminal = nil
+        closedSpotStop = false
     }
 
     private func routeDetail(_ snapshot: RouteActivitySnapshot) -> String {

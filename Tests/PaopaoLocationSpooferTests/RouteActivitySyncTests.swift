@@ -747,6 +747,98 @@ final class RouteActivitySyncTests: XCTestCase {
         XCTAssertFalse(playing.commandFailed)
     }
 
+    func testInactiveRouteFailureDoesNotMaskSpot() {
+        let expired = RouteCommandTracking(
+            commandFailed: true,
+            failedCommand: "pause",
+            errorText: "这个操作已过期，请再试一次。"
+        )
+        let cleared = expired.reconcile(phase: .inactive, interruption: .playing, waitingForActivation: false)
+        XCTAssertEqual(cleared, .idle)
+
+        let hidden = RouteActivitySync.snapshot(
+            phase: .inactive,
+            statusMessage: expired.errorText,
+            routeName: "步行",
+            remainingMeters: 0,
+            speedMetersPerSecond: 1.4,
+            progress: 0,
+            symbolName: "figure.walk",
+            commandFailed: true,
+            failedCommand: "pause"
+        )
+        XCTAssertNil(hidden)
+
+        let spot = SpotActivitySync.snapshot(
+            isVerifying: false,
+            isActive: true,
+            needsSwitch: false,
+            failed: false,
+            placeName: "深圳湾",
+            coordinateStandard: "GCJ-02",
+            accuracyMeters: 25
+        )
+        XCTAssertEqual(spot?.status, .locating)
+        XCTAssertEqual(spot?.primaryAction, "stopSpoof")
+
+        let paused = expired.reconcile(phase: .paused, interruption: .userPaused, waitingForActivation: false)
+        XCTAssertTrue(paused.commandFailed)
+        XCTAssertEqual(paused.failedCommand, "pause")
+    }
+
+    func testStoppedRouteFailureHandsOffInsteadOfSticking() {
+        let expired = RouteCommandTracking(
+            commandFailed: true,
+            failedCommand: "pause",
+            errorText: "这个操作已过期，请再试一次。"
+        )
+        let tracking = expired.reconcile(phase: .preparing, interruption: .playing, waitingForActivation: false)
+        XCTAssertFalse(tracking.commandFailed)
+        let snapshot = RouteActivitySync.snapshot(
+            phase: .preparing,
+            statusMessage: RouteActivitySync.stoppedMessage,
+            routeName: "步行",
+            remainingMeters: 0,
+            speedMetersPerSecond: 1.4,
+            progress: 0.4,
+            symbolName: "figure.walk",
+            commandFailed: tracking.commandFailed,
+            failedCommand: tracking.failedCommand,
+            confirmStopped: true
+        )
+        XCTAssertEqual(snapshot?.phaseKey, .stopped)
+        XCTAssertNotEqual(snapshot?.phaseKey, .actionFailed)
+    }
+
+    func testRepeatedRouteRejectionDoesNotRewriteTheSameFailure() {
+        let current = RouteCommandTracking(
+            commandFailed: true,
+            failedCommand: "pause",
+            errorText: "这个操作已过期，请再试一次。"
+        )
+        let same = RouteCommandTracking.rejectionResult(
+            current: current,
+            action: "pause",
+            message: current.errorText,
+            phase: .paused,
+            interruption: .userPaused,
+            waitingForActivation: false
+        )
+        XCTAssertEqual(same, current)
+
+        let dismissed = RouteCommandTracking.rejectionResult(
+            current: current,
+            action: "pause",
+            message: current.errorText,
+            phase: .inactive,
+            interruption: .playing,
+            waitingForActivation: false
+        )
+        XCTAssertEqual(dismissed, .idle)
+        XCTAssertEqual(current.clearingSatisfied("pause"), .idle)
+        XCTAssertEqual(current.clearingSatisfied("openApp"), current)
+    }
+
     func testPlanningShowsRouteWithoutPlaybackButtons() {
         let named = RouteActivitySync.snapshot(
             phase: .preparing,

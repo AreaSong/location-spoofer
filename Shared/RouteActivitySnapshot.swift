@@ -79,12 +79,60 @@ struct RouteCommandTracking: Equatable {
                 || (!waitingForActivation && phase != .preparing && phase != .paused)
             if settled { next.isRetrying = false }
         }
-        if next.commandFailed, phase == .playing || interruption == .activationFailed {
+        if next.commandFailed,
+           !Self.showsCommandFailure(
+               phase: phase,
+               interruption: interruption,
+               waitingForActivation: waitingForActivation
+           ) {
             next.commandFailed = false
             next.failedCommand = ""
             next.errorText = ""
         }
         return next
+    }
+
+    /// 只有暂停中的路线，或仍在等待开启的路线，才继续显示动作失败。
+    /// 进行中、已结束、未开始和普通准备态都不再占岛，避免过期的暂停盖住定点。
+    static func showsCommandFailure(
+        phase: RoutePhase,
+        interruption: RouteInterruption,
+        waitingForActivation: Bool
+    ) -> Bool {
+        if interruption == .activationFailed { return false }
+        switch phase {
+        case .paused:
+            return true
+        case .preparing:
+            return waitingForActivation
+        case .playing, .inactive, .finished:
+            return false
+        }
+    }
+
+    /// 路线已不能展示失败时返回空跟踪，让定点岛接上。同一条失败不重复写入。
+    static func rejectionResult(
+        current: RouteCommandTracking,
+        action: String,
+        message: String,
+        phase: RoutePhase,
+        interruption: RouteInterruption,
+        waitingForActivation: Bool
+    ) -> RouteCommandTracking {
+        guard showsCommandFailure(
+            phase: phase,
+            interruption: interruption,
+            waitingForActivation: waitingForActivation
+        ) else { return .idle }
+        let next = RouteCommandTracking(commandFailed: true, failedCommand: action, errorText: message)
+        if current == next { return current }
+        return next
+    }
+
+    /// 这个动作已经生效时，清掉对应失败，避免重试或打开 App 把同一条失败再写回去。
+    func clearingSatisfied(_ action: String) -> RouteCommandTracking {
+        guard commandFailed, failedCommand == action else { return self }
+        return .idle
     }
 
     private static func failed(_ command: String, _ message: String) -> RouteCommandTracking {
@@ -167,7 +215,7 @@ enum RouteActivitySync {
         confirmStopped: Bool = false,
         isPlanning: Bool = false
     ) -> RouteActivitySnapshot? {
-        if commandFailed {
+        if commandFailed, phase != .inactive, phase != .finished {
             return failedCommandSnapshot(
                 routeName: routeName,
                 remainingMeters: remainingMeters,

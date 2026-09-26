@@ -157,6 +157,19 @@ enum ActivityLaunchDecision: Equatable {
     case endStale
 }
 
+enum ActivityCreationPlan: Equatable {
+    case retryImmediately
+    case retryLater
+    case stop
+}
+
+/// 定点还在验证时，路线继续会空转。先别记成路线失败，否则失败岛会盖住定点。
+enum RoutePlaybackDeferral {
+    static func waitsForSpotVerification(isVerifying: Bool, usesDeveloperTunnel: Bool) -> Bool {
+        isVerifying && !usesDeveloperTunnel
+    }
+}
+
 enum ActivityRunPolicy {
     static func shouldReplace(_ state: ActivityRuntimeState?) -> Bool {
         switch state {
@@ -177,8 +190,30 @@ enum ActivityRunPolicy {
     }
 
     /// 内容没变时，过期的活动仍要再发布一次，否则重试无法解除系统的过期标记。
-    static func shouldPublish(contentChanged: Bool, runtime: ActivityRuntimeState?) -> Bool {
-        contentChanged || runtime == .stale
+    /// 创建失败后活动缺失时，内容没变也要再发，否则稳定定点不会再出现。
+    static func shouldPublish(
+        contentChanged: Bool,
+        runtime: ActivityRuntimeState?,
+        activityMissing: Bool = false
+    ) -> Bool {
+        contentChanged || runtime == .stale || activityMissing
+    }
+
+    /// 第 1 次失败立刻再试，第 2 次失败延后一次，再失败就停止，避免紧循环打系统接口。
+    static func creationPlan(failureCount: Int) -> ActivityCreationPlan {
+        switch failureCount {
+        case 1:
+            return .retryImmediately
+        case 2:
+            return .retryLater
+        default:
+            return .stop
+        }
+    }
+
+    /// 同一条快照的重复同步不重置失败次数。状态或动作变了才重新尝试创建。
+    static func shouldResetCreationFailures(previousKey: String?, key: String) -> Bool {
+        previousKey != key
     }
 
     /// 完成态标记不能挡住下一次定点或路线。
