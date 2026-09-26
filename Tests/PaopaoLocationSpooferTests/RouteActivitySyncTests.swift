@@ -1214,6 +1214,15 @@ final class RouteActivitySyncTests: XCTestCase {
         XCTAssertEqual(IslandAccessibility.buttonHint(action: "stopRoute"), "停止路线，不关闭当前虚拟定位")
         XCTAssertEqual(IslandAccessibility.buttonHint(action: "switchHere"), "把虚拟定位切换到当前选点")
         XCTAssertEqual(IslandAccessibility.buttonHint(action: "pause"), "暂停路线行走")
+        XCTAssertEqual(
+            IslandAccessibility.expandedLabel(
+                title: "",
+                status: "",
+                detail: "还剩 800 米 · 10分",
+                error: ""
+            ),
+            "还剩 800 米 · 10分"
+        )
     }
 
     private func playingSnapshot(remainingMeters: Double) -> RouteActivitySnapshot {

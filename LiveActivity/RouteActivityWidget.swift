@@ -12,16 +12,16 @@ struct RouteActivityWidget: Widget {
         } dynamicIsland: { context in
             DynamicIsland {
                 DynamicIslandExpandedRegion(.leading) {
-                    EmptyView()
+                    expandedTitle(context.state)
                 }
                 DynamicIslandExpandedRegion(.trailing) {
-                    EmptyView()
+                    expandedTrailingStatus(context.state, isStale: context.isStale)
                 }
                 DynamicIslandExpandedRegion(.bottom) {
                     if context.state.kind == "spot" {
-                        spotExpanded(context.state, isStale: context.isStale)
+                        spotIslandBottom(context.state, isStale: context.isStale)
                     } else {
-                        routeExpanded(context.state, isStale: context.isStale)
+                        routeIslandBottom(context.state, isStale: context.isStale)
                     }
                 }
             } compactLeading: {
@@ -51,15 +51,46 @@ struct RouteActivityWidget: Widget {
         }
     }
 
+    private func expandedTitle(_ state: RouteActivityAttributes.ContentState) -> some View {
+        Text(state.title)
+            .font(.headline)
+            .lineLimit(1)
+            .truncationMode(.tail)
+            .minimumScaleFactor(0.8)
+            .accessibilityLabel(state.title)
+    }
+
+    private func expandedTrailingStatus(_ state: RouteActivityAttributes.ContentState, isStale: Bool) -> some View {
+        let status = displayedStatus(state, isStale: isStale)
+        return statusLabel(status, warns: warns(state, isStale: isStale))
+            .minimumScaleFactor(0.8)
+            .accessibilityLabel(status)
+    }
+
     private func spotExpanded(_ state: RouteActivityAttributes.ContentState, isStale: Bool) -> some View {
+        spotBody(state, isStale: isStale, showsHeader: true, compactActions: false)
+    }
+
+    private func spotIslandBottom(_ state: RouteActivityAttributes.ContentState, isStale: Bool) -> some View {
+        spotBody(state, isStale: isStale, showsHeader: false, compactActions: true)
+    }
+
+    private func spotBody(
+        _ state: RouteActivityAttributes.ContentState,
+        isStale: Bool,
+        showsHeader: Bool,
+        compactActions: Bool
+    ) -> some View {
         let status = displayedStatus(state, isStale: isStale)
         return VStack(alignment: .leading, spacing: 6) {
             VStack(alignment: .leading, spacing: 6) {
-                Text(state.title)
-                    .font(.headline)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                statusLabel(status, warns: warns(state, isStale: isStale))
+                if showsHeader {
+                    Text(state.title)
+                        .font(.headline)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                    statusLabel(status, warns: warns(state, isStale: isStale))
+                }
                 if !state.detailText.isEmpty {
                     Text(state.detailText)
                         .font(.subheadline)
@@ -77,12 +108,12 @@ struct RouteActivityWidget: Widget {
             }
             .accessibilityElement(children: .combine)
             .accessibilityLabel(IslandAccessibility.expandedLabel(
-                title: state.title,
-                status: status,
+                title: showsHeader ? state.title : "",
+                status: showsHeader ? status : "",
                 detail: state.detailText,
                 error: state.errorText
             ))
-            spotActionRow(state, isStale: isStale)
+            spotActionRow(state, isStale: isStale, compact: compactActions)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -113,7 +144,11 @@ struct RouteActivityWidget: Widget {
     }
 
     @ViewBuilder
-    private func spotActionRow(_ state: RouteActivityAttributes.ContentState, isStale: Bool) -> some View {
+    private func spotActionRow(
+        _ state: RouteActivityAttributes.ContentState,
+        isStale: Bool,
+        compact: Bool
+    ) -> some View {
         let buttons = SpotIslandActions.buttons(
             phase: state.phase,
             primaryAction: state.primaryAction,
@@ -129,7 +164,8 @@ struct RouteActivityWidget: Widget {
                         action: buttons.primaryAction,
                         title: buttons.primaryTitle,
                         state: state,
-                        prominent: true
+                        prominent: true,
+                        compact: compact
                     )
                 }
                 if !buttons.secondaryAction.isEmpty {
@@ -137,7 +173,8 @@ struct RouteActivityWidget: Widget {
                         action: buttons.secondaryAction,
                         title: buttons.secondaryTitle,
                         state: state,
-                        prominent: false
+                        prominent: false,
+                        compact: compact
                     )
                 }
             }
@@ -149,55 +186,78 @@ struct RouteActivityWidget: Widget {
         action: String,
         title: String,
         state: RouteActivityAttributes.ContentState,
-        prominent: Bool
+        prominent: Bool,
+        compact: Bool
     ) -> some View {
         if #available(iOS 17.0, *) {
             let submitted = submittedAction(action, state: state)
             if submitted == "openApp" {
-                spotOpenAppButton(title: title, prominent: prominent)
+                spotOpenAppButton(title: title, prominent: prominent, compact: compact)
             } else {
-                spotCommandButton(title: title, action: submitted, prominent: prominent)
+                spotCommandButton(title: title, action: submitted, prominent: prominent, compact: compact)
             }
         }
     }
 
     @available(iOS 17.0, *)
     @ViewBuilder
-    private func spotOpenAppButton(title: String, prominent: Bool) -> some View {
+    private func spotOpenAppButton(title: String, prominent: Bool, compact: Bool) -> some View {
         if prominent {
-            Button(intent: IslandOpenAppIntent()) { spotButtonTitle(title) }
+            Button(intent: IslandOpenAppIntent()) { buttonTitle(title, compact: compact) }
                 .buttonStyle(.borderedProminent)
+                .controlSize(compact ? .small : .regular)
                 .accessibilityHint(IslandAccessibility.buttonHint(action: "openApp"))
         } else {
-            Button(intent: IslandOpenAppIntent()) { spotButtonTitle(title) }
+            Button(intent: IslandOpenAppIntent()) { buttonTitle(title, compact: compact) }
                 .buttonStyle(.bordered)
+                .controlSize(compact ? .small : .regular)
                 .accessibilityHint(IslandAccessibility.buttonHint(action: "openApp"))
         }
     }
 
     @available(iOS 17.0, *)
     @ViewBuilder
-    private func spotCommandButton(title: String, action: String, prominent: Bool) -> some View {
+    private func spotCommandButton(
+        title: String,
+        action: String,
+        prominent: Bool,
+        compact: Bool
+    ) -> some View {
         if commandOpensApp {
-            islandIntentButton(IslandOpeningCommandIntent(action: action), action: action, prominent: prominent) {
-                spotButtonTitle(title)
+            islandIntentButton(
+                IslandOpeningCommandIntent(action: action),
+                action: action,
+                prominent: prominent,
+                compact: compact
+            ) {
+                buttonTitle(title, compact: compact)
             }
         } else {
-            islandIntentButton(IslandCommandIntent(action: action), action: action, prominent: prominent) {
-                spotButtonTitle(title)
+            islandIntentButton(
+                IslandCommandIntent(action: action),
+                action: action,
+                prominent: prominent,
+                compact: compact
+            ) {
+                buttonTitle(title, compact: compact)
             }
         }
-    }
-
-    private func spotButtonTitle(_ title: String) -> some View {
-        Text(title)
-            .lineLimit(1)
-            .minimumScaleFactor(0.8)
-            .frame(maxWidth: .infinity)
-            .frame(height: 36)
     }
 
     private func routeExpanded(_ state: RouteActivityAttributes.ContentState, isStale: Bool) -> some View {
+        routeBody(state, isStale: isStale, showsHeader: true, compactActions: false)
+    }
+
+    private func routeIslandBottom(_ state: RouteActivityAttributes.ContentState, isStale: Bool) -> some View {
+        routeBody(state, isStale: isStale, showsHeader: false, compactActions: true)
+    }
+
+    private func routeBody(
+        _ state: RouteActivityAttributes.ContentState,
+        isStale: Bool,
+        showsHeader: Bool,
+        compactActions: Bool
+    ) -> some View {
         let metric = RouteIslandLayout.metricText(
             phase: state.phase,
             detailText: state.detailText,
@@ -207,13 +267,15 @@ struct RouteActivityWidget: Widget {
         )
         let status = displayedStatus(state, isStale: isStale)
         let warning = warns(state, isStale: isStale)
-        return VStack(alignment: .leading, spacing: 8) {
-            VStack(alignment: .leading, spacing: 8) {
-                Text(state.title)
-                    .font(.headline)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                statusLabel(status, warns: warning)
+        return VStack(alignment: .leading, spacing: compactActions ? 6 : 8) {
+            VStack(alignment: .leading, spacing: compactActions ? 4 : 8) {
+                if showsHeader {
+                    Text(state.title)
+                        .font(.headline)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                    statusLabel(status, warns: warning)
+                }
                 Text(metric)
                     .font(.subheadline.weight(.semibold))
                     .lineLimit(1)
@@ -226,18 +288,18 @@ struct RouteActivityWidget: Widget {
                     Text(state.errorText)
                         .font(.subheadline)
                         .foregroundStyle(Color.orange)
-                        .lineLimit(2)
+                        .lineLimit(compactActions ? 1 : 2)
                         .truncationMode(.tail)
                 }
             }
             .accessibilityElement(children: .combine)
             .accessibilityLabel(IslandAccessibility.expandedLabel(
-                title: state.title,
-                status: status,
+                title: showsHeader ? state.title : "",
+                status: showsHeader ? status : "",
                 detail: metric,
                 error: state.errorText == metric ? "" : state.errorText
             ))
-            actionRow(state, isStale: isStale)
+            actionRow(state, isStale: isStale, compact: compactActions)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -325,7 +387,11 @@ struct RouteActivityWidget: Widget {
     }
 
     @ViewBuilder
-    private func actionRow(_ state: RouteActivityAttributes.ContentState, isStale: Bool) -> some View {
+    private func actionRow(
+        _ state: RouteActivityAttributes.ContentState,
+        isStale: Bool,
+        compact: Bool
+    ) -> some View {
         let buttons = RouteIslandActions.buttons(
             phase: state.phase,
             primaryAction: state.primaryAction,
@@ -341,7 +407,8 @@ struct RouteActivityWidget: Widget {
                         action: buttons.primaryAction,
                         title: buttons.primaryTitle,
                         state: state,
-                        prominent: true
+                        prominent: true,
+                        compact: compact
                     )
                 }
                 if !buttons.secondaryAction.isEmpty {
@@ -349,7 +416,8 @@ struct RouteActivityWidget: Widget {
                         action: buttons.secondaryAction,
                         title: buttons.secondaryTitle,
                         state: state,
-                        prominent: false
+                        prominent: false,
+                        compact: compact
                     )
                 }
             }
@@ -361,42 +429,55 @@ struct RouteActivityWidget: Widget {
         action: String,
         title: String,
         state: RouteActivityAttributes.ContentState,
-        prominent: Bool
+        prominent: Bool,
+        compact: Bool
     ) -> some View {
         if #available(iOS 17.0, *) {
             let submitted = submittedAction(action, state: state)
             if submitted == "openApp" {
-                openAppButton(title: title, prominent: prominent)
+                openAppButton(title: title, prominent: prominent, compact: compact)
             } else {
-                commandButton(title: title, action: submitted, prominent: prominent)
+                commandButton(title: title, action: submitted, prominent: prominent, compact: compact)
             }
         }
     }
 
     @available(iOS 17.0, *)
     @ViewBuilder
-    private func openAppButton(title: String, prominent: Bool) -> some View {
+    private func openAppButton(title: String, prominent: Bool, compact: Bool) -> some View {
         if prominent {
-            Button(intent: IslandOpenAppIntent()) { buttonTitle(title) }
+            Button(intent: IslandOpenAppIntent()) { buttonTitle(title, compact: compact) }
                 .buttonStyle(.borderedProminent)
+                .controlSize(compact ? .small : .regular)
                 .accessibilityHint(IslandAccessibility.buttonHint(action: "openApp"))
         } else {
-            Button(intent: IslandOpenAppIntent()) { buttonTitle(title) }
+            Button(intent: IslandOpenAppIntent()) { buttonTitle(title, compact: compact) }
                 .buttonStyle(.bordered)
+                .controlSize(compact ? .small : .regular)
                 .accessibilityHint(IslandAccessibility.buttonHint(action: "openApp"))
         }
     }
 
     @available(iOS 17.0, *)
     @ViewBuilder
-    private func commandButton(title: String, action: String, prominent: Bool) -> some View {
+    private func commandButton(title: String, action: String, prominent: Bool, compact: Bool) -> some View {
         if commandOpensApp {
-            islandIntentButton(IslandOpeningCommandIntent(action: action), action: action, prominent: prominent) {
-                buttonTitle(title)
+            islandIntentButton(
+                IslandOpeningCommandIntent(action: action),
+                action: action,
+                prominent: prominent,
+                compact: compact
+            ) {
+                buttonTitle(title, compact: compact)
             }
         } else {
-            islandIntentButton(IslandCommandIntent(action: action), action: action, prominent: prominent) {
-                buttonTitle(title)
+            islandIntentButton(
+                IslandCommandIntent(action: action),
+                action: action,
+                prominent: prominent,
+                compact: compact
+            ) {
+                buttonTitle(title, compact: compact)
             }
         }
     }
@@ -414,26 +495,30 @@ struct RouteActivityWidget: Widget {
         _ intent: I,
         action: String,
         prominent: Bool,
+        compact: Bool,
         label: () -> some View
     ) -> some View {
         let hint = IslandAccessibility.buttonHint(action: action)
         if prominent {
             Button(intent: intent, label: label)
                 .buttonStyle(.borderedProminent)
+                .controlSize(compact ? .small : .regular)
                 .accessibilityHint(hint)
         } else {
             Button(intent: intent, label: label)
                 .buttonStyle(.bordered)
+                .controlSize(compact ? .small : .regular)
                 .accessibilityHint(hint)
         }
     }
 
-    private func buttonTitle(_ title: String) -> some View {
+    private func buttonTitle(_ title: String, compact: Bool) -> some View {
         Text(title)
+            .font(compact ? .subheadline.weight(.semibold) : .body.weight(.semibold))
             .lineLimit(1)
-            .minimumScaleFactor(0.8)
+            .minimumScaleFactor(0.75)
             .frame(maxWidth: .infinity)
-            .frame(height: 36)
+            .frame(minHeight: compact ? 28 : 36)
     }
 }
 
