@@ -427,7 +427,7 @@ final class RoutePlaybackController: ObservableObject {
         applyPendingRecovery()
     }
 
-    /// 返回已经发出、但还没结束的起点写入。调用方应等它完成后再清系统定位。
+    /// 返回已经发出、但还没结束的起点写入。调用方应等它完成后再把该点交给定点。
     @discardableResult
     func exit() -> Task<Void, Never>? {
         stopPlaybackTask()

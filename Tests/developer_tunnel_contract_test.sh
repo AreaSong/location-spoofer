@@ -66,7 +66,7 @@ grep -q 'routeUsesDeveloperTunnel' "$MAP" || fail "map route playback must branc
 grep -q '先连接隧道' "$MAP" || fail "the main button must guide the user to connect the tunnel first"
 grep -q 'homeRuntimeStatusTone' "$MAP" || fail "the runtime status row must carry a tone"
 grep -q 'showsRoutePanel' "$MAP" || fail "switching back to 定点 must collapse the route panel without clearing the route"
-grep -q '退出会停止播放并清除路线' "$MAP" || fail "exiting a playing route must ask for confirmation"
+grep -q '退出会停止播放，虚拟定位留在当前点' "$MAP" || fail "exiting a playing route must ask for confirmation"
 
 grep -q 'case .developerTunnel:' "$DIAGNOSTICS" || fail "diagnostics must run a developer tunnel check"
 grep -q '开发者隧道环境检测' "$DIAGNOSTICS" || fail "diagnostics must log the developer tunnel check"

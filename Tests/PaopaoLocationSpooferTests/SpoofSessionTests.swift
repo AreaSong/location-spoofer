@@ -129,6 +129,26 @@ final class SpoofSessionTests: XCTestCase {
         )
     }
 
+    func testAdoptActiveLocationDoesNotPushOrClear() {
+        let probe = SpoofServiceProbe()
+        probe.mode = .developerTunnel
+        let session = makeSession(probe)
+
+        session.adoptActiveLocation(latitude: 22.5, longitude: 113.9)
+
+        XCTAssertEqual(session.state, .active)
+        XCTAssertEqual(session.writtenLatitude, 22.5)
+        XCTAssertEqual(session.writtenLongitude, 113.9)
+        XCTAssertEqual(session.switchLatitude, 22.5)
+        XCTAssertEqual(session.switchLongitude, 113.9)
+        XCTAssertEqual(probe.developerPushes, 0)
+        XCTAssertEqual(probe.developerClears, 0)
+        XCTAssertEqual(probe.clearLocalCount, 0)
+        XCTAssertEqual(probe.updateCount, 0)
+        XCTAssertEqual(probe.verifyCount, 0)
+        XCTAssertTrue(session.consumeEffects().isEmpty)
+    }
+
     func testRouteWriteUsesTheSameCoordinateEntry() async {
         let probe = SpoofServiceProbe()
         let session = makeSession(probe)
@@ -231,6 +251,7 @@ private final class SpoofServiceProbe {
     var saveImpl: (() -> Void)?
     var developerPushes = 0
     var developerClears = 0
+    var clearLocalCount = 0
     var developerFailure: RouteLocationPushFailure?
     var developerClearFailure: RouteLocationPushFailure?
 
@@ -261,7 +282,7 @@ private final class SpoofServiceProbe {
                 self.updateCount += 1
                 return true
             },
-            clearLocal: {},
+            clearLocal: { self.clearLocalCount += 1 },
             saveThirdParty: { _, randomRadius in
                 self.savedRadius = randomRadius
                 self.saveImpl?()

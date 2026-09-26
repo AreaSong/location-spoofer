@@ -111,6 +111,7 @@ struct MapHomeView: View {
     @State var showExitRouteConfirm = false
     @State var developerLocationError = ""
     @State var lastRoutePhase = RoutePhase.inactive
+    @State var lastRouteWrittenPair: CoordinatePair?
     @State var realtimeRequestTask: Task<Void, Never>?
     @State var realtimeRequestContext: RealtimeLocationRequestContext?
     @State var wifiChangeObserverToken: UUID?
@@ -420,7 +421,7 @@ struct MapHomeView: View {
                     repeatMode: route.repeatMode
                 )
             }
-            clearRouteLocationIfNeeded(from: lastRoutePhase, to: phase)
+            handoffRouteLocationIfNeeded(from: lastRoutePhase, to: phase)
             lastRoutePhase = phase
             syncRouteActivity()
         }
@@ -633,7 +634,7 @@ struct MapHomeView: View {
             Text(routeRecovery.map { "从「\($0.name)」大约 \(Int(($0.progress * 100).rounded()))% 接着走。不会自动开始定位。" } ?? "")
         }
         .confirmationDialog(
-            "退出会停止播放并清除路线",
+            "退出会停止播放，虚拟定位留在当前点",
             isPresented: $showExitRouteConfirm,
             titleVisibility: .visible
         ) {

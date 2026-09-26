@@ -76,6 +76,17 @@ final class SpoofSession: ObservableObject {
         return effects
     }
 
+    /// 路线停下后接管已写入的坐标，不再推送、也不弹出开启成功。
+    func adoptActiveLocation(latitude: Double, longitude: Double) {
+        state = .active
+        remember(
+            writtenLatitude: latitude,
+            writtenLongitude: longitude,
+            switchLatitude: latitude,
+            switchLongitude: longitude
+        )
+    }
+
     func setPreviewActive(_ active: Bool, latitude: Double?, longitude: Double?) {
         operationTask?.cancel()
         operationTask = nil

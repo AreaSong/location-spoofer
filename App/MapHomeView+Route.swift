@@ -295,9 +295,20 @@ extension MapHomeView {
 
     func exitRoute() {
         let previous = route.phase
+        let stoppedKeeping = previous == .preparing
+            && route.statusMessage == RouteActivitySync.stoppedMessage
         let pendingWrite = route.exit()
         showsRoutePanel = false
-        settleRouteSimulation(after: pendingWrite, from: previous)
+        guard RouteLocationStop.shouldHandoffToSpot(
+            from: previous,
+            to: .inactive,
+            activationWritePending: pendingWrite != nil,
+            isStoppedKeepingLocation: stoppedKeeping
+        ) else { return }
+        Task { @MainActor in
+            await pendingWrite?.value
+            handoffKeptRouteLocationToSpot()
+        }
     }
 
     /// 播放中或暂停时退出要先确认；只是摆了图钉的话直接退。
@@ -541,9 +552,22 @@ extension MapHomeView {
     }
 
     func applyRouteCoordinate(_ pair: CoordinatePair) async -> Bool {
-        if UIPreview.isEnabled() { return true }
+        if UIPreview.isEnabled() {
+            rememberLastRouteWrite(pair)
+            return true
+        }
         guard routeUsesDeveloperTunnel else {
-            return await session.writeRoute(pair, offsetMeters: route.offsetMeters)
+            let applied = await session.writeRoute(pair, offsetMeters: route.offsetMeters)
+            if applied, let latitude = session.writtenLatitude, let longitude = session.writtenLongitude {
+                rememberLastRouteWrite(
+                    CoordinateConverter.coordinatePair(
+                        lat: latitude,
+                        lon: longitude,
+                        mapCoordinateSystem: .wgs84
+                    )
+                )
+            }
+            return applied
         }
         let coordinate = RoutePlayback.offset(pair, radiusMeters: route.offsetMeters).wgs84
         if let failure = await routeLocation.set(latitude: coordinate.latitude, longitude: coordinate.longitude) {
@@ -551,11 +575,17 @@ extension MapHomeView {
             route.pushFailureMessage = failure.message
             return false
         }
+        rememberLastRouteWrite(
+            CoordinateConverter.coordinatePair(
+                lat: coordinate.latitude,
+                lon: coordinate.longitude,
+                mapCoordinateSystem: .wgs84
+            )
+        )
         return true
     }
 
-    /// 只有开发者隧道会占用系统定位。路线结束后，定点仍开启就回到定点，否则清掉模拟。
-    /// 开启等待期间退出时，先等已经发出的起点写入结束，再清，避免清完又被旧任务写回。
+    /// 换路线或取消开启等待时，不再清掉已经写下的模拟。退出和走完由定点接管。
     func settleRouteSimulation(after pendingWrite: Task<Void, Never>?, from previous: RoutePhase) {
         guard RouteLocationStop.shouldClearSimulation(
             from: previous,
@@ -564,24 +594,37 @@ extension MapHomeView {
         ) else { return }
         Task { @MainActor in
             await pendingWrite?.value
-            await restoreOrClearRouteSimulation()
         }
     }
 
-    func clearRouteLocationIfNeeded(from previous: RoutePhase, to next: RoutePhase) {
-        guard RouteLocationStop.shouldClearSimulation(from: previous, to: next) else { return }
-        Task { await restoreOrClearRouteSimulation() }
+    func handoffRouteLocationIfNeeded(from previous: RoutePhase, to next: RoutePhase) {
+        guard next != .inactive else { return }
+        guard RouteLocationStop.shouldHandoffToSpot(
+            from: previous,
+            to: next,
+            isStoppedKeepingLocation: route.statusMessage == RouteActivitySync.stoppedMessage
+        ) else { return }
+        handoffKeptRouteLocationToSpot()
     }
 
-    private func restoreOrClearRouteSimulation() async {
-        guard !UIPreview.isEnabled(), routeUsesDeveloperTunnel else { return }
-        if spoofState == .active, let latitude = activeSpoofLat, let longitude = activeSpoofLon {
-            _ = await routeLocation.set(latitude: latitude, longitude: longitude)
-            return
+    private func rememberLastRouteWrite(_ pair: CoordinatePair) {
+        lastRouteWrittenPair = pair
+    }
+
+    private func handoffKeptRouteLocationToSpot() {
+        guard let pair = RouteLocationStop.keptCoordinate(
+            writtenLatitude: session.writtenLatitude,
+            writtenLongitude: session.writtenLongitude,
+            lastWritten: lastRouteWrittenPair
+        ) else { return }
+        let wgs = pair.wgs84
+        if UIPreview.isEnabled() {
+            session.setPreviewActive(true, latitude: wgs.latitude, longitude: wgs.longitude)
+        } else {
+            session.adoptActiveLocation(latitude: wgs.latitude, longitude: wgs.longitude)
         }
-        if let failure = await routeLocation.clear(), failure != .superseded {
-            route.statusMessage = failure.message
-        }
+        mapState.selectMapTap(pair.coordinate(for: CoordinateConverter.currentMapCoordinateSystem))
+        syncRouteActivity()
     }
 
     func handleRouteSpoofStateChange(_ state: SpoofState) {

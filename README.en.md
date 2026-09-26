@@ -247,8 +247,8 @@ In this mode:
 - The pairing file lives in the app sandbox, is readable only after first unlock, and is excluded from iCloud and
   computer backups;
 - Both single points and route playback use this channel; playback pushes one sample per second;
-- Stopping the test location or leaving a route clears the simulation immediately, so the real location returns
-  without toggling Location Services;
+- Leaving a route or finishing playback keeps the last simulated point as a single-point spoof; stopping the test
+  location clears the simulation immediately, so the real location returns without toggling Location Services;
 - Random perturbation and accuracy settings do not apply in this mode; route offset still applies;
 - If the tunnel drops, the app asks you to reconnect and pauses any playing route.
 
@@ -379,7 +379,8 @@ Third-party Proxy Mode:
 
 Developer Tunnel Mode:
 
-1. Stop the test location or leave the route; the app clears the system simulation immediately;
+1. Stop the test location; the app clears the system simulation immediately. Leaving or finishing a route keeps the
+   last simulated point;
 2. To disconnect completely, turn the tunnel off in LocalDevVPN.
 
 Location caches may take time to refresh. Restart the device if the system or target app continues to show an old

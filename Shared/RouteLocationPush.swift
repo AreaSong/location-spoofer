@@ -124,18 +124,48 @@ enum RouteLocationLaunch {
 }
 
 enum RouteLocationStop {
-    /// `activationWritePending`：开启等待时相位仍是 preparing，退出到 inactive 也要清掉可能已经写下的起点。
+    /// 退出路线和走完改为定点接管，不再自动清除系统模拟。
     static func shouldClearSimulation(
+        from _: RoutePhase,
+        to _: RoutePhase,
+        activationWritePending _: Bool = false
+    ) -> Bool {
+        false
+    }
+
+    /// 把已写下的虚拟点交给定点。未写过坐标的准备态退出不接管。
+    static func shouldHandoffToSpot(
         from: RoutePhase,
         to: RoutePhase,
-        activationWritePending: Bool = false
+        activationWritePending: Bool = false,
+        isStoppedKeepingLocation: Bool = false
     ) -> Bool {
-        if activationWritePending { return true }
+        if activationWritePending, to == .inactive { return true }
         switch (from, to) {
-        case (.playing, .inactive), (.paused, .inactive), (.playing, .finished), (.paused, .finished):
+        case (.playing, .inactive), (.paused, .inactive),
+             (.playing, .finished), (.paused, .finished),
+             (.finished, .inactive):
             return true
+        case (.preparing, .inactive):
+            return isStoppedKeepingLocation
         default:
             return false
         }
+    }
+
+    static func keptCoordinate(
+        writtenLatitude: Double?,
+        writtenLongitude: Double?,
+        lastWritten: CoordinatePair?
+    ) -> CoordinatePair? {
+        if let lastWritten { return lastWritten }
+        if let writtenLatitude, let writtenLongitude {
+            return CoordinateConverter.coordinatePair(
+                lat: writtenLatitude,
+                lon: writtenLongitude,
+                mapCoordinateSystem: .wgs84
+            )
+        }
+        return nil
     }
 }

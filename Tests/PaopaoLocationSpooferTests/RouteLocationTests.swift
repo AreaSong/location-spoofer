@@ -146,18 +146,81 @@ final class RouteLocationTests: XCTestCase {
         XCTAssertTrue(client.pushes.isEmpty)
     }
 
-    func testStopAndFinishClearSimulationButPauseDoesNot() {
-        XCTAssertTrue(RouteLocationStop.shouldClearSimulation(from: .playing, to: .inactive))
-        XCTAssertTrue(RouteLocationStop.shouldClearSimulation(from: .paused, to: .inactive))
-        XCTAssertTrue(RouteLocationStop.shouldClearSimulation(from: .playing, to: .finished))
+    func testStopAndFinishKeepSimulationInsteadOfClearing() {
+        XCTAssertFalse(RouteLocationStop.shouldClearSimulation(from: .playing, to: .inactive))
+        XCTAssertFalse(RouteLocationStop.shouldClearSimulation(from: .paused, to: .inactive))
+        XCTAssertFalse(RouteLocationStop.shouldClearSimulation(from: .playing, to: .finished))
         XCTAssertFalse(RouteLocationStop.shouldClearSimulation(from: .playing, to: .paused))
         XCTAssertFalse(RouteLocationStop.shouldClearSimulation(from: .preparing, to: .playing))
         XCTAssertFalse(RouteLocationStop.shouldClearSimulation(from: .preparing, to: .inactive))
-        XCTAssertTrue(
+        XCTAssertFalse(
             RouteLocationStop.shouldClearSimulation(
                 from: .preparing,
                 to: .inactive,
                 activationWritePending: true
+            )
+        )
+    }
+
+    func testExitAndFinishHandoffToSpot() {
+        XCTAssertTrue(RouteLocationStop.shouldHandoffToSpot(from: .playing, to: .inactive))
+        XCTAssertTrue(RouteLocationStop.shouldHandoffToSpot(from: .paused, to: .inactive))
+        XCTAssertTrue(RouteLocationStop.shouldHandoffToSpot(from: .playing, to: .finished))
+        XCTAssertTrue(RouteLocationStop.shouldHandoffToSpot(from: .paused, to: .finished))
+        XCTAssertTrue(RouteLocationStop.shouldHandoffToSpot(from: .finished, to: .inactive))
+        XCTAssertTrue(
+            RouteLocationStop.shouldHandoffToSpot(
+                from: .preparing,
+                to: .inactive,
+                activationWritePending: true
+            )
+        )
+        XCTAssertTrue(
+            RouteLocationStop.shouldHandoffToSpot(
+                from: .preparing,
+                to: .inactive,
+                isStoppedKeepingLocation: true
+            )
+        )
+        XCTAssertFalse(RouteLocationStop.shouldHandoffToSpot(from: .playing, to: .paused))
+        XCTAssertFalse(RouteLocationStop.shouldHandoffToSpot(from: .preparing, to: .playing))
+        XCTAssertFalse(RouteLocationStop.shouldHandoffToSpot(from: .preparing, to: .inactive))
+        XCTAssertFalse(
+            RouteLocationStop.shouldHandoffToSpot(
+                from: .preparing,
+                to: .preparing,
+                activationWritePending: true
+            )
+        )
+    }
+
+    func testKeptCoordinatePrefersLastRouteWriteOverSessionSpot() {
+        let last = CoordinateConverter.coordinatePair(
+            lat: 22.494,
+            lon: 113.951,
+            mapCoordinateSystem: .wgs84
+        )
+        let kept = RouteLocationStop.keptCoordinate(
+            writtenLatitude: 22.5,
+            writtenLongitude: 113.9,
+            lastWritten: last
+        )
+        XCTAssertEqual(kept?.wgs84.latitude ?? 0, last.wgs84.latitude, accuracy: 0.000_000_1)
+        XCTAssertEqual(kept?.wgs84.longitude ?? 0, last.wgs84.longitude, accuracy: 0.000_000_1)
+        XCTAssertEqual(
+            RouteLocationStop.keptCoordinate(
+                writtenLatitude: 22.5,
+                writtenLongitude: 113.9,
+                lastWritten: nil
+            )?.wgs84.latitude ?? 0,
+            22.5,
+            accuracy: 0.000_000_1
+        )
+        XCTAssertNil(
+            RouteLocationStop.keptCoordinate(
+                writtenLatitude: nil,
+                writtenLongitude: nil,
+                lastWritten: nil
             )
         )
     }
