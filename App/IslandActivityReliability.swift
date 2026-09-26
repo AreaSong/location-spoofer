@@ -216,6 +216,11 @@ enum ActivityRunPolicy {
         previousKey != key
     }
 
+    /// 回到前台时，若岛还没建出来且已经停过重试，清掉次数再试，否则稳定状态会一直没有岛。
+    static func shouldRetryCreationOnForeground(activityMissing: Bool, failureCount: Int) -> Bool {
+        activityMissing && failureCount > 0
+    }
+
     /// 完成态标记不能挡住下一次定点或路线。
     static func blocksNewWork(holdingFinished _: Bool) -> Bool {
         false

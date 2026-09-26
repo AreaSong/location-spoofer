@@ -496,6 +496,7 @@ struct MapHomeView: View {
                 BackgroundKeepAlive.shared.retain(.routePlayback)
             }
             RouteActivityBridge.drainPending()
+            syncRouteActivity(retryCreation: true)
             if runtimeMode.mode == .thirdParty {
                 refreshThirdPartyState()
             }

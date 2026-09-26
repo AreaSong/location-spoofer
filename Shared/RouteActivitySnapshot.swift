@@ -378,37 +378,34 @@ enum RouteActivitySync {
         modeSymbolName: String
     ) -> RouteActivitySnapshot {
         let minutes = remainingMinutes(meters: remainingMeters, speedMetersPerSecond: speedMetersPerSecond)
-        let userPaused = interruption == .userPaused
-            || statusMessage == userPauseMessage
-            || statusMessage.isEmpty
-        let fault = interruption == .pushFailed || (!userPaused && !statusMessage.isEmpty)
-        if fault && interruption != .userPaused && statusMessage != userPauseMessage {
-            return systemFault(
+        let userPaused = interruption == .userPaused || statusMessage == userPauseMessage
+        if userPaused {
+            return routeSnapshot(
+                phaseKey: .userPaused,
+                statusText: "已暂停",
+                minutes: minutes,
                 routeName: routeName,
-                remainingMeters: remainingMeters,
-                speedMetersPerSecond: speedMetersPerSecond,
                 progress: progress,
-                errorText: statusMessage,
-                retryCommand: "resume",
-                modeSymbolName: modeSymbolName
+                remainingMeters: remainingMeters,
+                symbolName: "pause.fill",
+                modeSymbolName: modeSymbolName,
+                isWarning: false,
+                errorText: "",
+                primaryAction: "resume",
+                primaryTitle: "继续",
+                secondaryAction: "stopRoute",
+                secondaryTitle: "停止路线",
+                retryCommand: ""
             )
         }
-        return routeSnapshot(
-            phaseKey: .userPaused,
-            statusText: "已暂停",
-            minutes: minutes,
+        return systemFault(
             routeName: routeName,
-            progress: progress,
             remainingMeters: remainingMeters,
-            symbolName: "pause.fill",
-            modeSymbolName: modeSymbolName,
-            isWarning: false,
-            errorText: "",
-            primaryAction: "resume",
-            primaryTitle: "继续",
-            secondaryAction: "stopRoute",
-            secondaryTitle: "停止路线",
-            retryCommand: ""
+            speedMetersPerSecond: speedMetersPerSecond,
+            progress: progress,
+            errorText: statusMessage,
+            retryCommand: "resume",
+            modeSymbolName: modeSymbolName
         )
     }
 

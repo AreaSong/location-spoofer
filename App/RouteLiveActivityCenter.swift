@@ -29,7 +29,15 @@ final class RouteLiveActivityCenter {
     private var pendingCreation: SyncRequest?
     private var allowDeferredCreationAttempt = false
 
-    func sync(route: RouteActivitySnapshot?, spot: SpotActivitySnapshot?, keepForRecovery: Bool = false) async {
+    func sync(
+        route: RouteActivitySnapshot?,
+        spot: SpotActivitySnapshot?,
+        keepForRecovery: Bool = false,
+        retryCreation: Bool = false
+    ) async {
+        if retryCreation {
+            prepareForegroundCreationRetry()
+        }
         enqueue(route: route, spot: spot, keepForRecovery: keepForRecovery)
         await drain()
     }
@@ -290,6 +298,18 @@ final class RouteLiveActivityCenter {
     }
 
     private func noteCreationSucceeded() {
+        creationFailures = 0
+        failedCreationKey = nil
+        creationRetryTask?.cancel()
+        creationRetryTask = nil
+    }
+
+    /// 回到前台时清掉已停用的创建次数，让当前快照再请求一次。
+    private func prepareForegroundCreationRetry() {
+        guard ActivityRunPolicy.shouldRetryCreationOnForeground(
+            activityMissing: activity == nil,
+            failureCount: creationFailures
+        ) else { return }
         creationFailures = 0
         failedCreationKey = nil
         creationRetryTask?.cancel()

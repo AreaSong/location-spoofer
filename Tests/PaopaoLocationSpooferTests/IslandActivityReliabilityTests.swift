@@ -183,6 +183,20 @@ final class IslandActivityReliabilityTests: XCTestCase {
         XCTAssertTrue(RoutePlaybackDeferral.waitsForSpotVerification(isVerifying: true, usesDeveloperTunnel: false))
         XCTAssertFalse(RoutePlaybackDeferral.waitsForSpotVerification(isVerifying: true, usesDeveloperTunnel: true))
         XCTAssertFalse(RoutePlaybackDeferral.waitsForSpotVerification(isVerifying: false, usesDeveloperTunnel: false))
+        XCTAssertTrue(ActivityRunPolicy.shouldRetryCreationOnForeground(activityMissing: true, failureCount: 3))
+        XCTAssertTrue(ActivityRunPolicy.shouldRetryCreationOnForeground(activityMissing: true, failureCount: 1))
+        XCTAssertFalse(ActivityRunPolicy.shouldRetryCreationOnForeground(activityMissing: true, failureCount: 0))
+        XCTAssertFalse(ActivityRunPolicy.shouldRetryCreationOnForeground(activityMissing: false, failureCount: 3))
+    }
+
+    func testBackgroundIntentsOpenTheAppWhenContinueIsUnavailable() {
+        guard #available(iOS 17.0, *) else { return }
+        XCTAssertFalse(IslandCommandIntent.openAppWhenRun)
+        XCTAssertTrue(IslandOpeningCommandIntent.openAppWhenRun)
+        XCTAssertTrue(IslandOpenAppIntent.openAppWhenRun)
+        XCTAssertTrue(IslandCommandHandoff.needsForeground(.queued))
+        XCTAssertTrue(IslandHandoffPolicy.opensAppToDeliver(canContinueInForeground: false))
+        XCTAssertFalse(IslandHandoffPolicy.opensAppToDeliver(canContinueInForeground: true))
     }
 
     func testStaleUserPauseKeepsResumeAndOpenApp() {

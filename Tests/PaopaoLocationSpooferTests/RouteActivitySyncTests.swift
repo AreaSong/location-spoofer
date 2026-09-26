@@ -42,6 +42,39 @@ final class RouteActivitySyncTests: XCTestCase {
         XCTAssertNotEqual(snapshot?.primaryTitle, "继续")
     }
 
+    func testEmptyPushFailurePauseIsNotUserResume() {
+        let snapshot = RouteActivitySync.snapshot(
+            phase: .paused,
+            interruption: .pushFailed,
+            statusMessage: "",
+            routeName: "步行路线",
+            remainingMeters: 800,
+            speedMetersPerSecond: 1.4,
+            progress: 0.2,
+            symbolName: "figure.walk"
+        )
+        XCTAssertEqual(snapshot?.phaseKey, .systemFault)
+        XCTAssertEqual(snapshot?.primaryAction, "retry")
+        XCTAssertEqual(snapshot?.secondaryAction, "openApp")
+        XCTAssertNotEqual(snapshot?.primaryTitle, "继续")
+    }
+
+    func testUserPauseWithEmptyMessageStillShowsResume() {
+        let snapshot = RouteActivitySync.snapshot(
+            phase: .paused,
+            interruption: .userPaused,
+            statusMessage: "",
+            routeName: "步行路线",
+            remainingMeters: 800,
+            speedMetersPerSecond: 1.4,
+            progress: 0.2,
+            symbolName: "figure.walk"
+        )
+        XCTAssertEqual(snapshot?.phaseKey, .userPaused)
+        XCTAssertEqual(snapshot?.primaryAction, "resume")
+        XCTAssertEqual(snapshot?.secondaryAction, "stopRoute")
+    }
+
     func testSameMinuteDoesNotPushAgain() {
         let first = playingSnapshot(remainingMeters: 900)
         var later = first

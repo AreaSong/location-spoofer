@@ -167,7 +167,7 @@ extension MapHomeView {
         syncRouteActivity()
     }
 
-    func syncRouteActivity(clearStale: Bool = false) {
+    func syncRouteActivity(clearStale: Bool = false, retryCreation: Bool = false) {
         guard #available(iOS 16.2, *) else { return }
         routeCommand = routeCommand.reconcile(
             phase: route.phase,
@@ -220,7 +220,8 @@ extension MapHomeView {
             await RouteLiveActivityCenter.shared.sync(
                 route: liveRoute,
                 spot: spotSnapshot,
-                keepForRecovery: keepForRecovery
+                keepForRecovery: keepForRecovery,
+                retryCreation: retryCreation
             )
         }
     }
