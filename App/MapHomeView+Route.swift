@@ -19,6 +19,55 @@ extension MapHomeView {
     }
 
     func handleIslandAction(_ action: String) {
+        let context = islandCommandContext()
+        let concrete = IslandCommandRouter.resolve(action, context: context)
+        switch IslandCommandRouter.decide(concrete, context: context) {
+        case .run:
+            RuntimeLogger.info("RouteLiveActivity", "action", "执行灵动岛动作", details: ["action": concrete])
+            performIslandCommand(concrete)
+        case .alreadySatisfied:
+            RuntimeLogger.info("RouteLiveActivity", "action", "灵动岛动作已经生效", details: ["action": concrete])
+            syncRouteActivity()
+        case .leaveCurrent:
+            RuntimeLogger.info("RouteLiveActivity", "action", "保留当前异常状态", details: ["action": concrete])
+        case .unavailable(let message):
+            RuntimeLogger.warning(
+                "RouteLiveActivity",
+                "action",
+                "灵动岛动作不可用",
+                details: ["action": concrete, "reason": message]
+            )
+            guard shouldRememberIslandRejection(concrete) else { return }
+            noteIslandRejection(concrete, message)
+        }
+    }
+
+    /// 路线还占着定位时，拒绝定点动作不能写成定点失败，否则路线结束后会把正常定位显示成操作失败。
+    private func shouldRememberIslandRejection(_ action: String) -> Bool {
+        switch action {
+        case "stopSpoof", "switchHere", "begin":
+            return route.phase != .playing && route.phase != .paused && !route.waitingForActivation
+        default:
+            return true
+        }
+    }
+
+    private func islandCommandContext() -> IslandCommandContext {
+        let retryCommand = routeCommand.failedCommand.isEmpty ? spotRetryCommand : routeCommand.failedCommand
+        return IslandCommandContext(
+            routePhase: route.phase,
+            interruption: route.interruption,
+            statusMessage: route.statusMessage,
+            waitingForActivation: route.waitingForActivation,
+            spoofState: spoofState,
+            needsSwitch: needsSwitchButton,
+            spotStopPending: spotStopPending,
+            spotSwitchPending: spotSwitchPending,
+            retryCommand: retryCommand
+        )
+    }
+
+    private func performIslandCommand(_ action: String) {
         switch action {
         case "pause":
             route.pause()
@@ -33,14 +82,13 @@ extension MapHomeView {
         case "resume":
             playRoute()
             noteRouteAttempt("resume")
-        case "retry":
-            retryIslandAction()
         case "play":
             playRoute()
             noteRouteAttempt("play")
-        case "begin":
+        case "begin", "switchHere":
             beginLocationOperation()
         case "stopRoute":
+            // 只停播放。虚拟定位留给定点岛上的「停止虚拟定位」。
             route.stopPlaybackKeepingLocation()
             routeCommand = RouteCommandTracking.afterAttempt(
                 command: "stopRoute",
@@ -52,25 +100,27 @@ extension MapHomeView {
             syncRouteActivity()
         case "stopSpoof":
             stopSpoofing()
-        case "switchHere":
-            beginLocationOperation()
         case "openApp":
             break
         default:
-            break
+            noteIslandRejection(action, "不支持这个操作。")
         }
     }
 
-    private func retryIslandAction() {
-        if route.interruption == .activationFailed {
-            playRoute()
-            return
+    private func noteIslandRejection(_ action: String, _ message: String) {
+        switch action {
+        case "pause", "resume", "play", "stopRoute":
+            routeCommand = RouteCommandTracking(commandFailed: true, failedCommand: action, errorText: message)
+        case "stopSpoof", "switchHere", "begin":
+            noteSpotActionFailure(message: message, command: action)
+        default:
+            if spoofState != .idle {
+                noteSpotActionFailure(message: message, command: "begin")
+            } else {
+                routeCommand = RouteCommandTracking(commandFailed: true, failedCommand: "play", errorText: message)
+            }
         }
-        if route.phase == .paused {
-            playRoute()
-            return
-        }
-        handleMainButtonTap()
+        syncRouteActivity()
     }
 
     private func noteRouteAttempt(_ command: String) {

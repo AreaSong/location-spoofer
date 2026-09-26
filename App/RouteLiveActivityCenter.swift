@@ -32,18 +32,10 @@ final class RouteLiveActivityCenter {
     func reconcileOnLaunch(hasRecoverableSession: Bool) async {
         generation += 1
         holdingFinished = false
-        let existing = Activity<RouteActivityAttributes>.activities
-        if hasRecoverableSession, let first = existing.first {
-            activity = first
-            for extra in existing.dropFirst() {
-                await extra.end(nil, dismissalPolicy: .immediate)
-            }
-            return
+        switch ActivityRunPolicy.launchDecision(hasRecoverableSession: hasRecoverableSession) {
+        case .endStale:
+            await endStaleActivities(hasRecoverableSession: hasRecoverableSession)
         }
-        for activity in existing {
-            await activity.end(nil, dismissalPolicy: .immediate)
-        }
-        activity = nil
     }
 
     func endNowIfIdle() async {
@@ -77,8 +69,9 @@ final class RouteLiveActivityCenter {
             await presentSpot(spot, token: request.token)
             return
         }
-        if request.keepForRecovery { return }
-        await endNow(token: request.token)
+        if ActivityRunPolicy.shouldDismissWithoutSnapshot(keepForRecovery: request.keepForRecovery) {
+            await endNow(token: request.token)
+        }
     }
 
     private func superseded(_ token: Int) -> Bool {
@@ -86,6 +79,8 @@ final class RouteLiveActivityCenter {
     }
 
     private func presentRoute(_ next: RouteActivitySnapshot, token: Int) async {
+        if ActivityRunPolicy.blocksNewWork(holdingFinished: holdingFinished) { return }
+        holdingFinished = false
         guard RouteActivitySync.shouldUpdate(lastRoute, to: next) || lastSpot != nil else { return }
         let next = RouteActivitySync.normalized(next)
         if next.phaseKey == .finished || next.phaseKey == .stopped {
@@ -108,7 +103,10 @@ final class RouteLiveActivityCenter {
             return
         }
         guard !superseded(token) else { return }
-        guard await publish(activity, content, alert: false) else { return }
+        guard await publish(activity, content, alert: false) else {
+            if !superseded(token) { lastRoute = nil }
+            return
+        }
         guard !superseded(token) else { return }
         lastRoute = next
     }
@@ -120,32 +118,26 @@ final class RouteLiveActivityCenter {
         token: Int
     ) async {
         guard !superseded(token) else { return }
+        // 完成态标记只活在这次结束里。离开函数就必须放开，避免挡住下一次定位。
         holdingFinished = true
+        defer { holdingFinished = false }
         if next.phaseKey == .finished {
             UINotificationFeedbackGenerator().notificationOccurred(.success)
         }
         let dismissed = await publish(activity, content, alert: next.phaseKey == .finished)
-        guard !superseded(token) else {
-            holdingFinished = false
-            return
-        }
-        guard dismissed else {
-            holdingFinished = false
-            return
-        }
+        guard !superseded(token) else { return }
+        guard dismissed else { return }
         let seconds: TimeInterval = next.phaseKey == .finished ? 30 : RouteActivitySync.stoppedConfirmInterval
         await activity.end(content, dismissalPolicy: .after(Date().addingTimeInterval(seconds)))
         self.activity = nil
-        guard !superseded(token) else {
-            holdingFinished = false
-            return
-        }
+        guard !superseded(token) else { return }
         lastRoute = nil
-        holdingFinished = false
         closedRouteTerminal = next.phaseKey
     }
 
     private func presentSpot(_ next: SpotActivitySnapshot, token: Int) async {
+        if ActivityRunPolicy.blocksNewWork(holdingFinished: holdingFinished) { return }
+        holdingFinished = false
         let next = SpotActivitySync.normalized(next)
         if next.status == .stopped {
             if activity == nil, closedSpotStop {
@@ -169,7 +161,10 @@ final class RouteLiveActivityCenter {
             return
         }
         guard !superseded(token) else { return }
-        guard await publish(activity, content, alert: false) else { return }
+        guard await publish(activity, content, alert: false) else {
+            if !superseded(token) { lastSpot = nil }
+            return
+        }
         guard !superseded(token) else { return }
         lastSpot = next
     }
@@ -190,13 +185,23 @@ final class RouteLiveActivityCenter {
     }
 
     private func ensureActivity(name: String, content: ActivityContent<RouteActivityAttributes.ContentState>) async {
-        guard activity == nil else { return }
+        if let activity {
+            if ActivityRunPolicy.shouldReplace(runtimeState(of: activity)) {
+                await activity.end(nil, dismissalPolicy: .immediate)
+                self.activity = nil
+            } else {
+                await endActivities(except: activity.id)
+                return
+            }
+        }
         do {
-            activity = try Activity.request(
+            let created = try Activity.request(
                 attributes: RouteActivityAttributes(name: name),
                 content: content,
                 pushType: nil
             )
+            activity = created
+            await endActivities(except: created.id)
         } catch {
             RuntimeLogger.error(
                 "RouteLiveActivity",
@@ -206,6 +211,14 @@ final class RouteLiveActivityCenter {
                 details: ["phase": content.state.phase]
             )
             activity = await adoptedActivity()
+            if activity == nil {
+                RuntimeLogger.error(
+                    "RouteLiveActivity",
+                    "activity",
+                    "创建灵动岛失败，且没有可接管的活动",
+                    details: ["phase": content.state.phase]
+                )
+            }
         }
     }
 
@@ -224,6 +237,7 @@ final class RouteLiveActivityCenter {
         _ content: ActivityContent<RouteActivityAttributes.ContentState>,
         alert: Bool
     ) async -> Bool {
+        guard acceptUpdate(of: activity, phase: content.state.phase, moment: "更新前") else { return false }
         if alert {
             await activity.update(content, alertConfiguration: AlertConfiguration(
                 title: "路线走完",
@@ -233,7 +247,77 @@ final class RouteLiveActivityCenter {
         } else {
             await activity.update(content)
         }
+        return acceptUpdate(of: activity, phase: content.state.phase, moment: "更新后")
+    }
+
+    private func acceptUpdate(
+        of activity: Activity<RouteActivityAttributes>,
+        phase: String,
+        moment: String
+    ) -> Bool {
+        let state = runtimeState(of: activity)
+        guard ActivityRunPolicy.updateAccepted(state) else {
+            RuntimeLogger.error(
+                "RouteLiveActivity",
+                "activity",
+                "更新灵动岛失败",
+                details: ["phase": phase, "moment": moment, "state": String(describing: state)]
+            )
+            if self.activity?.id == activity.id {
+                self.activity = nil
+            }
+            return false
+        }
         return true
+    }
+
+    private func runtimeState(of activity: Activity<RouteActivityAttributes>) -> ActivityRuntimeState? {
+        guard Activity<RouteActivityAttributes>.activities.contains(where: { $0.id == activity.id }) else {
+            return nil
+        }
+        switch activity.activityState {
+        case .active:
+            return .active
+        case .ended:
+            return .ended
+        case .dismissed:
+            return .dismissed
+        case .stale:
+            return .stale
+        default:
+            return .pending
+        }
+    }
+
+    private func endActivities(except keptID: String?) async {
+        let ids = Activity<RouteActivityAttributes>.activities.map(\.id)
+        let ending = Set(ActivityRunPolicy.idsToEnd(existing: ids, keeping: keptID))
+        for activity in Activity<RouteActivityAttributes>.activities where ending.contains(activity.id) {
+            await activity.end(nil, dismissalPolicy: .immediate)
+        }
+    }
+
+    private func endStaleActivities(hasRecoverableSession: Bool) async {
+        let existing = Activity<RouteActivityAttributes>.activities
+        if !existing.isEmpty {
+            RuntimeLogger.info(
+                "RouteLiveActivity",
+                "lifecycle",
+                "结束重启后的陈旧灵动岛",
+                details: [
+                    "recoverable": String(hasRecoverableSession),
+                    "count": String(existing.count)
+                ]
+            )
+        }
+        for activity in existing {
+            await activity.end(nil, dismissalPolicy: .immediate)
+        }
+        activity = nil
+        lastRoute = nil
+        lastSpot = nil
+        closedRouteTerminal = nil
+        closedSpotStop = false
     }
 
     private func endNow(token: Int) async {

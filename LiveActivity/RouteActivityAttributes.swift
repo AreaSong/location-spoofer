@@ -1,6 +1,9 @@
 import ActivityKit
 import AppIntents
 import Foundation
+import os
+
+private let islandCommandLog = Logger(subsystem: "com.paopaolabs.location-spoofer", category: "IslandCommand")
 
 @available(iOS 16.2, *)
 struct RouteActivityAttributes: ActivityAttributes {
@@ -160,6 +163,7 @@ enum IslandActionPresentation {
 
 enum SpotIslandActions {
     /// 验证、切换、停止过程中和已停止不留按钮，避免重复点击，也不把终态显示成可继续。
+    /// 这些过程过期后只给打开 App，避免在扩展里再发起一次定位。
     static let quietPhases: Set<String> = ["verifying", "switching", "stopping", "stopped"]
 
     static func buttons(
@@ -171,7 +175,10 @@ enum SpotIslandActions {
         isStale: Bool
     ) -> (primaryAction: String, primaryTitle: String, secondaryAction: String, secondaryTitle: String) {
         if quietPhases.contains(phase) {
-            return ("", "", "", "")
+            if !isStale || phase == "stopped" {
+                return ("", "", "", "")
+            }
+            return ("openApp", "打开 App", "", "")
         }
         let presented = IslandActionPresentation.buttons(
             phase: phase,
@@ -256,7 +263,12 @@ enum RouteIslandActions {
         isStale: Bool
     ) -> (primaryAction: String, primaryTitle: String, secondaryAction: String, secondaryTitle: String) {
         if quietPhases.contains(phase) {
-            return ("", "", "", "")
+            if !isStale || phase == "finished" || phase == "stopped" {
+                return ("", "", "", "")
+            }
+            if phase == "planning" {
+                return ("openApp", "打开 App", "", "")
+            }
         }
         let presented = IslandActionPresentation.buttons(
             phase: phase,
@@ -329,6 +341,10 @@ enum RouteActivityCommandStore {
         defaults.set(now().timeIntervalSince1970, forKey: pendingAtKey)
     }
 
+    static func peek() -> String? {
+        defaults.string(forKey: pendingKey)
+    }
+
     static func consume() -> String? {
         guard let action = defaults.string(forKey: pendingKey) else { return nil }
         let storedAt = defaults.object(forKey: pendingAtKey) as? Double
@@ -340,19 +356,51 @@ enum RouteActivityCommandStore {
     }
 }
 
+enum IslandCommandDelivery: Equatable {
+    case performed
+    case queued
+    case rejected
+    case duplicate
+}
+
 @MainActor
 enum RouteActivityBridge {
     static var handler: ((String) -> Void)?
+    /// 同一个动作还在处理时，第二次不再转交，避免连点启动两条路线或两次定位。
+    static var inFlightAction: String?
 
-    static func submit(_ action: String) {
-        RouteActivityCommandStore.enqueue(action)
+    static func submit(_ action: String) -> IslandCommandDelivery {
+        let trimmed = action.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard RouteActivityCommandStore.allowedActions.contains(trimmed) else {
+            islandCommandLog.error("拒绝无效灵动岛动作 \(trimmed, privacy: .public)")
+            return .rejected
+        }
+        if inFlightAction == trimmed {
+            islandCommandLog.info("忽略重复灵动岛动作 \(trimmed, privacy: .public)")
+            return .duplicate
+        }
+        RouteActivityCommandStore.enqueue(trimmed)
+        guard handler != nil else {
+            islandCommandLog.error("灵动岛动作已入队，桥接尚未接上 \(trimmed, privacy: .public)")
+            return .queued
+        }
+        if inFlightAction != nil {
+            return .queued
+        }
         drainPending()
+        return .performed
     }
 
     static func drainPending() {
         guard handler != nil else { return }
+        guard inFlightAction == nil else { return }
         guard let action = RouteActivityCommandStore.consume() else { return }
+        inFlightAction = action
         handler?(action)
+        inFlightAction = nil
+        if handler != nil, RouteActivityCommandStore.peek() != nil {
+            drainPending()
+        }
     }
 }
 
@@ -360,6 +408,11 @@ enum RouteActivityBridge {
 struct IslandCommandIntent: LiveActivityIntent {
     static var title: LocalizedStringResource = "灵动岛操作"
     static var openAppWhenRun = false
+
+    @available(iOS 26.0, *)
+    static var supportedModes: IntentModes {
+        [.background, .foreground(.dynamic)]
+    }
 
     @Parameter(title: "动作")
     var action: String
@@ -374,10 +427,27 @@ struct IslandCommandIntent: LiveActivityIntent {
 
     func perform() async throws -> some IntentResult {
         let name = action
-        await MainActor.run {
+        let delivery = await MainActor.run {
             RouteActivityBridge.submit(name)
         }
+        if delivery == .queued {
+            await handoffQueuedCommand()
+        }
         return .result()
+    }
+
+    /// 桥接还没接上时，命令已经在 App Group 里。iOS 26 把 App 带到前台后再排空，避免扩展进程里静默丢掉。
+    private func handoffQueuedCommand() async {
+        if #available(iOS 26.0, *) {
+            do {
+                try await continueInForeground(IntentDialog("打开 App 以完成这个操作"), alwaysConfirm: false)
+            } catch {
+                islandCommandLog.error("灵动岛动作无法交回前台")
+            }
+        }
+        await MainActor.run {
+            RouteActivityBridge.drainPending()
+        }
     }
 }
 
@@ -386,9 +456,19 @@ struct IslandOpenAppIntent: LiveActivityIntent {
     static var title: LocalizedStringResource = "打开 App"
     static var openAppWhenRun = true
 
+    @available(iOS 26.0, *)
+    static var supportedModes: IntentModes {
+        .foreground(.immediate)
+    }
+
     func perform() async throws -> some IntentResult {
-        await MainActor.run {
+        let delivery = await MainActor.run {
             RouteActivityBridge.submit("openApp")
+        }
+        if delivery == .queued {
+            await MainActor.run {
+                RouteActivityBridge.drainPending()
+            }
         }
         return .result()
     }

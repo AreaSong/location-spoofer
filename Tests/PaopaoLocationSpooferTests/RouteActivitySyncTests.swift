@@ -77,11 +77,13 @@ final class RouteActivitySyncTests: XCTestCase {
             RouteActivityCommandStore.defaults = previous
             defaults.removePersistentDomain(forName: suite)
             RouteActivityBridge.handler = nil
+            RouteActivityBridge.inFlightAction = nil
         }
 
         RouteActivityBridge.handler = nil
+        RouteActivityBridge.inFlightAction = nil
         var ran = false
-        RouteActivityBridge.submit("pause")
+        XCTAssertEqual(RouteActivityBridge.submit("pause"), .queued)
         XCTAssertFalse(ran)
 
         RouteActivityBridge.handler = { action in
@@ -598,7 +600,8 @@ final class RouteActivitySyncTests: XCTestCase {
             secondaryTitle: "",
             isStale: true
         )
-        XCTAssertEqual(staleSwitching.primaryAction, "")
+        XCTAssertEqual(staleSwitching.primaryAction, "openApp")
+        XCTAssertEqual(staleSwitching.secondaryAction, "")
 
         let stopped = SpotIslandActions.buttons(
             phase: "stopped",
@@ -863,8 +866,19 @@ final class RouteActivitySyncTests: XCTestCase {
             secondaryTitle: "打开 App",
             isStale: true
         )
-        XCTAssertEqual(retrying.primaryAction, "")
-        XCTAssertEqual(retrying.secondaryAction, "")
+        XCTAssertEqual(retrying.primaryAction, "retry")
+        XCTAssertEqual(retrying.secondaryAction, "openApp")
+
+        let stalePlanning = RouteIslandActions.buttons(
+            phase: "planning",
+            primaryAction: "",
+            primaryTitle: "",
+            secondaryAction: "",
+            secondaryTitle: "",
+            isStale: true
+        )
+        XCTAssertEqual(stalePlanning.primaryAction, "openApp")
+        XCTAssertEqual(stalePlanning.secondaryAction, "")
 
         let failed = RouteIslandActions.buttons(
             phase: "actionFailed",
