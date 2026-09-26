@@ -41,6 +41,9 @@ enum IslandCommandRouter {
     }
 
     static func decide(_ action: String, context: IslandCommandContext) -> IslandCommandDecision {
+        if IslandFavoriteCommand.favoriteID(from: action) != nil {
+            return switchFavoriteDecision(context)
+        }
         switch action {
         case "pause":
             return pauseDecision(context)
@@ -54,6 +57,8 @@ enum IslandCommandRouter {
             return switchDecision(context)
         case "begin":
             return beginDecision(context)
+        case "cycleSpeed":
+            return cycleSpeedDecision(context)
         case "openApp":
             return .alreadySatisfied
         case "retry":
@@ -118,6 +123,21 @@ enum IslandCommandRouter {
         if context.spoofState == .active, !context.needsSwitch { return .alreadySatisfied }
         if let blocked = unavailableBecauseLocationBlocked(context) { return blocked }
         return .run
+    }
+
+    private static func switchFavoriteDecision(_ context: IslandCommandContext) -> IslandCommandDecision {
+        if let blocked = blockedSpotStart(context) { return blocked }
+        if let blocked = unavailableBecauseLocationBlocked(context) { return blocked }
+        if context.spoofState == .active || context.spoofState == .idle {
+            return .run
+        }
+        return .unavailable("现在不能切换定位。")
+    }
+
+    private static func cycleSpeedDecision(_ context: IslandCommandContext) -> IslandCommandDecision {
+        if context.routePhase == .playing { return .run }
+        if context.routePhase == .paused, context.interruption == .userPaused { return .run }
+        return .unavailable("现在不能调整速度。")
     }
 
     private static func unavailableBecauseLocationBlocked(

@@ -51,6 +51,9 @@ extension MapHomeView {
 
     /// 路线还占着定位时，拒绝定点动作不能写成定点失败，否则路线结束后会把正常定位显示成操作失败。
     private func shouldRememberIslandRejection(_ action: String) -> Bool {
+        if IslandFavoriteCommand.favoriteID(from: action) != nil {
+            return route.phase != .playing && route.phase != .paused && !route.waitingForActivation
+        }
         switch action {
         case "stopSpoof", "switchHere", "begin":
             return route.phase != .playing && route.phase != .paused && !route.waitingForActivation
@@ -106,11 +109,29 @@ extension MapHomeView {
             syncRouteActivity()
         case "stopSpoof":
             stopSpoofing()
+        case "cycleSpeed":
+            route.setSpeedKilometersPerHour(
+                RouteSpeedPreset.nextKilometersPerHour(after: route.speedKilometersPerHour)
+            )
+            syncRouteActivity()
         case "openApp":
             break
         default:
+            if let favoriteID = IslandFavoriteCommand.favoriteID(from: action) {
+                performSwitchFavorite(favoriteID, action: action)
+                return
+            }
             noteIslandRejection(action, "不支持这个操作。")
         }
+    }
+
+    private func performSwitchFavorite(_ id: UUID, action: String) {
+        guard let favorite = favorites.favorites.first(where: { $0.id == id }) else {
+            noteIslandRejection(action, "这个收藏点已经不在了。")
+            return
+        }
+        select(favorite)
+        beginLocationOperation(target: favorite)
     }
 
     private func performRoutePlayback(_ command: String) {
@@ -127,14 +148,16 @@ extension MapHomeView {
 
     private func noteIslandRejection(_ action: String, _ message: String) {
         switch action {
-        case "pause", "resume", "play", "stopRoute":
+        case "pause", "resume", "play", "stopRoute", "cycleSpeed":
             let updated = routeRejection(action, message)
             guard updated != routeCommand else { return }
             routeCommand = updated
         case "stopSpoof", "switchHere", "begin":
             noteSpotActionFailure(message: message, command: action)
         default:
-            if spoofState != .idle {
+            if IslandFavoriteCommand.favoriteID(from: action) != nil {
+                noteSpotActionFailure(message: message, command: action)
+            } else if spoofState != .idle {
                 noteSpotActionFailure(message: message, command: "begin")
             } else {
                 let updated = routeRejection("play", message)
@@ -195,6 +218,19 @@ extension MapHomeView {
             confirmStopped: confirmStopped
         )
         let liveRoute = routeSnapshotForIsland(routeSnapshot)
+        let shortcutItems = IslandFavoriteShortcuts.pick(
+            from: favorites.displayedFavorites,
+            selectedID: favorites.selectedFavoriteID,
+            writtenLatitude: session.switchLatitude,
+            writtenLongitude: session.switchLongitude,
+            currentSelection: currentSelectionPair,
+            needsSwitch: needsSwitchButton
+        ).map { favorite in
+            (
+                action: IslandFavoriteCommand.action(for: favorite.id),
+                title: SpotActivitySync.islandPlaceName(favorite.name)
+            )
+        }
         let spotStopped = spoofState == .idle
             && spotStoppedConfirmUntil.map { $0 > Date() } == true
         let spotSnapshot = liveRoute == nil ? SpotActivitySync.snapshot(
@@ -210,7 +246,8 @@ extension MapHomeView {
             isStopped: spotStopped,
             actionFailed: spotActionFailed,
             errorText: spotFailureMessage,
-            retryCommand: spotRetryCommand
+            retryCommand: spotRetryCommand,
+            shortcuts: shortcutItems
         ) : nil
         Task {
             let keepForRecovery = route.phase == .inactive && route.sessionStore.load() != nil

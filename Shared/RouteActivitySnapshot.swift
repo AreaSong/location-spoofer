@@ -27,7 +27,10 @@ struct RouteActivitySnapshot: Equatable {
     var primaryTitle: String
     var secondaryAction: String
     var secondaryTitle: String
+    var tertiaryAction: String
+    var tertiaryTitle: String
     var retryCommand: String
+    var speedText: String
 }
 
 struct RouteCommandTracking: Equatable {
@@ -141,7 +144,7 @@ struct RouteCommandTracking: Equatable {
 }
 
 enum RouteActivitySync {
-    static let routeActions: Set<String> = ["pause", "resume", "stopRoute", "retry", "openApp"]
+    static let routeActions: Set<String> = ["pause", "resume", "stopRoute", "retry", "openApp", "cycleSpeed"]
     static let userPauseMessage = "已暂停。"
     static let stoppedMessage = "路线已停止，定位仍保持。"
     static let keptLocationDetail = "定位仍保持"
@@ -160,34 +163,37 @@ enum RouteActivitySync {
     }
 
     static func detailText(for snapshot: RouteActivitySnapshot) -> String {
+        let metric: String
         if snapshot.phaseKey == .stopped {
-            return keptLocationDetail
+            metric = keptLocationDetail
+        } else if !snapshot.distanceText.isEmpty, !snapshot.timeText.isEmpty {
+            metric = "还剩 \(snapshot.distanceText) · \(snapshot.timeText)"
+        } else if !snapshot.distanceText.isEmpty {
+            metric = "还剩 \(snapshot.distanceText)"
+        } else if !snapshot.timeText.isEmpty {
+            metric = "还剩 \(snapshot.timeText)"
+        } else {
+            switch snapshot.phaseKey {
+            case .planning:
+                metric = "正在规划路线"
+            case .finished:
+                metric = "已走完"
+            case .stopped:
+                metric = keptLocationDetail
+            case .retrying:
+                metric = "正在重试"
+            case .userPaused:
+                metric = "已暂停"
+            case .playing:
+                metric = "正在计算剩余路程"
+            case .systemFault, .actionFailed:
+                metric = snapshot.statusText.isEmpty ? "暂时无法估算剩余路程" : snapshot.statusText
+            }
         }
-        if !snapshot.distanceText.isEmpty, !snapshot.timeText.isEmpty {
-            return "还剩 \(snapshot.distanceText) · \(snapshot.timeText)"
-        }
-        if !snapshot.distanceText.isEmpty {
-            return "还剩 \(snapshot.distanceText)"
-        }
-        if !snapshot.timeText.isEmpty {
-            return "还剩 \(snapshot.timeText)"
-        }
-        switch snapshot.phaseKey {
-        case .planning:
-            return "正在规划路线"
-        case .finished:
-            return "已走完"
-        case .stopped:
-            return keptLocationDetail
-        case .retrying:
-            return "正在重试"
-        case .userPaused:
-            return "已暂停"
-        case .playing:
-            return "正在计算剩余路程"
-        case .systemFault, .actionFailed:
-            return snapshot.statusText.isEmpty ? "暂时无法估算剩余路程" : snapshot.statusText
-        }
+        let speed = snapshot.speedText.trimmingCharacters(in: .whitespacesAndNewlines)
+        if speed.isEmpty || metric.contains(speed) { return metric }
+        if snapshot.distanceText.isEmpty && snapshot.timeText.isEmpty { return metric }
+        return "\(metric) · \(speed)"
     }
 
     static func staleDate(for snapshot: RouteActivitySnapshot, now: Date = Date()) -> Date? {
@@ -295,13 +301,17 @@ enum RouteActivitySync {
             primaryTitle: next.primaryTitle,
             secondary: next.secondaryAction,
             secondaryTitle: next.secondaryTitle,
+            tertiary: next.tertiaryAction,
+            tertiaryTitle: next.tertiaryTitle,
             allowed: routeActions
         )
         next.primaryAction = actions.primary
         next.primaryTitle = actions.primaryTitle
         next.secondaryAction = actions.secondary
         next.secondaryTitle = actions.secondaryTitle
-        if next.primaryAction != "retry" && next.secondaryAction != "retry" {
+        next.tertiaryAction = actions.tertiary
+        next.tertiaryTitle = actions.tertiaryTitle
+        if next.primaryAction != "retry" && next.secondaryAction != "retry" && next.tertiaryAction != "retry" {
             next.retryCommand = ""
         }
         if next.phaseKey == .finished || next.phaseKey == .stopped || next.phaseKey == .retrying || next.phaseKey == .planning {
@@ -309,6 +319,8 @@ enum RouteActivitySync {
             next.primaryTitle = ""
             next.secondaryAction = ""
             next.secondaryTitle = ""
+            next.tertiaryAction = ""
+            next.tertiaryTitle = ""
             next.retryCommand = ""
         }
         return next
@@ -330,8 +342,11 @@ enum RouteActivitySync {
             || previous.primaryTitle != next.primaryTitle
             || previous.secondaryAction != next.secondaryAction
             || previous.secondaryTitle != next.secondaryTitle
+            || previous.tertiaryAction != next.tertiaryAction
+            || previous.tertiaryTitle != next.tertiaryTitle
             || previous.retryCommand != next.retryCommand
-            || previous.timeText != next.timeText {
+            || previous.timeText != next.timeText
+            || previous.speedText != next.speedText {
             return true
         }
         return abs(previous.progress - next.progress) >= minimumProgressDelta
@@ -357,6 +372,7 @@ enum RouteActivitySync {
             routeName: routeName,
             progress: progress,
             remainingMeters: remainingMeters,
+            speedMetersPerSecond: speedMetersPerSecond,
             symbolName: symbolName,
             modeSymbolName: symbolName,
             isWarning: false,
@@ -365,7 +381,10 @@ enum RouteActivitySync {
             primaryTitle: "暂停",
             secondaryAction: "stopRoute",
             secondaryTitle: "停止路线",
-            retryCommand: ""
+            tertiaryAction: "cycleSpeed",
+            tertiaryTitle: speedCycleTitle(speedMetersPerSecond: speedMetersPerSecond),
+            retryCommand: "",
+            speedText: speedLabel(speedMetersPerSecond: speedMetersPerSecond)
         )
     }
 
@@ -388,6 +407,7 @@ enum RouteActivitySync {
                 routeName: routeName,
                 progress: progress,
                 remainingMeters: remainingMeters,
+                speedMetersPerSecond: speedMetersPerSecond,
                 symbolName: "pause.fill",
                 modeSymbolName: modeSymbolName,
                 isWarning: false,
@@ -396,7 +416,10 @@ enum RouteActivitySync {
                 primaryTitle: "继续",
                 secondaryAction: "stopRoute",
                 secondaryTitle: "停止路线",
-                retryCommand: ""
+                tertiaryAction: "cycleSpeed",
+                tertiaryTitle: speedCycleTitle(speedMetersPerSecond: speedMetersPerSecond),
+                retryCommand: "",
+                speedText: speedLabel(speedMetersPerSecond: speedMetersPerSecond)
             )
         }
         return systemFault(
@@ -427,6 +450,7 @@ enum RouteActivitySync {
             routeName: routeName,
             progress: progress,
             remainingMeters: remainingMeters,
+            speedMetersPerSecond: speedMetersPerSecond,
             symbolName: "exclamationmark.triangle.fill",
             modeSymbolName: modeSymbolName,
             isWarning: true,
@@ -455,6 +479,7 @@ enum RouteActivitySync {
             routeName: routeName,
             progress: 0,
             remainingMeters: remainingMeters,
+            speedMetersPerSecond: speedMetersPerSecond,
             symbolName: symbolName,
             modeSymbolName: symbolName,
             isWarning: false,
@@ -482,6 +507,7 @@ enum RouteActivitySync {
             routeName: routeName,
             progress: progress,
             remainingMeters: remainingMeters,
+            speedMetersPerSecond: speedMetersPerSecond,
             symbolName: symbolName,
             modeSymbolName: symbolName,
             isWarning: false,
@@ -551,6 +577,7 @@ enum RouteActivitySync {
             routeName: routeName,
             progress: progress,
             remainingMeters: remainingMeters,
+            speedMetersPerSecond: speedMetersPerSecond,
             symbolName: "exclamationmark.triangle.fill",
             modeSymbolName: symbolName,
             isWarning: true,
@@ -570,6 +597,7 @@ enum RouteActivitySync {
         routeName: String,
         progress: Double,
         remainingMeters: Double,
+        speedMetersPerSecond: Double = 0,
         symbolName: String,
         modeSymbolName: String,
         isWarning: Bool,
@@ -578,7 +606,10 @@ enum RouteActivitySync {
         primaryTitle: String,
         secondaryAction: String,
         secondaryTitle: String,
-        retryCommand: String
+        tertiaryAction: String = "",
+        tertiaryTitle: String = "",
+        retryCommand: String,
+        speedText: String = ""
     ) -> RouteActivitySnapshot {
         RouteActivitySnapshot(
             phaseKey: phaseKey,
@@ -596,213 +627,66 @@ enum RouteActivitySync {
             primaryTitle: primaryTitle,
             secondaryAction: secondaryAction,
             secondaryTitle: secondaryTitle,
-            retryCommand: retryCommand
+            tertiaryAction: tertiaryAction,
+            tertiaryTitle: tertiaryTitle,
+            retryCommand: retryCommand,
+            speedText: speedText.isEmpty ? speedLabel(speedMetersPerSecond: speedMetersPerSecond) : speedText
         )
     }
-}
 
-enum SpotActivityStatus: String, Equatable {
-    case verifying
-    case locating
-    case needsSwitch
-    case switching
-    case stopping
-    case notApplied
-    case stopped
-    case actionFailed
-}
-
-struct SpotActivitySnapshot: Equatable {
-    var status: SpotActivityStatus
-    var placeName: String
-    var statusText: String
-    var symbolName: String
-    var isWarning: Bool
-    var caption: String
-    var errorText: String
-    var primaryAction: String
-    var primaryTitle: String
-    var secondaryAction: String
-    var secondaryTitle: String
-    var retryCommand: String
-}
-
-enum SpotActivitySync {
-    static let spotActions: Set<String> = ["switchHere", "stopSpoof", "retry", "openApp"]
-    static let fallbackPlaceName = "当前选点"
-    static let locatingStaleInterval: TimeInterval = 120
-    static let busyStaleInterval: TimeInterval = 45
-
-    /// 定位中和待切换可以持续很久。只有失败态才用过期时间把岛标成中断。
-    static func staleDate(for snapshot: SpotActivitySnapshot, now: Date = Date()) -> Date? {
-        switch snapshot.status {
-        case .notApplied, .actionFailed:
-            return now.addingTimeInterval(locatingStaleInterval)
-        case .verifying, .switching, .stopping:
-            return now.addingTimeInterval(busyStaleInterval)
-        case .locating, .needsSwitch, .stopped:
-            return nil
-        }
+    private static func speedLabel(speedMetersPerSecond: Double) -> String {
+        guard speedMetersPerSecond > 0 else { return "" }
+        return RouteSpeedPreset.compactText(kilometersPerHour: speedMetersPerSecond * 3.6)
     }
 
-    /// 坐标串在紧凑态会变成「37.7756,...」，岛上改用「当前选点」。
-    static func islandPlaceName(_ raw: String) -> String {
-        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmed.isEmpty { return fallbackPlaceName }
-        if looksLikeCoordinatePair(trimmed) { return fallbackPlaceName }
-        return trimmed
-    }
-
-    static func snapshot(
-        isVerifying: Bool,
-        isActive: Bool,
-        needsSwitch: Bool,
-        failed: Bool,
-        placeName: String,
-        coordinateStandard: String,
-        accuracyMeters: Int,
-        isSwitching: Bool = false,
-        isStopping: Bool = false,
-        isStopped: Bool = false,
-        actionFailed: Bool = false,
-        errorText: String = "",
-        retryCommand: String = ""
-    ) -> SpotActivitySnapshot? {
-        let placeName = islandPlaceName(placeName)
-        let caption = standardCaption(coordinateStandard, accuracyMeters: accuracyMeters)
-        if actionFailed {
-            return spot(.actionFailed, placeName: placeName, statusText: "操作失败", symbolName: "exclamationmark.triangle.fill", isWarning: true, caption: caption, errorText: errorText, primaryAction: "retry", primaryTitle: "重试", secondaryAction: "openApp", secondaryTitle: "打开 App", retryCommand: retryCommand)
-        }
-        if isVerifying && isStopping {
-            return spot(.stopping, placeName: placeName, statusText: "正在停止", symbolName: "location.slash", isWarning: false, caption: caption, errorText: "", primaryAction: "", primaryTitle: "", secondaryAction: "", secondaryTitle: "", retryCommand: "")
-        }
-        if isVerifying && isSwitching {
-            return spot(.switching, placeName: placeName, statusText: "切换中", symbolName: "arrow.triangle.2.circlepath", isWarning: false, caption: caption, errorText: "", primaryAction: "", primaryTitle: "", secondaryAction: "", secondaryTitle: "", retryCommand: "")
-        }
-        if isVerifying {
-            return spot(.verifying, placeName: placeName, statusText: "验证中", symbolName: "location", isWarning: false, caption: caption, errorText: "", primaryAction: "", primaryTitle: "", secondaryAction: "", secondaryTitle: "", retryCommand: "")
-        }
-        if isStopped {
-            return spot(.stopped, placeName: placeName, statusText: "已停止", symbolName: "checkmark", isWarning: false, caption: "", errorText: "", primaryAction: "", primaryTitle: "", secondaryAction: "", secondaryTitle: "", retryCommand: "")
-        }
-        if isActive && needsSwitch {
-            return spot(.needsSwitch, placeName: placeName, statusText: "待切换", symbolName: "arrow.triangle.swap", isWarning: false, caption: caption, errorText: "", primaryAction: "switchHere", primaryTitle: "切换到此处", secondaryAction: "stopSpoof", secondaryTitle: "停止虚拟定位", retryCommand: "")
-        }
-        if isActive {
-            return spot(.locating, placeName: placeName, statusText: "定位中", symbolName: "location.fill", isWarning: false, caption: caption, errorText: "", primaryAction: "stopSpoof", primaryTitle: "停止虚拟定位", secondaryAction: "", secondaryTitle: "", retryCommand: "")
-        }
-        if failed {
-            return spot(.notApplied, placeName: placeName, statusText: "未生效", symbolName: "exclamationmark.triangle.fill", isWarning: true, caption: caption, errorText: errorText, primaryAction: "retry", primaryTitle: "重试", secondaryAction: "openApp", secondaryTitle: "打开 App", retryCommand: "begin")
-        }
-        return nil
-    }
-
-    /// 定点快照只能带定点动作。路线的暂停、继续、停止路线会被清掉。
-    static func normalized(_ snapshot: SpotActivitySnapshot) -> SpotActivitySnapshot {
-        var next = snapshot
-        let actions = sanitizedActions(
-            primary: next.primaryAction,
-            primaryTitle: next.primaryTitle,
-            secondary: next.secondaryAction,
-            secondaryTitle: next.secondaryTitle,
-            allowed: spotActions
-        )
-        next.primaryAction = actions.primary
-        next.primaryTitle = actions.primaryTitle
-        next.secondaryAction = actions.secondary
-        next.secondaryTitle = actions.secondaryTitle
-        if next.primaryAction != "retry" && next.secondaryAction != "retry" {
-            next.retryCommand = ""
-        }
-        if next.status == .verifying || next.status == .switching || next.status == .stopping || next.status == .stopped {
-            next.primaryAction = ""
-            next.primaryTitle = ""
-            next.secondaryAction = ""
-            next.secondaryTitle = ""
-            next.retryCommand = ""
-        }
-        return next
-    }
-
-    static func shouldUpdate(_ previous: SpotActivitySnapshot?, to next: SpotActivitySnapshot) -> Bool {
-        previous != next
-    }
-
-    private static func standardCaption(_ standard: String, accuracyMeters: Int) -> String {
-        let accuracy = "精度 \(accuracyMeters) 米"
-        let trimmed = standard.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return accuracy }
-        return "\(trimmed) · \(accuracy)"
-    }
-
-    private static func looksLikeCoordinatePair(_ text: String) -> Bool {
-        let parts = text.split(separator: ",", omittingEmptySubsequences: false)
-        guard parts.count == 2,
-              let latitude = Double(parts[0].trimmingCharacters(in: .whitespacesAndNewlines)),
-              let longitude = Double(parts[1].trimmingCharacters(in: .whitespacesAndNewlines)),
-              (-90...90).contains(latitude),
-              (-180...180).contains(longitude) else {
-            return false
-        }
-        return true
-    }
-
-    private static func spot(
-        _ status: SpotActivityStatus,
-        placeName: String,
-        statusText: String,
-        symbolName: String,
-        isWarning: Bool,
-        caption: String,
-        errorText: String,
-        primaryAction: String,
-        primaryTitle: String,
-        secondaryAction: String,
-        secondaryTitle: String,
-        retryCommand: String
-    ) -> SpotActivitySnapshot {
-        SpotActivitySnapshot(
-            status: status,
-            placeName: placeName,
-            statusText: statusText,
-            symbolName: symbolName,
-            isWarning: isWarning,
-            caption: caption,
-            errorText: errorText,
-            primaryAction: primaryAction,
-            primaryTitle: primaryTitle,
-            secondaryAction: secondaryAction,
-            secondaryTitle: secondaryTitle,
-            retryCommand: retryCommand
-        )
+    private static func speedCycleTitle(speedMetersPerSecond: Double) -> String {
+        let next = RouteSpeedPreset.nextKilometersPerHour(after: speedMetersPerSecond * 3.6)
+        return RouteSpeedPreset.compactText(kilometersPerHour: next)
     }
 }
 
-private func sanitizedActions(
+func sanitizedActions(
     primary: String,
     primaryTitle: String,
     secondary: String,
     secondaryTitle: String,
+    tertiary: String = "",
+    tertiaryTitle: String = "",
     allowed: Set<String>
-) -> (primary: String, primaryTitle: String, secondary: String, secondaryTitle: String) {
-    var primaryAction = allowed.contains(primary) ? primary : ""
-    var primaryText = primaryAction.isEmpty ? "" : primaryTitle
-    var secondaryAction = allowed.contains(secondary) ? secondary : ""
-    var secondaryText = secondaryAction.isEmpty ? "" : secondaryTitle
-    if primaryAction.isEmpty {
-        primaryAction = secondaryAction
-        primaryText = secondaryText
-        secondaryAction = ""
-        secondaryText = ""
+) -> (primary: String, primaryTitle: String, secondary: String, secondaryTitle: String, tertiary: String, tertiaryTitle: String) {
+    let items = [
+        (primary, primaryTitle),
+        (secondary, secondaryTitle),
+        (tertiary, tertiaryTitle)
+    ]
+    .filter { isAllowedIslandAction($0.0, allowed: allowed) }
+    var unique: [(String, String)] = []
+    for item in items {
+        if unique.contains(where: { $0.0 == item.0 || conflicts(unique.last?.0 ?? "", item.0) }) {
+            continue
+        }
+        unique.append(item)
     }
-    if !secondaryAction.isEmpty, secondaryAction == primaryAction || conflicts(primaryAction, secondaryAction) {
-        secondaryAction = ""
-        secondaryText = ""
+    func at(_ index: Int) -> (String, String) {
+        index < unique.count ? unique[index] : ("", "")
     }
-    return (primaryAction, primaryText, secondaryAction, secondaryText)
+    let first = at(0)
+    let second = at(1)
+    let third = at(2)
+    return (first.0, first.1, second.0, second.1, third.0, third.1)
 }
 
-private func conflicts(_ primary: String, _ secondary: String) -> Bool {
+func isAllowedIslandAction(_ action: String, allowed: Set<String>) -> Bool {
+    if action.isEmpty { return false }
+    if allowed.contains(action) { return true }
+    if allowed.contains("switchFavorite"), IslandFavoriteCommand.favoriteID(from: action) != nil {
+        return true
+    }
+    return false
+}
+
+func conflicts(_ primary: String, _ secondary: String) -> Bool {
+    guard !primary.isEmpty, !secondary.isEmpty else { return false }
     let pair = Set([primary, secondary])
     return pair == ["pause", "resume"]
         || pair == ["stopRoute", "stopSpoof"]

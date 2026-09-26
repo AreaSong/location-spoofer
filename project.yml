@@ -39,6 +39,7 @@ targets:
       - path: Shared
       - path: Resources
       - path: LiveActivity/RouteActivityAttributes.swift
+      - path: LiveActivity/IslandActivityPresentation.swift
       - path: ThirdParty/WlocScripts
         type: folder
         buildPhase: resources

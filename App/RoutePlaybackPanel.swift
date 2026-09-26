@@ -1,16 +1,5 @@
 import SwiftUI
 
-private struct RouteSpeedPreset: Hashable {
-    let title: String
-    let kilometersPerHour: Double
-    static let all = [
-        RouteSpeedPreset(title: "3", kilometersPerHour: 3),
-        RouteSpeedPreset(title: "5", kilometersPerHour: 5),
-        RouteSpeedPreset(title: "8", kilometersPerHour: 8),
-        RouteSpeedPreset(title: "15", kilometersPerHour: 15)
-    ]
-}
-
 private struct RouteOffsetPreset: Hashable {
     let title: String
     let meters: Double

@@ -428,6 +428,12 @@ struct MapHomeView: View {
         .onChange(of: route.speedKilometersPerHour) { _ in
             syncRouteActivity()
         }
+        .onChange(of: favorites.favorites) { _ in
+            syncRouteActivity()
+        }
+        .onChange(of: favorites.selectedFavoriteID) { _ in
+            syncRouteActivity()
+        }
         .onReceive(route.clock.$progress) { _ in
             syncRouteActivity()
         }

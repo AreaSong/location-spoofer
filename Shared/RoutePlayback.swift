@@ -40,6 +40,38 @@ enum RouteRepeatMode: String, CaseIterable, Identifiable, Codable {
     }
 }
 
+struct RouteSpeedPreset: Hashable {
+    let title: String
+    let kilometersPerHour: Double
+
+    static let all = [
+        RouteSpeedPreset(title: "3", kilometersPerHour: 3),
+        RouteSpeedPreset(title: "5", kilometersPerHour: 5),
+        RouteSpeedPreset(title: "8", kilometersPerHour: 8),
+        RouteSpeedPreset(title: "15", kilometersPerHour: 15)
+    ]
+
+    static var kilometersPerHourValues: [Double] {
+        all.map(\.kilometersPerHour)
+    }
+
+    /// 自定义速度取严格更大的下一档；已是最快则回到 3 km/h。
+    static func nextKilometersPerHour(after current: Double) -> Double {
+        let values = kilometersPerHourValues
+        if let next = values.first(where: { $0 > current + 0.05 }) {
+            return next
+        }
+        return values[0]
+    }
+
+    static func compactText(kilometersPerHour: Double) -> String {
+        if abs(kilometersPerHour - kilometersPerHour.rounded()) < 0.05 {
+            return "\(Int(kilometersPerHour.rounded()))km/h"
+        }
+        return String(format: "%.1fkm/h", kilometersPerHour)
+    }
+}
+
 struct RouteTick: Equatable {
     let coordinatePair: CoordinatePair
     let progress: Double

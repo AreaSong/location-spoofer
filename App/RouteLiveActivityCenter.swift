@@ -506,9 +506,12 @@ final class RouteLiveActivityCenter {
             primaryTitle: snapshot.primaryTitle,
             secondaryAction: snapshot.secondaryAction,
             secondaryTitle: snapshot.secondaryTitle,
+            tertiaryAction: snapshot.tertiaryAction,
+            tertiaryTitle: snapshot.tertiaryTitle,
             phase: snapshot.phaseKey.rawValue,
             errorText: snapshot.errorText,
-            retryCommand: snapshot.retryCommand
+            retryCommand: snapshot.retryCommand,
+            speedText: snapshot.speedText
         )
     }
 
@@ -528,6 +531,8 @@ final class RouteLiveActivityCenter {
             primaryTitle: snapshot.primaryTitle,
             secondaryAction: snapshot.secondaryAction,
             secondaryTitle: snapshot.secondaryTitle,
+            tertiaryAction: snapshot.tertiaryAction,
+            tertiaryTitle: snapshot.tertiaryTitle,
             phase: snapshot.status.rawValue,
             errorText: snapshot.errorText,
             retryCommand: snapshot.retryCommand

@@ -23,14 +23,17 @@ struct RouteActivityAttributes: ActivityAttributes {
         var primaryTitle: String
         var secondaryAction: String
         var secondaryTitle: String
+        var tertiaryAction: String
+        var tertiaryTitle: String
         var phase: String
         var errorText: String
         var retryCommand: String
+        var speedText: String
 
         private enum CodingKeys: String, CodingKey {
             case kind, title, statusText, detailText, distanceText, timeText, progress, showsProgress
             case symbolName, modeSymbolName, isWarning, primaryAction, primaryTitle, secondaryAction, secondaryTitle
-            case phase, errorText, retryCommand
+            case tertiaryAction, tertiaryTitle, phase, errorText, retryCommand, speedText
         }
 
         init(
@@ -49,9 +52,12 @@ struct RouteActivityAttributes: ActivityAttributes {
             primaryTitle: String,
             secondaryAction: String,
             secondaryTitle: String,
+            tertiaryAction: String = "",
+            tertiaryTitle: String = "",
             phase: String = "",
             errorText: String = "",
-            retryCommand: String = ""
+            retryCommand: String = "",
+            speedText: String = ""
         ) {
             self.kind = kind
             self.title = title
@@ -68,9 +74,12 @@ struct RouteActivityAttributes: ActivityAttributes {
             self.primaryTitle = primaryTitle
             self.secondaryAction = secondaryAction
             self.secondaryTitle = secondaryTitle
+            self.tertiaryAction = tertiaryAction
+            self.tertiaryTitle = tertiaryTitle
             self.phase = phase
             self.errorText = errorText
             self.retryCommand = retryCommand
+            self.speedText = speedText
         }
 
         init(from decoder: Decoder) throws {
@@ -90,9 +99,12 @@ struct RouteActivityAttributes: ActivityAttributes {
             primaryTitle = try container.decode(String.self, forKey: .primaryTitle)
             secondaryAction = try container.decode(String.self, forKey: .secondaryAction)
             secondaryTitle = try container.decode(String.self, forKey: .secondaryTitle)
+            tertiaryAction = try container.decodeIfPresent(String.self, forKey: .tertiaryAction) ?? ""
+            tertiaryTitle = try container.decodeIfPresent(String.self, forKey: .tertiaryTitle) ?? ""
             phase = try container.decodeIfPresent(String.self, forKey: .phase) ?? ""
             errorText = try container.decodeIfPresent(String.self, forKey: .errorText) ?? ""
             retryCommand = try container.decodeIfPresent(String.self, forKey: .retryCommand) ?? ""
+            speedText = try container.decodeIfPresent(String.self, forKey: .speedText) ?? ""
         }
 
         func encode(to encoder: Encoder) throws {
@@ -112,283 +124,16 @@ struct RouteActivityAttributes: ActivityAttributes {
             try container.encode(primaryTitle, forKey: .primaryTitle)
             try container.encode(secondaryAction, forKey: .secondaryAction)
             try container.encode(secondaryTitle, forKey: .secondaryTitle)
+            try container.encode(tertiaryAction, forKey: .tertiaryAction)
+            try container.encode(tertiaryTitle, forKey: .tertiaryTitle)
             try container.encode(phase, forKey: .phase)
             try container.encode(errorText, forKey: .errorText)
             try container.encode(retryCommand, forKey: .retryCommand)
+            try container.encode(speedText, forKey: .speedText)
         }
     }
 
     var name: String
-}
-
-enum IslandStalePresentation {
-    /// 过程超时或异常才显示中断。定位中、待切换和走路进行中仍是有效会话。
-    static func treatsAsInterrupted(phase: String) -> Bool {
-        switch phase {
-        case "systemFault", "actionFailed", "retrying", "verifying", "switching", "stopping", "planning":
-            return true
-        default:
-            return false
-        }
-    }
-
-    static func statusText(phase: String, statusText: String, isStale: Bool) -> String {
-        if isStale, treatsAsInterrupted(phase: phase) {
-            return "已中断"
-        }
-        return statusText
-    }
-
-    static func usesWarningAppearance(phase: String, isWarning: Bool, isStale: Bool) -> Bool {
-        isWarning || (isStale && treatsAsInterrupted(phase: phase))
-    }
-
-    static func usesStaleSymbol(phase: String, isStale: Bool) -> Bool {
-        isStale && treatsAsInterrupted(phase: phase)
-    }
-}
-
-enum IslandAccessibility {
-    static func compactLabel(title: String, status: String) -> String {
-        let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
-        let trimmedStatus = status.trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmedTitle.isEmpty { return trimmedStatus }
-        if trimmedStatus.isEmpty { return trimmedTitle }
-        return "\(trimmedTitle)，\(trimmedStatus)"
-    }
-
-    static func expandedLabel(title: String, status: String, detail: String, error: String) -> String {
-        [title, status, detail, error]
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
-            .joined(separator: "，")
-    }
-
-    static func buttonHint(action: String) -> String {
-        switch action {
-        case "pause": return "暂停路线行走"
-        case "resume": return "继续路线行走"
-        case "stopRoute": return "停止路线，不关闭当前虚拟定位"
-        case "stopSpoof": return "结束当前虚拟定位"
-        case "switchHere": return "把虚拟定位切换到当前选点"
-        case "retry": return "再试一次刚才的操作"
-        case "openApp": return "打开 App"
-        default: return ""
-        }
-    }
-}
-
-enum IslandActionPresentation {
-    /// 过期后，只有异常和过程超时才改成重试。定位中、待切换和走路进行中保留原来的动作。
-    static func buttons(
-        phase: String,
-        primaryAction: String,
-        primaryTitle: String,
-        secondaryAction: String,
-        secondaryTitle: String,
-        isStale: Bool
-    ) -> (primaryAction: String, primaryTitle: String, secondaryAction: String, secondaryTitle: String) {
-        if !isStale {
-            return (primaryAction, primaryTitle, secondaryAction, secondaryTitle)
-        }
-        switch phase {
-        case "finished", "stopped":
-            return ("", "", "", "")
-        case "userPaused":
-            return ("resume", "继续", "openApp", "打开 App")
-        default:
-            if IslandStalePresentation.treatsAsInterrupted(phase: phase) {
-                return ("retry", "重试", "openApp", "打开 App")
-            }
-            return (primaryAction, primaryTitle, secondaryAction, secondaryTitle)
-        }
-    }
-
-    /// 没有记下失败命令时，按当前阶段重试，避免进行中的重试落到停止定位。
-    static func submittedAction(action: String, phase: String, retryCommand: String) -> String {
-        guard action == "retry" else { return action }
-        if !retryCommand.isEmpty { return retryCommand }
-        switch phase {
-        case "playing", "retrying":
-            return "play"
-        case "needsSwitch":
-            return "switchHere"
-        case "stopping":
-            return "stopSpoof"
-        case "locating", "verifying", "switching":
-            return "begin"
-        default:
-            return action
-        }
-    }
-}
-
-enum SpotIslandActions {
-    /// 验证、切换、停止过程中和已停止不留按钮，避免重复点击，也不把终态显示成可继续。
-    /// 这些过程过期后只给打开 App，避免在扩展里再发起一次定位。
-    static let quietPhases: Set<String> = ["verifying", "switching", "stopping", "stopped"]
-
-    static func buttons(
-        phase: String,
-        primaryAction: String,
-        primaryTitle: String,
-        secondaryAction: String,
-        secondaryTitle: String,
-        isStale: Bool
-    ) -> (primaryAction: String, primaryTitle: String, secondaryAction: String, secondaryTitle: String) {
-        if quietPhases.contains(phase) {
-            if !isStale || phase == "stopped" {
-                return ("", "", "", "")
-            }
-            return ("openApp", "打开 App", "", "")
-        }
-        let presented = IslandActionPresentation.buttons(
-            phase: phase,
-            primaryAction: primaryAction,
-            primaryTitle: primaryTitle,
-            secondaryAction: secondaryAction,
-            secondaryTitle: secondaryTitle,
-            isStale: isStale
-        )
-        guard phase == "locating" else { return presented }
-        return withoutSwitch(presented)
-    }
-
-    private static func withoutSwitch(
-        _ buttons: (primaryAction: String, primaryTitle: String, secondaryAction: String, secondaryTitle: String)
-    ) -> (primaryAction: String, primaryTitle: String, secondaryAction: String, secondaryTitle: String) {
-        if buttons.primaryAction == "switchHere" {
-            return (buttons.secondaryAction, buttons.secondaryTitle, "", "")
-        }
-        if buttons.secondaryAction == "switchHere" {
-            return (buttons.primaryAction, buttons.primaryTitle, "", "")
-        }
-        return buttons
-    }
-}
-
-enum RouteIslandLayout {
-    static func metricText(
-        phase: String,
-        detailText: String,
-        distanceText: String,
-        timeText: String,
-        statusText: String
-    ) -> String {
-        if !detailText.isEmpty { return detailText }
-        if !distanceText.isEmpty, !timeText.isEmpty {
-            return "还剩 \(distanceText) · \(timeText)"
-        }
-        if !distanceText.isEmpty { return "还剩 \(distanceText)" }
-        if !timeText.isEmpty { return "还剩 \(timeText)" }
-        switch phase {
-        case "planning":
-            return "正在规划路线"
-        case "finished":
-            return "已走完"
-        case "stopped":
-            return "定位仍保持"
-        case "retrying":
-            return "正在重试"
-        case "userPaused":
-            return "已暂停"
-        case "playing":
-            return "正在计算剩余路程"
-        default:
-            return statusText.isEmpty ? "暂时无法估算剩余路程" : statusText
-        }
-    }
-
-    static func compactTrailing(phase: String, timeText: String, statusText: String, isStale: Bool) -> String {
-        if isStale, IslandStalePresentation.treatsAsInterrupted(phase: phase) {
-            return "已中断"
-        }
-        if !timeText.isEmpty { return timeText }
-        if !statusText.isEmpty { return statusText }
-        return "路线"
-    }
-
-    static func compactSymbol(phase: String, modeSymbolName: String, symbolName: String, isStale: Bool) -> String {
-        if IslandStalePresentation.usesStaleSymbol(phase: phase, isStale: isStale) {
-            return "exclamationmark.triangle.fill"
-        }
-        if !modeSymbolName.isEmpty { return modeSymbolName }
-        return symbolName.isEmpty ? "figure.walk" : symbolName
-    }
-}
-
-enum RouteIslandActions {
-    static let quietPhases: Set<String> = ["planning", "retrying", "finished", "stopped"]
-
-    static func buttons(
-        phase: String,
-        primaryAction: String,
-        primaryTitle: String,
-        secondaryAction: String,
-        secondaryTitle: String,
-        isStale: Bool
-    ) -> (primaryAction: String, primaryTitle: String, secondaryAction: String, secondaryTitle: String) {
-        if quietPhases.contains(phase) {
-            if !isStale || phase == "finished" || phase == "stopped" {
-                return ("", "", "", "")
-            }
-            if phase == "planning" {
-                return ("openApp", "打开 App", "", "")
-            }
-        }
-        let presented = IslandActionPresentation.buttons(
-            phase: phase,
-            primaryAction: primaryAction,
-            primaryTitle: primaryTitle,
-            secondaryAction: secondaryAction,
-            secondaryTitle: secondaryTitle,
-            isStale: isStale
-        )
-        return allowed(presented, phase: phase, isStale: isStale)
-    }
-
-    private static func allowed(
-        _ buttons: (primaryAction: String, primaryTitle: String, secondaryAction: String, secondaryTitle: String),
-        phase: String,
-        isStale: Bool
-    ) -> (primaryAction: String, primaryTitle: String, secondaryAction: String, secondaryTitle: String) {
-        var primary = filter(buttons.primaryAction, title: buttons.primaryTitle, phase: phase, isStale: isStale)
-        var secondary = filter(buttons.secondaryAction, title: buttons.secondaryTitle, phase: phase, isStale: isStale)
-        if primary.action.isEmpty {
-            primary = secondary
-            secondary = ("", "")
-        }
-        if !secondary.action.isEmpty, secondary.action == primary.action {
-            secondary = ("", "")
-        }
-        return (primary.action, primary.title, secondary.action, secondary.title)
-    }
-
-    private static func filter(
-        _ action: String,
-        title: String,
-        phase: String,
-        isStale: Bool
-    ) -> (action: String, title: String) {
-        switch action {
-        case "pause":
-            if phase == "systemFault" || phase == "actionFailed" { return ("", "") }
-            if isStale, IslandStalePresentation.treatsAsInterrupted(phase: phase) { return ("", "") }
-            return (action, title.isEmpty ? "暂停" : title)
-        case "resume":
-            if phase == "systemFault" || phase == "actionFailed" { return ("", "") }
-            if isStale, phase != "userPaused" { return ("", "") }
-            return (action, "继续")
-        case "stopRoute":
-            if phase == "systemFault" || phase == "actionFailed" { return ("", "") }
-            if isStale, IslandStalePresentation.treatsAsInterrupted(phase: phase) { return ("", "") }
-            return (action, "停止路线")
-        case "retry", "openApp":
-            return (action, title)
-        default:
-            return ("", "")
-        }
-    }
 }
 
 enum RouteActivityCommandStore {
@@ -401,13 +146,18 @@ enum RouteActivityCommandStore {
     static var now: () -> Date = Date.init
 
     static let allowedActions: Set<String> = [
-        "switchHere", "stopSpoof", "retry", "openApp", "pause", "resume", "stopRoute", "play", "begin"
+        "switchHere", "stopSpoof", "retry", "openApp", "pause", "resume", "stopRoute", "play", "begin", "cycleSpeed"
     ]
+
+    static func allows(_ action: String) -> Bool {
+        if allowedActions.contains(action) { return true }
+        return IslandFavoriteCommand.favoriteID(from: action) != nil
+    }
 
     static let expiredActionKey = "routeActivity.expiredCommand"
 
     static func enqueue(_ action: String) {
-        guard allowedActions.contains(action) else { return }
+        guard allows(action) else { return }
         if let pending = peek(), pending != action {
             islandCommandLog.info(
                 "尚未执行的灵动岛动作被新动作替换 \(pending, privacy: .public) -> \(action, privacy: .public)"
@@ -464,7 +214,7 @@ enum RouteActivityBridge {
 
     static func submit(_ action: String) -> IslandCommandDelivery {
         let trimmed = action.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard RouteActivityCommandStore.allowedActions.contains(trimmed) else {
+        guard RouteActivityCommandStore.allows(trimmed) else {
             islandCommandLog.error("拒绝无效灵动岛动作 \(trimmed, privacy: .public)")
             return .rejected
         }

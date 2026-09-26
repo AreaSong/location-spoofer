@@ -80,6 +80,10 @@ collection services.
   - Playback writes coordinates through the current runtime mode: App Mode and Third-party Proxy Mode write through
     the proxy with an 8 m / 5 s write gate; Developer Tunnel Mode pushes every second directly into system location.
 
+- **Live Activity / Dynamic Island**
+  - Spot spoofing and route walking show status on the Dynamic Island and Lock Screen. The island can switch to a
+    favorite or the current pin, and cycle walking speed during route playback.
+
 - **Three runtime modes**
   - App Mode: runs the Go proxy on-device and covers only the current Wi-Fi network. After a test location is enabled,
     a background keep-alive prevents the on-device proxy from stopping after about two minutes;

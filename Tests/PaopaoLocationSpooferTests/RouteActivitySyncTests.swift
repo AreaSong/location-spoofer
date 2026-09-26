@@ -19,6 +19,8 @@ final class RouteActivitySyncTests: XCTestCase {
         XCTAssertEqual(snapshot?.primaryTitle, "继续")
         XCTAssertEqual(snapshot?.secondaryAction, "stopRoute")
         XCTAssertEqual(snapshot?.secondaryTitle, "停止路线")
+        XCTAssertEqual(snapshot?.tertiaryAction, "cycleSpeed")
+        XCTAssertEqual(snapshot?.speedText, "5km/h")
     }
 
     func testPushFailurePauseIsAWarning() {
@@ -518,6 +520,8 @@ final class RouteActivitySyncTests: XCTestCase {
         snapshot.primaryTitle = "停止虚拟定位"
         snapshot.secondaryAction = "pause"
         snapshot.secondaryTitle = "暂停"
+        snapshot.tertiaryAction = ""
+        snapshot.tertiaryTitle = ""
         let normalized = RouteActivitySync.normalized(snapshot)
         XCTAssertEqual(normalized.primaryAction, "pause")
         XCTAssertEqual(normalized.secondaryAction, "")
@@ -551,6 +555,8 @@ final class RouteActivitySyncTests: XCTestCase {
         snapshot.primaryTitle = "继续"
         snapshot.secondaryAction = "pause"
         snapshot.secondaryTitle = "暂停"
+        snapshot.tertiaryAction = ""
+        snapshot.tertiaryTitle = ""
         let normalized = RouteActivitySync.normalized(snapshot)
         XCTAssertEqual(normalized.primaryAction, "resume")
         XCTAssertEqual(normalized.secondaryAction, "")
@@ -671,6 +677,19 @@ final class RouteActivitySyncTests: XCTestCase {
         XCTAssertEqual(locating.primaryAction, "stopSpoof")
         XCTAssertEqual(locating.primaryTitle, "停止虚拟定位")
         XCTAssertEqual(locating.secondaryAction, "")
+
+        let favoriteID = UUID()
+        let locatingWithFavorite = SpotIslandActions.buttons(
+            phase: "locating",
+            primaryAction: IslandFavoriteCommand.action(for: favoriteID),
+            primaryTitle: "深圳湾",
+            secondaryAction: "stopSpoof",
+            secondaryTitle: "停止虚拟定位",
+            isStale: false
+        )
+        XCTAssertEqual(locatingWithFavorite.primaryAction, IslandFavoriteCommand.action(for: favoriteID))
+        XCTAssertEqual(locatingWithFavorite.secondaryAction, "stopSpoof")
+        XCTAssertNotEqual(locatingWithFavorite.primaryAction, "switchHere")
 
         let switching = SpotIslandActions.buttons(
             phase: "switching",
@@ -1213,7 +1232,7 @@ final class RouteActivitySyncTests: XCTestCase {
         XCTAssertEqual(IslandAccessibility.buttonHint(action: "stopSpoof"), "结束当前虚拟定位")
         XCTAssertEqual(IslandAccessibility.buttonHint(action: "stopRoute"), "停止路线，不关闭当前虚拟定位")
         XCTAssertEqual(IslandAccessibility.buttonHint(action: "switchHere"), "把虚拟定位切换到当前选点")
-        XCTAssertEqual(IslandAccessibility.buttonHint(action: "pause"), "暂停路线行走")
+        XCTAssertEqual(IslandAccessibility.buttonHint(action: "cycleSpeed"), "切换到下一档行走速度")
         XCTAssertEqual(
             IslandAccessibility.expandedLabel(
                 title: "",
