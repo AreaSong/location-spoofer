@@ -9,6 +9,11 @@ enum AppRadius {
     static let image: CGFloat = 8
 }
 
+/// 首页底部卡展开区相对屏幕高度的上限，避免挡住大半地图。
+enum AppLayout {
+    static let bottomCardExpandedHeightFraction: CGFloat = 0.38
+}
+
 /// 小胶囊按钮：视觉高度 32pt，命中区域外扩到 44pt，按下时变淡。
 struct CapsuleChipStyle: ButtonStyle {
     var tint: Color?

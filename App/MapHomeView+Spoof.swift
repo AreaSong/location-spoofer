@@ -61,7 +61,9 @@ extension MapHomeView {
     }
 
     var spotPeekAccessibilityLabel: String {
-        needsSwitchButton ? "切换到此处" : buttonTitle
+        if routeKeepsRunningWhileSpotShown { return spotPeekTitle }
+        if needsSwitchButton { return "切换到此处" }
+        return buttonTitle
     }
 
     var buttonColor: Color {

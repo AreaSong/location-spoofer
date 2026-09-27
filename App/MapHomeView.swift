@@ -265,58 +265,61 @@ struct MapHomeView: View {
             )
             .ignoresSafeArea(.container)
 
-            VStack(spacing: 10) {
-                topControls
-                if locationUseBlock == nil {
-                    signingExpiryHomeNotice
-                }
-                if let block = locationUseBlock {
-                    locationUnavailableOverlay(block)
-                        .onAppear { pauseRouteIfLocationBlocked() }
-                }
-                if !searchResults.isEmpty || !searchError.isEmpty { searchResultList }
-                Spacer()
-                // 右下角按钮
-                HStack {
-                    Spacer()
-                    VStack(spacing: 12) {
-                        Button {
-                            if let url = URL(string: "maps://app") {
-                                UIApplication.shared.open(url)
-                            }
-                        } label: {
-                            Image(systemName: "map.fill")
-                                .font(.system(size: 18, weight: .semibold))
-                                .frame(width: 44, height: 44)
-                                .background(.regularMaterial, in: Circle())
-                                .shadow(color: .black.opacity(0.2), radius: 6, y: 3)
-                        }
-                        Button {
-                            requestRealtimeLocation()
-                        } label: {
-                            if realtime.isRequesting {
-                                ProgressView()
-                                    .frame(width: 44, height: 44)
-                                    .background(.regularMaterial, in: Circle())
-                                    .shadow(color: .black.opacity(0.2), radius: 6, y: 3)
-                            } else {
-                                Image(systemName: "location.fill")
-                                    .font(.system(size: 20, weight: .semibold))
-                                    .frame(width: 44, height: 44)
-                                    .background(.regularMaterial, in: Circle())
-                                    .shadow(color: .black.opacity(0.2), radius: 6, y: 3)
-                            }
-                        }
-                        .disabled(realtimeButtonTask != nil || realtimeRequestTask != nil || realtime.isRequesting)
+            GeometryReader { geo in
+                VStack(spacing: 10) {
+                    topControls
+                    if locationUseBlock == nil {
+                        signingExpiryHomeNotice
                     }
+                    if let block = locationUseBlock {
+                        locationUnavailableOverlay(block)
+                            .onAppear { pauseRouteIfLocationBlocked() }
+                    }
+                    if !searchResults.isEmpty || !searchError.isEmpty { searchResultList }
+                    Spacer()
+                    // 右下角按钮
+                    HStack {
+                        Spacer()
+                        VStack(spacing: 12) {
+                            Button {
+                                if let url = URL(string: "maps://app") {
+                                    UIApplication.shared.open(url)
+                                }
+                            } label: {
+                                Image(systemName: "map.fill")
+                                    .font(.system(size: 18, weight: .semibold))
+                                    .frame(width: 44, height: 44)
+                                    .background(.regularMaterial, in: Circle())
+                                    .shadow(color: .black.opacity(0.2), radius: 6, y: 3)
+                            }
+                            Button {
+                                requestRealtimeLocation()
+                            } label: {
+                                if realtime.isRequesting {
+                                    ProgressView()
+                                        .frame(width: 44, height: 44)
+                                        .background(.regularMaterial, in: Circle())
+                                        .shadow(color: .black.opacity(0.2), radius: 6, y: 3)
+                                } else {
+                                    Image(systemName: "location.fill")
+                                        .font(.system(size: 20, weight: .semibold))
+                                        .frame(width: 44, height: 44)
+                                        .background(.regularMaterial, in: Circle())
+                                        .shadow(color: .black.opacity(0.2), radius: 6, y: 3)
+                                }
+                            }
+                            .disabled(realtimeButtonTask != nil || realtimeRequestTask != nil || realtime.isRequesting)
+                        }
+                    }
+                    .padding(.trailing, 16)
+                    .padding(.bottom, 8)
+                    bottomControls(expandedMaxHeight: geo.size.height * AppLayout.bottomCardExpandedHeightFraction)
                 }
-                .padding(.trailing, 16)
-                .padding(.bottom, 8)
-                bottomControls
+                .padding(.horizontal, 16)
+                .padding(.top, 12)
+                .padding(.bottom, 12)
+                .frame(width: geo.size.width, height: geo.size.height, alignment: .top)
             }
-            .padding(.horizontal, 16)
-            .padding(.top, 12)
-            .padding(.bottom, 12)
         }
         .navigationBarHidden(true)
         .sheet(item: $activeSheet) { sheet in
@@ -703,10 +706,9 @@ struct MapHomeView: View {
     }
 
     // 底部：当前选点 + 收藏 + 主控按钮
-    var bottomControls: some View {
+    func bottomControls(expandedMaxHeight: CGFloat) -> some View {
         MapHomeBottomCard(
             displayName: mapState.displayName ?? "当前选点",
-            mapSystemName: displayedMapCoordinateSystem.diagnosticName,
             spoofState: spoofState,
             isFavoriteSelected: favorites.selectedFavoriteID != nil,
             favoriteSaveDisabled: favoriteSaveTask != nil,
@@ -721,26 +723,23 @@ struct MapHomeView: View {
             showsRouteProgress: showsRouteProgress,
             peekTitle: homePeekTitle,
             peekAccessibilityLabel: homePeekAccessibilityLabel,
-            peekSystemImage: showsRoutePanelActive ? nil : buttonSystemImage,
+            peekSystemImage: showsRoutePanelActive ? nil : (routeKeepsRunningWhileSpotShown ? "figure.walk" : buttonSystemImage),
             peekColor: homePeekColor,
             peekDisabled: homePeekDisabled,
             peekOpensDetail: homePeekOpensDetail,
+            showsSpotHelp: spoofState != .idle && !routeKeepsRunningWhileSpotShown,
+            expandedMaxHeight: expandedMaxHeight,
             playbackClock: route.clock,
             coordinateRows: {
-                coordinateRow(label: "GCJ-02(国内)", system: .gcj02)
-                coordinateRow(label: "WGS-84(国际)", system: .wgs84)
+                MapHomeCoordinateLine(pair: currentSelectionPair, mapSystem: displayedMapCoordinateSystem)
             },
             spotContent: {
                 if routeKeepsRunningWhileSpotShown {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("路线仍在运行，定位会继续沿路线更新。")
-                            .font(.caption)
-                            .foregroundStyle(.orange)
-                        Button("回到走路") {
-                            showsRoutePanel = true
-                        }
-                        .buttonStyle(CapsuleChipStyle())
-                    }
+                    RunningRouteSpotNotice(
+                        isPaused: route.phase == .paused,
+                        isWaiting: route.waitingForActivation,
+                        onReturnToRoute: { showsRoutePanel = true }
+                    )
                 }
                 MapHomeSelectionChips(
                     hasRecents: !recentSelections.items.isEmpty,
@@ -826,59 +825,6 @@ struct MapHomeView: View {
             mapCoordinate: mapState.selection.coordinate,
             mapCoordinateSystem: CoordinateConverter.currentMapCoordinateSystem
         )
-    }
-
-    func coordinateRow(
-        label: String,
-        system: CoordinateConverter.MapCoordinateSystem
-    ) -> some View {
-        let coordinate = currentSelectionPair.coordinate(for: system)
-        let text = String(format: "%.6f, %.6f", coordinate.latitude, coordinate.longitude)
-        let isCurrent = displayedMapCoordinateSystem == system
-        return CopyButton(value: {
-            RuntimeLogger.info("APP", "地图", "已复制坐标", details: [
-                "坐标标准": system.diagnosticName
-            ])
-            return text
-        }) { copied in
-            HStack(spacing: 6) {
-                Text(label)
-                    .font(.caption2.weight(.medium))
-                    .foregroundStyle(isCurrent ? .primary : .secondary)
-                    .lineLimit(1)
-                    .fixedSize(horizontal: true, vertical: false)
-                Text(text)
-                    .font(.caption.monospaced())
-                    .foregroundStyle(copied ? .green : (isCurrent ? .primary : .secondary))
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.72)
-                    .allowsTightening(true)
-                    .layoutPriority(1)
-                if isCurrent {
-                    Text("当前")
-                        .font(.caption2.weight(.semibold))
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 1)
-                        .background(Color.accentColor, in: Capsule())
-                }
-            }
-            .contentShape(Rectangle())
-            .overlay(alignment: .topTrailing) {
-                if copied {
-                    Text("已复制")
-                        .font(.caption2.bold())
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 2)
-                        .background(.green, in: Capsule())
-                        .offset(y: -24)
-                }
-            }
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel("\(label) \(text)")
-        .accessibilityHint("点击复制")
     }
 
     var testFavorite: FavoriteLocation { currentSelectionFavorite }

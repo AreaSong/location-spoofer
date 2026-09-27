@@ -379,6 +379,7 @@ extension MapHomeView {
 
     var homePeekColor: Color {
         if showsRoutePanelActive { return .accentColor }
+        if routeKeepsRunningWhileSpotShown { return .orange }
         if needsSwitchButton { return .blue }
         return buttonColor
     }

@@ -3,7 +3,6 @@ import SwiftUI
 /// 底部卡片。默认只留地名、切换和主按钮；坐标、收藏和路线设置点开后出现在同一张卡里。
 struct MapHomeBottomCard<CoordinateRows: View, SpotContent: View, RoutePanel: View, PeekCaption: View>: View {
     let displayName: String
-    let mapSystemName: String
     let spoofState: SpoofState
     let isFavoriteSelected: Bool
     let favoriteSaveDisabled: Bool
@@ -22,6 +21,8 @@ struct MapHomeBottomCard<CoordinateRows: View, SpotContent: View, RoutePanel: Vi
     let peekColor: Color
     let peekDisabled: Bool
     let peekOpensDetail: Bool
+    let showsSpotHelp: Bool
+    let expandedMaxHeight: CGFloat
     let coordinateRows: CoordinateRows
     let spotContent: SpotContent
     let routePanel: RoutePanel
@@ -36,10 +37,10 @@ struct MapHomeBottomCard<CoordinateRows: View, SpotContent: View, RoutePanel: Vi
     let onPeekTap: () -> Void
     @ObservedObject var playbackClock: RoutePlaybackClock
     @State private var isExpanded = false
+    @State private var expandedContentHeight: CGFloat = 0
 
     init(
         displayName: String,
-        mapSystemName: String,
         spoofState: SpoofState,
         isFavoriteSelected: Bool,
         favoriteSaveDisabled: Bool,
@@ -58,6 +59,8 @@ struct MapHomeBottomCard<CoordinateRows: View, SpotContent: View, RoutePanel: Vi
         peekColor: Color,
         peekDisabled: Bool,
         peekOpensDetail: Bool,
+        showsSpotHelp: Bool = true,
+        expandedMaxHeight: CGFloat,
         playbackClock: RoutePlaybackClock,
         @ViewBuilder coordinateRows: () -> CoordinateRows,
         @ViewBuilder spotContent: () -> SpotContent,
@@ -73,7 +76,6 @@ struct MapHomeBottomCard<CoordinateRows: View, SpotContent: View, RoutePanel: Vi
         onPeekTap: @escaping () -> Void
     ) {
         self.displayName = displayName
-        self.mapSystemName = mapSystemName
         self.spoofState = spoofState
         self.isFavoriteSelected = isFavoriteSelected
         self.favoriteSaveDisabled = favoriteSaveDisabled
@@ -92,6 +94,8 @@ struct MapHomeBottomCard<CoordinateRows: View, SpotContent: View, RoutePanel: Vi
         self.peekColor = peekColor
         self.peekDisabled = peekDisabled
         self.peekOpensDetail = peekOpensDetail
+        self.showsSpotHelp = showsSpotHelp
+        self.expandedMaxHeight = expandedMaxHeight
         self.coordinateRows = coordinateRows()
         self.spotContent = spotContent()
         self.routePanel = routePanel()
@@ -160,10 +164,26 @@ struct MapHomeBottomCard<CoordinateRows: View, SpotContent: View, RoutePanel: Vi
             .buttonStyle(.plain)
             .accessibilityLabel(displayName)
             .accessibilityHint(isExpanded ? "收起详情" : "展开详情")
+            if isExpanded && showsSpotHelp {
+                helpButton
+            }
             statusDot
             favoriteButton
             expandButton
         }
+    }
+
+    private var helpButton: some View {
+        Button(action: onHelp) {
+            Image(systemName: "questionmark.circle")
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(.secondary)
+                .frame(width: 44, height: 44)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(spoofState == .active ? "无法生效？" : "无法取消？")
+        .accessibilityHint("打开说明")
     }
 
     private var statusDot: some View {
@@ -288,25 +308,27 @@ struct MapHomeBottomCard<CoordinateRows: View, SpotContent: View, RoutePanel: Vi
         if showsRoute {
             routePanel
         } else {
-            expandedSpot
+            ScrollView {
+                expandedSpot
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(
+                        GeometryReader { proxy in
+                            Color.clear.preference(key: ExpandedHeightKey.self, value: proxy.size.height)
+                        }
+                    )
+            }
+            .onPreferenceChange(ExpandedHeightKey.self) { height in
+                guard abs(expandedContentHeight - height) > 0.5 else { return }
+                expandedContentHeight = height
+            }
+            .frame(maxHeight: min(expandedContentHeight > 0 ? expandedContentHeight : expandedMaxHeight, expandedMaxHeight))
         }
     }
 
     private var expandedSpot: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("当前地图：\(mapSystemName)")
-                .font(.caption2.weight(.medium))
-                .foregroundStyle(.secondary)
             coordinateRows
-            Button(spoofState == .active ? "无法生效？" : "无法取消？", action: onHelp)
-                .buttonStyle(CapsuleChipStyle())
             spotContent
-            Button(action: onOpenSettings) {
-                StatusPill(text: runtimeStatusText, tone: runtimeStatusTone)
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel(runtimeStatusText)
-            .accessibilityHint("打开设置")
             if needsSwitchButton {
                 spotActions
             }
@@ -354,6 +376,57 @@ struct MapHomeBottomCard<CoordinateRows: View, SpotContent: View, RoutePanel: Vi
             return
         }
         onPeekTap()
+    }
+}
+
+private enum ExpandedHeightKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
+    }
+}
+
+/// 定点卡展开、走路仍占着定位时的状态条。不用「无法取消？」芯片，避免和帮助入口长得一样。
+struct RunningRouteSpotNotice: View {
+    let isPaused: Bool
+    let isWaiting: Bool
+    let onReturnToRoute: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Label(title, systemImage: "figure.walk")
+                .font(.subheadline.weight(.semibold))
+            Text(detail)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            Button(action: onReturnToRoute) {
+                Text("回到走路")
+                    .frame(maxWidth: .infinity)
+                    .frame(minHeight: 28)
+                    .padding(.horizontal, 12)
+            }
+            .buttonStyle(PrimaryActionStyle(tint: .orange, compact: true))
+            .accessibilityHint("打开走路面板")
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            Color.orange.opacity(0.12),
+            in: RoundedRectangle(cornerRadius: AppRadius.inset, style: .continuous)
+        )
+    }
+
+    private var title: String {
+        if isWaiting { return "正在开启走路" }
+        if isPaused { return "走路已暂停" }
+        return "走路还在进行"
+    }
+
+    private var detail: String {
+        if isWaiting { return "定位马上会沿路线更新。回到走路可查看进度。" }
+        if isPaused { return "定位暂时停在当前点。回到走路可继续或结束这次走路。" }
+        return "定位会继续沿路线更新。回到走路可改路线或暂停。"
     }
 }
 

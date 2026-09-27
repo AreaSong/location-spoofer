@@ -26,7 +26,7 @@ for extra in "$ROOT"/App/SettingsView+*.swift; do
   [ -f "$extra" ] && cat "$extra" >> "$SETTINGS"
 done
 cat "$ROOT/App/MapHomeView.swift" > "$MAP"
-for extra in "$ROOT"/App/MapHomeView+*.swift "$ROOT"/App/MapHomeBottomCard.swift; do
+for extra in "$ROOT"/App/MapHomeView+*.swift "$ROOT"/App/MapHomeBottomCard.swift "$ROOT"/App/MapHomeCoordinateLine.swift; do
   [ -f "$extra" ] && cat "$extra" >> "$MAP"
 done
 
@@ -70,6 +70,9 @@ grep -q 'routeUsesDeveloperTunnel' "$MAP" || fail "map route playback must branc
 grep -q '先连接隧道' "$MAP" || fail "the main button must guide the user to connect the tunnel first"
 grep -q 'homeRuntimeStatusTone' "$MAP" || fail "the runtime status row must carry a tone"
 grep -q 'showsRoutePanel' "$MAP" || fail "switching back to 定点 must collapse the route panel without clearing the route"
+grep -q 'showsSpotHelp: spoofState != .idle && !routeKeepsRunningWhileSpotShown' "$MAP" \
+  || fail "developer-tunnel playback must hide spot help while idle or a route keeps running"
+grep -q 'struct RunningRouteSpotNotice' "$MAP" || fail "developer-tunnel playback must show a running-route notice on the spot card"
 grep -q '退出会停止播放，虚拟定位留在当前点' "$MAP" || fail "exiting a playing route must ask for confirmation"
 grep -q '再试一次' "$MAP" || fail "a failed developer tunnel push must offer retry"
 grep -q 'recoverDeveloperTunnelIfNeeded' "$MAP" || fail "returning to the foreground must try to recover an active tunnel session"
@@ -84,7 +87,7 @@ grep -q '开发者隧道环境检测' "$DIAGNOSTICS" || fail "diagnostics must l
 grep -q 'RuntimeLogLevelFilter' "$DIAGNOSTICS" || fail "diagnostics must offer a log level filter"
 
 test -f "$STYLE" || fail "shared app style is missing"
-for symbol in 'enum AppRadius' 'struct CapsuleChipStyle' 'struct PrimaryActionStyle' 'struct CopyButton' 'struct StatusPill'; do
+for symbol in 'enum AppRadius' 'enum AppLayout' 'struct CapsuleChipStyle' 'struct PrimaryActionStyle' 'struct CopyButton' 'struct StatusPill'; do
   grep -q "$symbol" "$STYLE" || fail "AppStyle must define: $symbol"
 done
 grep -q 'DisclosureGroup("工作原理")' "$SETTINGS" || fail "工作原理 must collapse under the runtime mode section"

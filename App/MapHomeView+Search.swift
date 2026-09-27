@@ -51,10 +51,13 @@ extension MapHomeView {
     func favoriteChip(_ f: FavoriteLocation) -> some View {
         let selected = favorites.selectedFavoriteID == f.id
         return Button { select(f) } label: {
-            Label(f.name, systemImage: selected ? "checkmark.circle.fill" : "mappin")
+            Label(compactChipTitle(f.name), systemImage: selected ? "checkmark.circle.fill" : "mappin")
+                .font(.caption2)
+                .imageScale(.small)
                 .lineLimit(1)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 8)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 6)
+                .frame(minHeight: 44)
         }
         .buttonStyle(.plain)
         .background((selected ? Color.accentColor.opacity(0.16) : Color.secondary.opacity(0.12)), in: Capsule())
@@ -65,17 +68,38 @@ extension MapHomeView {
     func recentChip(_ item: RecentSelection) -> some View {
         HStack(spacing: 0) {
             Button { selectRecent(item) } label: {
-                Label(item.name, systemImage: "clock")
-                    .lineLimit(1).padding(.leading, 10).padding(.vertical, 8).padding(.trailing, 7).contentShape(Rectangle())
-            }.buttonStyle(.plain)
-            Divider().frame(height: 22)
+                Text(compactChipTitle(item.name))
+                    .font(.caption2)
+                    .lineLimit(1)
+                    .padding(.leading, 8)
+                    .padding(.trailing, 4)
+                    .frame(minHeight: 44)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
             Button {
                 recentSelections.remove(item)
             } label: {
-                Image(systemName: "xmark").font(.caption2).frame(width: 32, height: 36).contentShape(Rectangle())
-            }.buttonStyle(.plain).foregroundStyle(.primary.opacity(0.55))
+                Image(systemName: "xmark")
+                    .font(.caption2.weight(.semibold))
+                    .frame(width: 32, height: 44)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.primary.opacity(0.55))
+            .accessibilityLabel("从最近选点中删除")
         }
         .background(Color.secondary.opacity(0.12), in: Capsule())
+    }
+
+    /// 芯片只展示缩写，完整名称留给无障碍和标题。
+    func compactChipTitle(_ name: String) -> String {
+        let parts = name.split(separator: ",", omittingEmptySubsequences: false)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+        guard parts.count == 2, let latitude = Double(parts[0]), let longitude = Double(parts[1]) else {
+            return name
+        }
+        return String(format: "%.3f,%.3f", latitude, longitude)
     }
 
     func rememberDiscreteSelection(name: String, coordinatePair: CoordinatePair) {

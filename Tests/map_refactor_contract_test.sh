@@ -28,7 +28,7 @@ SETTINGS_VIEW="$(mktemp)"
 FIRST_SETUP="$(mktemp)"
 trap 'rm -f "$MAP_HOME" "$SETTINGS_VIEW" "$FIRST_SETUP"' EXIT
 cat "$MAP_HOME_MAIN" > "$MAP_HOME"
-for extra in "$ROOT"/App/MapHomeView+*.swift "$ROOT"/App/MapHomeBottomCard.swift; do
+for extra in "$ROOT"/App/MapHomeView+*.swift "$ROOT"/App/MapHomeBottomCard.swift "$ROOT"/App/MapHomeCoordinateLine.swift; do
   [ -f "$extra" ] && cat "$extra" >> "$MAP_HOME"
 done
 cat "$ROOT/App/SettingsView.swift" > "$SETTINGS_VIEW"
@@ -105,8 +105,10 @@ grep -q '地图坐标标准运行期检测结果已过期，取消写入' "$PROB
 grep -q 'clearRealtimeLocationForMapCoordinateSystemChange' "$MAP_HOME" || fail "map-type changes must discard superseded blue-point samples"
 grep -q '地图坐标类型已变化' "$MAP_HOME" || fail "map-type changes must emit an explicit searchable business log"
 grep -q '图钉已按新类型重设' "$MAP_HOME" || fail "map-type change log must report pin reprojection"
-grep -q 'coordinateRow(label: "GCJ-02(国内)", system: .gcj02)' "$MAP_HOME" || fail "current selection panel must label the domestic coordinate as GCJ-02"
-grep -q 'coordinateRow(label: "WGS-84(国际)", system: .wgs84)' "$MAP_HOME" || fail "current selection panel must label the international coordinate as WGS-84"
+grep -q 'struct MapHomeCoordinateLine' "$ROOT/App/MapHomeCoordinateLine.swift" \
+  || fail "current selection must share one switchable coordinate row"
+grep -q 'GCJ-02(国内)' "$ROOT/App/MapHomeCoordinateLine.swift" || fail "current selection panel must label the domestic coordinate as GCJ-02"
+grep -q 'WGS-84(国际)' "$ROOT/App/MapHomeCoordinateLine.swift" || fail "current selection panel must label the international coordinate as WGS-84"
 grep -q 'fixedSize(horizontal: true, vertical: false)' "$MAP_HOME" || fail "coordinate labels must keep their natural single-line width"
 grep -q 'minimumScaleFactor(0.72)' "$MAP_HOME" || fail "coordinate values must shrink to remain on one line"
 grep -q 'phase = .map' "$CONTENT" || fail "ContentView must explicitly gate MapHomeView construction"
@@ -164,7 +166,10 @@ test -f "$ROOT/Shared/FavoriteTransfer.swift" || fail "favorite backup must use 
 grep -q 'paopao-favorites' "$ROOT/Shared/FavoriteTransfer.swift" || fail "favorite backup JSON must use the paopao-favorites format"
 grep -q 'SettingsView(setup: setup, actions: actions, favorites: favorites, session: session)' "$MAP_HOME" || fail "settings must share the map favorite store"
 grep -q '按国内标准(GCJ-02)选点' "$MAP_HOME" || fail "typed coordinates must offer an explicit GCJ-02 choice"
-grep -q '当前地图：' "$MAP_HOME" || fail "map home must show the current map coordinate system"
+! grep -q '当前地图：' "$MAP_HOME" || fail "expanded spot must not spend a row on 当前地图"
+grep -q 'bottomCardExpandedHeightFraction' "$ROOT/App/AppStyle.swift" \
+  || fail "expanded bottom card must cap height against the screen"
+grep -q 'questionmark.circle' "$MAP_HOME" || fail "spot help must live in the expanded header instead of a chip row"
 test -f "$ROOT/App/FavoriteListView.swift" || fail "favorites must have a searchable list sheet"
 grep -q 'case .favorites' "$MAP_HOME" || fail "map home must present the favorite list sheet"
 test -f "$ROOT/Shared/MapLinkParser.swift" || fail "search must parse Apple, Google, and Amap links"
@@ -185,7 +190,19 @@ grep -q 'displayedFavorites' "$MAP_HOME" || fail "home favorite chips must share
 grep -q 'displayedFavorites' "$ROOT/App/FavoriteListView.swift" || fail "favorite list must share the sorted favorite order"
 grep -q 'setSortOrder' "$ROOT/Shared/FavoriteLocationStore.swift" || fail "favorite sort preference must be persistable"
 grep -q 'switchChip(title: "走路"' "$MAP_HOME" || fail "map home must expose route walking from the bottom switcher"
-grep -q 'Button("已存")' "$ROOT/App/RoutePlaybackPanel.swift" || fail "route panel must expose saved routes"
+grep -q 'Button("已存路线")' "$ROOT/App/RoutePlaybackPanel.swift" || fail "route panel must expose saved routes"
+grep -q 'struct RunningRouteSpotNotice' "$MAP_HOME" || fail "spot card must use a distinct running-route notice while playback continues"
+grep -q 'showsSpotHelp: spoofState != .idle && !routeKeepsRunningWhileSpotShown' "$MAP_HOME" \
+  || fail "idle and running-route states must hide the spot help control"
+grep -q 'if routeKeepsRunningWhileSpotShown { return .orange }' "$MAP_HOME" || fail "spot peek must use the running-route color while playback continues"
+if grep -A6 'Text("回到走路")' "$MAP_HOME" | grep -q 'CapsuleChipStyle'; then
+  fail "回到走路 must not reuse the help chip style"
+fi
+grep -A2 'if showsRoute {' "$ROOT/App/MapHomeBottomCard.swift" | grep -q 'routePanel' \
+  || fail "the walking panel must layout outside the spot height cap"
+if grep -A2 'if showsRoute {' "$ROOT/App/MapHomeBottomCard.swift" | grep -q 'ScrollView'; then
+  fail "the walking panel must not be clipped by the spot-card height cap"
+fi
 ! grep -q 'Label("走路"' "$MAP_HOME" || fail "route walking must not have a second entry in the top menu"
 grep -q 'route.enter()' "$MAP_HOME" || fail "opening a route must not use the current real or spoofed location as the start"
 grep -q 'route.load(saved)' "$MAP_HOME" || fail "saved routes must restore into the playback controller"
