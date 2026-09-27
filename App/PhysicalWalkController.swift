@@ -91,6 +91,7 @@ final class PhysicalWalkController: ObservableObject {
 
     func followCompass() {
         headingMode = .followCompass
+        startHeadingPreview()
         publishActiveHeading()
         flushHeading()
     }
@@ -99,6 +100,15 @@ final class PhysicalWalkController: ObservableObject {
         headingMode = .locked(degrees: PhysicalWalkHeadingLock.normalized(degrees))
         publishActiveHeading()
         flushHeading()
+    }
+
+    func startHeadingPreview() {
+        guard !isTracking else { return }
+        heading.onChange = { [weak self] in
+            self?.publishActiveHeading()
+        }
+        heading.start()
+        publishActiveHeading()
     }
 
     func rotateLockedHeading(by delta: Double) {
@@ -155,8 +165,8 @@ final class PhysicalWalkController: ObservableObject {
     }
 
     private func flushHeading() {
-        guard isTracking else { return }
         publishActiveHeading()
+        guard isTracking else { return }
         if case .moved = apply(sample: PhysicalWalkSample()) {
             writeTask = Task { [weak self] in
                 await self?.considerWrite(at: Date())

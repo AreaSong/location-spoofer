@@ -22,6 +22,7 @@ struct MapViewRepresentable: UIViewRepresentable {
     var playbackClock: RoutePlaybackClock?
     var walkHeadingDegrees: Double? = nil
     var showsWalkHeading: Bool = false
+    var showsWalkCompassRing: Bool = false
 
     func makeCoordinator() -> Coordinator { Coordinator(parent: self) }
 
@@ -137,6 +138,7 @@ struct MapViewRepresentable: UIViewRepresentable {
         context.coordinator.updateWalkHeadingHud(
             degrees: walkHeadingDegrees,
             visible: showsWalkHeading,
+            showsCompassRing: showsWalkCompassRing,
             on: map
         )
     }

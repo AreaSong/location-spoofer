@@ -28,6 +28,11 @@ extension MapHomeView {
         claimPhysicalWalkFromRoute()
         if shouldTrackPhysicalWalk {
             startPhysicalWalkIfNeeded()
+        } else if physicalWalkStore.isEnabled {
+            if physicalWalk.isTracking {
+                physicalWalk.stop()
+            }
+            physicalWalk.startHeadingPreview()
         } else {
             physicalWalk.stop()
         }
@@ -140,7 +145,6 @@ struct PhysicalWalkHeadingControls: View {
             HStack(spacing: 6) {
                 Button("罗盘") {
                     controller.followCompass()
-                    onChoseHeading()
                 }
                 .buttonStyle(CapsuleChipStyle(tint: controller.headingMode == .followCompass ? .accentColor : nil))
                 .accessibilityLabel("跟随罗盘朝向")

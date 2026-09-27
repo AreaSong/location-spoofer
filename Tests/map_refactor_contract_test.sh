@@ -118,11 +118,14 @@ grep -q 'quickActions' "$ROOT/App/MapHomeBottomCard.swift" \
   || fail "collapsed bottom card must keep walk shortcuts outside the expanded lists"
 grep -q 'enum PhysicalWalkHeadingPicker' "$ROOT/Shared/PhysicalWalkDisplacement.swift" \
   || fail "heading chips must stay collapsed after the walk direction is chosen"
-grep -q 'static let hudSize: CGFloat = 40' "$ROOT/App/WalkHeadingHud.swift" \
-  || fail "walk heading on the map must be a compact arrow instead of a compass ring"
-if grep -q 'addCardinal' "$ROOT/App/WalkHeadingHud.swift"; then
-  fail "walk heading hud must not keep a permanent N/E/S/W ring on the map"
-fi
+grep -q 'showsWalkCompassRing' "$ROOT/App/MapHomeView.swift" \
+  || fail "selecting 罗盘 must show the map compass ring"
+grep -q 'static let compassSize: CGFloat = 108' "$ROOT/App/WalkHeadingHud.swift" \
+  || fail "follow-compass mode must restore the N/E/S/W ring on the map"
+grep -q 'static let compactSize: CGFloat = 40' "$ROOT/App/WalkHeadingHud.swift" \
+  || fail "locked cardinal heading must keep a compact map arrow"
+grep -q 'func startHeadingPreview' "$ROOT/App/PhysicalWalkController.swift" \
+  || fail "compass heading must update before virtual location tracking starts"
 grep -q 'GCJ-02(国内)' "$ROOT/App/MapHomeCoordinateLine.swift" || fail "current selection panel must label the domestic coordinate as GCJ-02"
 grep -q 'WGS-84(国际)' "$ROOT/App/MapHomeCoordinateLine.swift" || fail "current selection panel must label the international coordinate as WGS-84"
 grep -q 'fixedSize(horizontal: true, vertical: false)' "$MAP_HOME" || fail "coordinate labels must keep their natural single-line width"

@@ -173,6 +173,24 @@ final class PhysicalWalkControllerTests: XCTestCase {
         XCTAssertFalse(BackgroundKeepAlive.shared.holds(.physicalWalk))
     }
 
+    func testHeadingPreviewPublishesCompassWithoutTracking() {
+        let sensor = FakePhysicalWalkSensor()
+        let heading = FakePhysicalWalkHeading()
+        heading.latest = PhysicalWalkHeading(degrees: 90, accuracyDegrees: 5)
+        let controller = PhysicalWalkController(sensor: sensor, heading: heading)
+
+        controller.startHeadingPreview()
+
+        XCTAssertFalse(controller.isTracking)
+        XCTAssertEqual(controller.headingMode, .followCompass)
+        XCTAssertEqual(controller.activeHeadingDegrees, 90)
+
+        heading.latest = PhysicalWalkHeading(degrees: 180, accuracyDegrees: 5)
+        heading.onChange?()
+        XCTAssertEqual(controller.activeHeadingDegrees, 180)
+        controller.stop()
+    }
+
     func testStaleAuthorizationErrorAfterAllowDoesNotFail() {
         let sensor = FakePhysicalWalkSensor()
         let heading = FakePhysicalWalkHeading()
