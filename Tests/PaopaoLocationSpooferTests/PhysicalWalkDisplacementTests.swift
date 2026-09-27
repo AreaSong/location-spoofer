@@ -93,7 +93,7 @@ final class PhysicalWalkDisplacementTests: XCTestCase {
         XCTAssertEqual(fromOrigin, hypot(10, 8), accuracy: 0.6)
     }
 
-    func testUnreliableHeadingConsumesDistanceWithoutMoving() {
+    func testUnreliableHeadingBuffersDistanceUntilHeadingIsReliable() {
         var engine = PhysicalWalkEngine(latitude: originLatitude, longitude: originLongitude)
         _ = engine.apply(
             sample: PhysicalWalkSample(distanceMeters: 0, steps: 0),
@@ -107,13 +107,23 @@ final class PhysicalWalkDisplacementTests: XCTestCase {
         XCTAssertEqual(skipped, .waitingForHeading)
         XCTAssertEqual(engine.latitude, originLatitude)
         XCTAssertEqual(engine.longitude, originLongitude)
+        XCTAssertEqual(engine.pendingMeters, 12, accuracy: 0.000_1)
 
         let later = engine.apply(
             sample: PhysicalWalkSample(distanceMeters: 12.2, steps: 17),
             heading: PhysicalWalkHeading(degrees: 0, accuracyDegrees: 8)
         )
-        XCTAssertEqual(later, .moved(deltaMeters: 0.2), accuracy: 0.000_1)
-        XCTAssertEqual(engine.movedMeters, 0.2, accuracy: 0.000_1)
+        XCTAssertEqual(later, .moved(deltaMeters: 12.2), accuracy: 0.000_1)
+        XCTAssertEqual(engine.movedMeters, 12.2, accuracy: 0.000_1)
+        XCTAssertEqual(engine.pendingMeters, 0, accuracy: 0.000_1)
+        let distance = CoordinateConverter.distance(
+            lat1: originLatitude,
+            lon1: originLongitude,
+            lat2: engine.latitude,
+            lon2: engine.longitude
+        )
+        XCTAssertEqual(distance, 12.2, accuracy: 0.5)
+        XCTAssertGreaterThan(engine.latitude, originLatitude)
     }
 
     func testStepFallbackUsesDefaultStrideWhenDistanceIsMissing() {
@@ -201,6 +211,52 @@ final class PhysicalWalkDisplacementTests: XCTestCase {
                 headingAvailable: true
             ),
             PhysicalWalkSensorPolicy.permissionDeniedMessage
+        )
+    }
+
+    func testStatusCopyShowsHomeFeedbackAndBuffersUntilEnabled() {
+        XCTAssertNil(
+            PhysicalWalkStatusCopy.peek(
+                isEnabled: false,
+                spoofActive: true,
+                isTracking: false,
+                status: .idle,
+                movedMeters: 0
+            )
+        )
+        XCTAssertEqual(
+            PhysicalWalkStatusCopy.peek(
+                isEnabled: true,
+                spoofActive: false,
+                isTracking: false,
+                status: .idle,
+                movedMeters: 0
+            ),
+            "真实走动已开，先开启虚拟定位"
+        )
+        XCTAssertEqual(
+            PhysicalWalkStatusCopy.peek(
+                isEnabled: true,
+                spoofActive: true,
+                isTracking: true,
+                status: .tracking,
+                movedMeters: 12
+            ),
+            "真实走动中 · 12米"
+        )
+        XCTAssertEqual(
+            PhysicalWalkStatusCopy.chipSubtitle(isEnabled: true, isTracking: true),
+            "走动中"
+        )
+        XCTAssertEqual(
+            PhysicalWalkStatusCopy.detail(
+                isEnabled: true,
+                spoofActive: true,
+                status: .idle,
+                movedMeters: 0,
+                failureMessage: ""
+            ),
+            "已开启，走起来虚拟点才会移动。"
         )
     }
 }

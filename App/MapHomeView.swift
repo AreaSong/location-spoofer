@@ -759,6 +759,10 @@ struct MapHomeView: View {
             buttonColor: buttonColor,
             showsRoute: showsRoutePanelActive,
             routeChipSubtitle: routeChipSubtitle,
+            spotChipSubtitle: PhysicalWalkStatusCopy.chipSubtitle(
+                isEnabled: physicalWalkStore.isEnabled,
+                isTracking: physicalWalk.isTracking
+            ),
             showsRouteProgress: showsRouteProgress,
             peekTitle: homePeekTitle,
             peekAccessibilityLabel: homePeekAccessibilityLabel,
@@ -773,6 +777,11 @@ struct MapHomeView: View {
                 MapHomeCoordinateLine(pair: currentSelectionPair, mapSystem: displayedMapCoordinateSystem)
             },
             spotContent: {
+                PhysicalWalkSpotControl(
+                    store: physicalWalkStore,
+                    controller: physicalWalk,
+                    spoofActive: spoofState == .active
+                )
                 if routeKeepsRunningWhileSpotShown {
                     RunningRouteSpotNotice(
                         isPaused: route.phase == .paused,

@@ -54,8 +54,13 @@ struct PhysicalWalkHeading: Equatable {
 
     var isReliable: Bool {
         accuracyDegrees >= 0
-            && accuracyDegrees <= PhysicalWalkDisplacement.maximumHeadingAccuracyDegrees
     }
+}
+
+enum PhysicalWalkStatus: Equatable {
+    case idle
+    case waitingForHeading
+    case tracking
 }
 
 enum PhysicalWalkApplyResult: Equatable {
@@ -64,11 +69,63 @@ enum PhysicalWalkApplyResult: Equatable {
     case moved(deltaMeters: Double)
 }
 
+enum PhysicalWalkStatusCopy {
+    static func peek(
+        isEnabled: Bool,
+        spoofActive: Bool,
+        isTracking: Bool,
+        status: PhysicalWalkStatus,
+        movedMeters: Double
+    ) -> String? {
+        guard isEnabled else { return nil }
+        guard spoofActive else { return "真实走动已开，先开启虚拟定位" }
+        guard isTracking else { return "真实走动已开" }
+        switch status {
+        case .waitingForHeading:
+            return "等待朝向，请把手机朝前"
+        case .tracking:
+            let meters = Int(movedMeters.rounded())
+            return meters > 0 ? "真实走动中 · \(meters)米" : "真实走动中，走起来才会移动"
+        case .idle:
+            return "真实走动已开"
+        }
+    }
+
+    static func detail(
+        isEnabled: Bool,
+        spoofActive: Bool,
+        status: PhysicalWalkStatus,
+        movedMeters: Double,
+        failureMessage: String
+    ) -> String {
+        if !failureMessage.isEmpty { return failureMessage }
+        if !isEnabled {
+            return "打开后，你走动时虚拟点会按相同方向移动。请把手机朝向行走方向。"
+        }
+        if !spoofActive {
+            return "先开启虚拟定位，再走动。"
+        }
+        switch status {
+        case .waitingForHeading:
+            return "正在读取朝向，请把手机朝向行走方向。"
+        case .tracking:
+            let meters = Int(movedMeters.rounded())
+            return meters > 0 ? "已移动 \(meters) 米" : "已开启，走起来虚拟点才会移动。"
+        case .idle:
+            return "已开启，走起来虚拟点才会移动。"
+        }
+    }
+
+    static func chipSubtitle(isEnabled: Bool, isTracking: Bool) -> String? {
+        guard isEnabled else { return nil }
+        return isTracking ? "走动中" : "已开"
+    }
+}
+
 enum PhysicalWalkDisplacement {
     static let earthRadiusMeters = LocationCoordinateOffset.earthRadiusMeters
     static let defaultStrideMeters = 0.74
     static let minimumDeltaMeters = 0.05
-    static let maximumHeadingAccuracyDegrees = 25.0
 
     /// Compass heading: 0 is north, 90 is east, clockwise.
     static func offsetWGS84(
@@ -112,6 +169,7 @@ struct PhysicalWalkEngine: Equatable {
     var latitude: Double
     var longitude: Double
     var movedMeters = 0.0
+    var pendingMeters = 0.0
     private var lastDistanceMeters: Double?
     private var lastSteps: Int?
 
@@ -130,22 +188,27 @@ struct PhysicalWalkEngine: Equatable {
             lastSteps: lastSteps
         )
         remember(sample)
-        guard delta >= PhysicalWalkDisplacement.minimumDeltaMeters else {
+        if delta >= PhysicalWalkDisplacement.minimumDeltaMeters {
+            pendingMeters += delta
+        }
+        guard pendingMeters >= PhysicalWalkDisplacement.minimumDeltaMeters else {
             return .unchanged
         }
         guard let heading, heading.isReliable else {
             return .waitingForHeading
         }
+        let applied = pendingMeters
         let next = PhysicalWalkDisplacement.offsetWGS84(
             latitude: latitude,
             longitude: longitude,
-            distanceMeters: delta,
+            distanceMeters: applied,
             headingDegrees: heading.degrees
         )
         latitude = next.latitude
         longitude = next.longitude
-        movedMeters += delta
-        return .moved(deltaMeters: delta)
+        movedMeters += applied
+        pendingMeters = 0
+        return .moved(deltaMeters: applied)
     }
 
     private mutating func remember(_ sample: PhysicalWalkSample) {

@@ -3,15 +3,13 @@ import SwiftUI
 
 extension MapHomeView {
     var physicalWalkPeekText: String? {
-        guard physicalWalk.isTracking else { return nil }
-        switch physicalWalk.status {
-        case .waitingForHeading:
-            return "等待罗盘朝向"
-        case .tracking:
-            return "真实走动中"
-        case .idle:
-            return nil
-        }
+        PhysicalWalkStatusCopy.peek(
+            isEnabled: physicalWalkStore.isEnabled,
+            spoofActive: spoofState == .active,
+            isTracking: physicalWalk.isTracking,
+            status: physicalWalk.status,
+            movedMeters: physicalWalk.movedMeters
+        )
     }
 
     func bindPhysicalWalk() {
@@ -97,5 +95,44 @@ extension MapHomeView {
         cachedSelectionPair = pair
         LastCoordinateStore.save(coordinatePair: pair, zoomMeters: mapState.viewportMeters)
         favorites.select(nil)
+    }
+}
+
+struct PhysicalWalkSpotControl: View {
+    @ObservedObject var store: PhysicalWalkStore
+    @ObservedObject var controller: PhysicalWalkController
+    let spoofActive: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Toggle("真实走动", isOn: enabledBinding)
+            Text(detailText)
+                .font(.caption)
+                .foregroundStyle(store.lastFailureMessage.isEmpty ? Color.secondary : Color.red)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            Color.secondary.opacity(0.08),
+            in: RoundedRectangle(cornerRadius: AppRadius.inset, style: .continuous)
+        )
+    }
+
+    private var enabledBinding: Binding<Bool> {
+        Binding(
+            get: { store.isEnabled },
+            set: { store.setEnabled($0) }
+        )
+    }
+
+    private var detailText: String {
+        PhysicalWalkStatusCopy.detail(
+            isEnabled: store.isEnabled,
+            spoofActive: spoofActive,
+            status: controller.status,
+            movedMeters: controller.movedMeters,
+            failureMessage: store.lastFailureMessage
+        )
     }
 }

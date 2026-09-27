@@ -2,12 +2,6 @@ import Combine
 import CoreMotion
 import Foundation
 
-enum PhysicalWalkStatus: Equatable {
-    case idle
-    case waitingForHeading
-    case tracking
-}
-
 @MainActor
 final class PhysicalWalkController: ObservableObject {
     @Published private(set) var isTracking = false
@@ -32,7 +26,7 @@ final class PhysicalWalkController: ObservableObject {
         keepAlive: BackgroundKeepAlive = .shared
     ) {
         self.sensor = sensor ?? CoreMotionPedometerDriver()
-        self.heading = heading ?? CoreLocationHeadingDriver()
+        self.heading = heading ?? PhysicalWalkHeadingDriver()
         self.keepAlive = keepAlive
     }
 
@@ -50,6 +44,9 @@ final class PhysicalWalkController: ObservableObject {
         isTracking = true
         status = .waitingForHeading
         keepAlive.retain(.physicalWalk)
+        heading.onChange = { [weak self] in
+            self?.flushHeading()
+        }
         heading.start()
         sensor.requestAuthorization { [weak self] status in
             self?.continueStart(
@@ -65,6 +62,7 @@ final class PhysicalWalkController: ObservableObject {
         generation &+= 1
         writeTask?.cancel()
         writeTask = nil
+        heading.onChange = nil
         tearDownSensors()
         engine = nil
         let wasTracking = isTracking
@@ -125,6 +123,15 @@ final class PhysicalWalkController: ObservableObject {
             return
         case let .fail(message):
             fail(message)
+        }
+    }
+
+    private func flushHeading() {
+        guard isTracking else { return }
+        if case .moved = apply(sample: PhysicalWalkSample()) {
+            writeTask = Task { [weak self] in
+                await self?.considerWrite(at: Date())
+            }
         }
     }
 

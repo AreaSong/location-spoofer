@@ -90,7 +90,7 @@ final class PhysicalWalkControllerTests: XCTestCase {
         XCTAssertFalse(BackgroundKeepAlive.shared.holds(.physicalWalk))
     }
 
-    func testUnreliableHeadingDoesNotWrite() async {
+    func testBufferedWalkWritesWhenHeadingBecomesReliable() async {
         let sensor = FakePhysicalWalkSensor()
         let heading = FakePhysicalWalkHeading()
         heading.latest = PhysicalWalkHeading(degrees: 90, accuracyDegrees: -1)
@@ -106,6 +106,12 @@ final class PhysicalWalkControllerTests: XCTestCase {
 
         XCTAssertFalse(wrote)
         XCTAssertEqual(controller.status, .waitingForHeading)
+
+        heading.latest = PhysicalWalkHeading(degrees: 0, accuracyDegrees: 5)
+        await controller.ingest(sample: PhysicalWalkSample(distanceMeters: 10, steps: 12))
+
+        XCTAssertTrue(wrote)
+        XCTAssertEqual(controller.status, .tracking)
         controller.stop()
     }
 
@@ -195,6 +201,7 @@ private final class FakePhysicalWalkSensor: PhysicalWalkSensing {
 private final class FakePhysicalWalkHeading: PhysicalWalkHeadingSensing {
     var headingAvailable = true
     var latest: PhysicalWalkHeading?
+    var onChange: (() -> Void)?
 
     func start() {}
     func stop() { latest = nil }
