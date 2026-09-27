@@ -516,6 +516,7 @@ extension MapHomeView {
     }
 
     func playRoute(fromStart: Bool = false) {
+        stopPhysicalWalkForRoutePlayback()
         bindRoutePlayback()
         if fromStart {
             route.resetProgressForRestart()
@@ -700,6 +701,7 @@ struct HomePeekCaption: View {
     @ObservedObject var route: RoutePlaybackController
     @ObservedObject var clock: RoutePlaybackClock
     let showsRoute: Bool
+    var physicalWalkText: String? = nil
 
     var body: some View {
         if let text = caption {
@@ -711,7 +713,9 @@ struct HomePeekCaption: View {
     }
 
     private var caption: String? {
-        showsRoute ? routeCaption : backgroundCaption
+        if showsRoute { return routeCaption }
+        if let physicalWalkText { return physicalWalkText }
+        return backgroundCaption
     }
 
     private var routeCaption: String? {
@@ -756,5 +760,6 @@ extension MapHomeView {
             route.markActivationFailed(RouteActivitySync.locationBlockedMessage)
             settleRouteSimulation(after: pendingWrite, from: .preparing)
         }
+        syncPhysicalWalk()
     }
 }

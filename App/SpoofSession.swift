@@ -171,6 +171,19 @@ final class SpoofSession: ObservableObject {
         return writeLocalRoute(pair, offsetMeters: offsetMeters, services: services)
     }
 
+    /// 真实走动写入当前点，不再套路线偏移或随机扰动。
+    func writeMoving(_ pair: CoordinatePair) async -> Bool {
+        guard let services, !services.isUseBlocked() else { return false }
+        switch services.mode() {
+        case .thirdParty:
+            return await writeThirdPartyRoute(pair, offsetMeters: 0, services: services)
+        case .developerTunnel:
+            return await writeDeveloperMoving(pair, services: services)
+        case .localWiFi:
+            return writeLocalRoute(pair, offsetMeters: 0, services: services)
+        }
+    }
+
     func refreshThirdParty() {
         guard let services, services.mode() == .thirdParty, operationTask == nil else { return }
         operationID &+= 1
@@ -409,6 +422,28 @@ final class SpoofSession: ObservableObject {
             )
         }
         return applied
+    }
+
+    private func writeDeveloperMoving(_ pair: CoordinatePair, services: Services) async -> Bool {
+        let favorite = FavoriteLocation(
+            name: "真实走动",
+            coordinatePair: pair,
+            accuracy: services.accuracyMeters()
+        )
+        let failure = await services.pushDeveloper(favorite)
+        if failure == .superseded { return false }
+        if let failure {
+            enqueue(.developerPushFailed(failure.message))
+            return false
+        }
+        let wgs = pair.wgs84
+        remember(
+            writtenLatitude: wgs.latitude,
+            writtenLongitude: wgs.longitude,
+            switchLatitude: wgs.latitude,
+            switchLongitude: wgs.longitude
+        )
+        return true
     }
 
     private func queryThirdParty(operationID: UInt64) async {

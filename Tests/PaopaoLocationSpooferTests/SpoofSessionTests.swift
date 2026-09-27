@@ -192,6 +192,42 @@ final class SpoofSessionTests: XCTestCase {
         XCTAssertEqual(probe.applyCount, 0)
     }
 
+    func testWriteMovingUsesExactCoordinatesWithoutRouteOffset() async {
+        let probe = SpoofServiceProbe()
+        let session = makeSession(probe)
+        let pair = CoordinateConverter.coordinatePair(
+            lat: 22.494,
+            lon: 113.951,
+            mapCoordinateSystem: .wgs84
+        )
+
+        let applied = await session.writeMoving(pair)
+
+        XCTAssertTrue(applied)
+        XCTAssertEqual(probe.updateCount, 1)
+        XCTAssertEqual(probe.lastUpdateLatitude ?? 0, pair.wgs84.latitude, accuracy: 0.000_001)
+        XCTAssertEqual(probe.lastUpdateLongitude ?? 0, pair.wgs84.longitude, accuracy: 0.000_001)
+        XCTAssertEqual(session.writtenLatitude ?? 0, pair.wgs84.latitude, accuracy: 0.000_001)
+        XCTAssertEqual(session.writtenLongitude ?? 0, pair.wgs84.longitude, accuracy: 0.000_001)
+        XCTAssertEqual(session.switchLatitude ?? 0, pair.wgs84.latitude, accuracy: 0.000_001)
+        XCTAssertEqual(session.switchLongitude ?? 0, pair.wgs84.longitude, accuracy: 0.000_001)
+
+        probe.mode = .thirdParty
+        probe.saveResponse = response(latitude: 22.2, longitude: 113.4)
+        let thirdParty = await session.writeMoving(pair)
+        XCTAssertTrue(thirdParty)
+        XCTAssertEqual(probe.savedRadius, 0)
+        XCTAssertEqual(session.writtenLatitude, 22.2)
+        XCTAssertEqual(session.writtenLongitude, 113.4)
+
+        probe.mode = .developerTunnel
+        let tunnel = await session.writeMoving(pair)
+        XCTAssertTrue(tunnel)
+        XCTAssertEqual(probe.developerPushes, 1)
+        XCTAssertEqual(probe.lastUpdateLatitude ?? 0, pair.wgs84.latitude, accuracy: 0.000_001)
+        XCTAssertEqual(probe.updateCount, 1)
+    }
+
     private func makeSession(_ probe: SpoofServiceProbe) -> SpoofSession {
         let session = SpoofSession()
         session.bind(probe.services())
@@ -252,6 +288,8 @@ private final class SpoofServiceProbe {
     var verifyCount = 0
     var applyCount = 0
     var updateCount = 0
+    var lastUpdateLatitude: Double?
+    var lastUpdateLongitude: Double?
     var savedRadius: Double?
     var saveError: Error?
     var saveResponse = ThirdPartyProxySettingsResponse(
@@ -294,8 +332,10 @@ private final class SpoofServiceProbe {
                 self.applyCount += 1
                 return (favorite.latitude + 0.01, favorite.longitude - 0.02)
             },
-            updateLocalWGS84: { _, _, _ in
+            updateLocalWGS84: { latitude, longitude, _ in
                 self.updateCount += 1
+                self.lastUpdateLatitude = latitude
+                self.lastUpdateLongitude = longitude
                 return true
             },
             clearLocal: { self.clearLocalCount += 1 },
@@ -314,8 +354,10 @@ private final class SpoofServiceProbe {
             clearThirdPartyFailure: {},
             recordThirdPartyFailure: { _ in },
             recordThirdPartyMessage: { _ in },
-            pushDeveloper: { _ in
+            pushDeveloper: { favorite in
                 self.developerPushes += 1
+                self.lastUpdateLatitude = favorite.latitude
+                self.lastUpdateLongitude = favorite.longitude
                 return self.developerFailure
             },
             clearDeveloper: {

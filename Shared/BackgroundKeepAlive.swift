@@ -7,6 +7,7 @@ enum BackgroundKeepAliveOwner: Hashable {
     case routePlayback
     case developerLocation
     case thirdPartyImport
+    case physicalWalk
 }
 
 final class BackgroundKeepAlive: ObservableObject {

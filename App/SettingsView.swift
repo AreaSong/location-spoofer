@@ -30,6 +30,7 @@ struct SettingsView: View {
     @ObservedObject var thirdPartyProxy = ThirdPartyProxyManager.shared
     @ObservedObject var thirdPartyClient = ThirdPartyProxyClientStore.shared
     @ObservedObject var motionSimulation = MotionSimulationStore.shared
+    @ObservedObject var physicalWalk = PhysicalWalkStore.shared
     @ObservedObject var randomRadius = RandomRadiusStore.shared
     @ObservedObject var locationAccuracy = LocationAccuracyStore.shared
     @ObservedObject var moduleSource = ThirdPartyModuleSourceStore.shared

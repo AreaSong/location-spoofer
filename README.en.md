@@ -47,7 +47,7 @@ It provides:
 - Map coordinate detection with paired WGS-84 and GCJ-02 values;
 - Recent selection history, favorite sorting, and favorite backup import/export;
 - Home runtime status (on-device proxy/keep-alive, third-party module connection, or developer tunnel readiness);
-- Random perturbation, location accuracy, and App Mode motion simulation;
+- Random perturbation, location accuracy, App Mode motion simulation, and optional physical walking that overlays real-world displacement onto the virtual point;
 - Environment checks, runtime logs, and diagnostics.
 
 The project does not modify the target app's source code and does not provide telemetry, remote control, or data
@@ -71,6 +71,7 @@ collection services.
   - App Mode and Third-party Proxy Mode can configure a random perturbation radius and reported accuracy so a test
     point is not always identical;
   - Motion simulation is available only in App Mode;
+  - Optional physical walking: after virtual location is active, real-world displacement from pedometer distance and compass heading is added to the current virtual point; it is off by default and mutually exclusive with automatic route playback;
   - Does not require changes to the target app.
 
 - **Route playback**

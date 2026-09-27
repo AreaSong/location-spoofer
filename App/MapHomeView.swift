@@ -58,6 +58,8 @@ struct MapHomeView: View {
     @StateObject var session: SpoofSession
     @ObservedObject var proxy = ProxyManager.shared
     @ObservedObject var keepAlive = BackgroundKeepAlive.shared
+    @StateObject var physicalWalk = PhysicalWalkController()
+    @ObservedObject var physicalWalkStore = PhysicalWalkStore.shared
     @ObservedObject var recentSelections = RecentSelectionStore.shared
     @ObservedObject var runtimeMode = ProxyRuntimeModeStore.shared
     @ObservedObject var thirdPartyProxy = ThirdPartyProxyManager.shared
@@ -471,6 +473,7 @@ struct MapHomeView: View {
             displayedMapCoordinateSystem = CoordinateConverter.currentMapCoordinateSystem
             startMapRuntimeOnce()
             bindRoutePlayback()
+            bindPhysicalWalk()
             registerRouteActivityToggle()
             if let session = route.sessionStore.load(), route.phase == .inactive {
                 routeRecovery = session
@@ -482,6 +485,7 @@ struct MapHomeView: View {
             }
             syncDeveloperTunnelMonitor()
             syncDeveloperLocationKeepAlive()
+            syncPhysicalWalk()
         }
         .onDisappear {
             routeLocation.stopTunnelMonitor()
@@ -505,6 +509,9 @@ struct MapHomeView: View {
                 if route.phase == .playing {
                     BackgroundKeepAlive.shared.retain(.routePlayback)
                 }
+                if physicalWalk.isTracking {
+                    BackgroundKeepAlive.shared.retain(.physicalWalk)
+                }
                 // 切走时留着模拟连接。丢掉后回来重连，会和设备上还没回收的旧会话抢坐标。
                 syncDeveloperLocationKeepAlive()
                 return
@@ -518,6 +525,9 @@ struct MapHomeView: View {
             }
             if route.phase == .playing {
                 BackgroundKeepAlive.shared.retain(.routePlayback)
+            }
+            if physicalWalk.isTracking {
+                BackgroundKeepAlive.shared.retain(.physicalWalk)
             }
             RouteActivityBridge.drainPending()
             syncRouteActivity(retryCreation: true)
@@ -537,6 +547,19 @@ struct MapHomeView: View {
         }
         .onChange(of: spoofState) { state in
             handleRouteSpoofStateChange(state)
+            syncPhysicalWalk()
+        }
+        .onChange(of: physicalWalkStore.isEnabled) { _ in
+            syncPhysicalWalk()
+        }
+        .onChange(of: route.phase) { phase in
+            handlePhysicalWalkRoutePhase(phase)
+        }
+        .onChange(of: route.waitingForActivation) { waiting in
+            if waiting {
+                physicalWalkStore.setEnabled(false)
+            }
+            syncPhysicalWalk()
         }
         .onChange(of: session.effectRevision) { _ in
             handleSpoofEffects(session.consumeEffects())
@@ -589,6 +612,7 @@ struct MapHomeView: View {
             }
             syncDeveloperTunnelMonitor()
             syncDeveloperLocationKeepAlive()
+            syncPhysicalWalk()
         }
         .sheet(isPresented: $showEnableTip) { enableTipSheet }
         .sheet(isPresented: $showDisableTip) { disableTipSheet }
@@ -611,6 +635,14 @@ struct MapHomeView: View {
             Button("知道了", role: .cancel) {}
         } message: {
             Text("无法获取当前定位，请检查定位服务是否已开启")
+        }
+        .alert("无法开启真实走动", isPresented: Binding(
+            get: { !physicalWalkStore.lastFailureMessage.isEmpty },
+            set: { if !$0 { physicalWalkStore.clearFailure() } }
+        )) {
+            Button("知道了", role: .cancel) {}
+        } message: {
+            Text(physicalWalkStore.lastFailureMessage)
         }
         .alert("编辑收藏名称", isPresented: Binding(
             get: { editingFavorite != nil },
@@ -767,7 +799,12 @@ struct MapHomeView: View {
             },
             routePanel: { routeCard },
             peekCaption: {
-                HomePeekCaption(route: route, clock: route.clock, showsRoute: showsRoutePanelActive)
+                HomePeekCaption(
+                    route: route,
+                    clock: route.clock,
+                    showsRoute: showsRoutePanelActive,
+                    physicalWalkText: physicalWalkPeekText
+                )
             },
             onShowSpot: {
                 // 切回定点只收起面板，路线、图钉和播放状态都保留。

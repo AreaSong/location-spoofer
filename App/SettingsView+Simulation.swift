@@ -1,6 +1,13 @@
 import SwiftUI
 
 extension SettingsView {
+    var physicalWalkBinding: Binding<Bool> {
+        Binding(
+            get: { physicalWalk.isEnabled },
+            set: { physicalWalk.setEnabled($0) }
+        )
+    }
+
     var motionSimulationBinding: Binding<Bool> {
         Binding(
             get: { motionSimulation.isEnabled },
@@ -17,6 +24,17 @@ extension SettingsView {
     @ViewBuilder
     var locationSimulationSection: some View {
         Section("定位模拟") {
+            Toggle("真实走动", isOn: physicalWalkBinding)
+                .disabled(simulationControlsDisabled)
+            Text("开启后，你在现实中走动时，虚拟定位会按相同距离和方向移动。请将手机朝向行走方向。路线播放期间开启会暂停自动走路。")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+            if !physicalWalk.lastFailureMessage.isEmpty {
+                Text(physicalWalk.lastFailureMessage)
+                    .font(.footnote)
+                    .foregroundStyle(.red)
+            }
+
             if runtimeMode.mode == .developerTunnel {
                 // 隧道直接推送精确坐标，这些改写参数不参与。
                 Text("开发者隧道模式不使用随机扰动和精度设置；路线偏移在走路面板里调。")

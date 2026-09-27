@@ -45,9 +45,11 @@
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
-	<string>用于显示和验证虚拟定位是否生效</string>
+	<string>用于显示和验证虚拟定位是否生效，以及根据罗盘朝向计算真实走动位移</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>用于显示和验证虚拟定位是否生效</string>
+	<string>用于显示和验证虚拟定位是否生效，以及根据罗盘朝向计算真实走动位移</string>
+	<key>NSMotionUsageDescription</key>
+	<string>用于根据你的步伐把现实走动叠加到虚拟定位</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

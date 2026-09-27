@@ -292,6 +292,7 @@ extension MapHomeView {
                 spotRetryCommand = ""
                 spotStoppedConfirmUntil = nil
                 presentSuccessfulOperationTip(.activation)
+                restartPhysicalWalkFromWrittenCoordinate()
             case .deactivationSucceeded:
                 spotStopPending = false
                 spotSwitchPending = false
