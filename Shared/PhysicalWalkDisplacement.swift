@@ -117,9 +117,12 @@ enum PhysicalWalkHeadingLock {
     }
 
     static func pickerSummary(headingDegrees: Double?, locked: Bool) -> String {
-        guard let headingDegrees else { return "未定" }
-        let name = compassName(headingDegrees)
-        return locked ? name : "罗盘 · \(name)"
+        if locked {
+            guard let headingDegrees else { return "未定" }
+            return compassName(headingDegrees)
+        }
+        guard let headingDegrees else { return "罗盘" }
+        return "罗盘 · \(compassName(headingDegrees))"
     }
 }
 
@@ -128,9 +131,11 @@ enum PhysicalWalkHeadingPicker {
     static func shouldRevealControls(
         isEnabled: Bool,
         status _: PhysicalWalkStatus,
-        hasResolvedHeading: Bool
+        hasResolvedHeading: Bool,
+        followsCompass: Bool = false
     ) -> Bool {
         guard isEnabled else { return false }
+        if followsCompass { return false }
         return !hasResolvedHeading
     }
 }

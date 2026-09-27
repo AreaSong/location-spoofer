@@ -161,7 +161,8 @@ struct MapHomeTopInfoBar: View {
         PhysicalWalkHeadingPicker.shouldRevealControls(
             isEnabled: walkStore.isEnabled,
             status: walkController.status,
-            hasResolvedHeading: walkController.activeHeadingDegrees != nil
+            hasResolvedHeading: walkController.activeHeadingDegrees != nil,
+            followsCompass: walkController.headingMode == .followCompass
         )
     }
 

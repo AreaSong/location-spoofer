@@ -138,6 +138,12 @@ struct PhysicalWalkHeadingControls: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
+                Button("罗盘") {
+                    controller.followCompass()
+                    onChoseHeading()
+                }
+                .buttonStyle(CapsuleChipStyle(tint: controller.headingMode == .followCompass ? .accentColor : nil))
+                .accessibilityLabel("跟随罗盘朝向")
                 ForEach(PhysicalWalkHeadingLock.cardinals, id: \.title) { item in
                     Button(item.title) {
                         controller.lockHeading(degrees: item.degrees)
@@ -148,12 +154,6 @@ struct PhysicalWalkHeadingControls: View {
                 }
             }
             HStack(spacing: 6) {
-                Button("罗盘") {
-                    controller.followCompass()
-                    onChoseHeading()
-                }
-                .buttonStyle(CapsuleChipStyle(tint: controller.headingMode == .followCompass ? .accentColor : nil))
-                .accessibilityLabel("跟随罗盘朝向")
                 Button {
                     controller.rotateLockedHeading(by: -15)
                 } label: {
