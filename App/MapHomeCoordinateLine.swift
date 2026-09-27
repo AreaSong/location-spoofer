@@ -115,10 +115,11 @@ struct MapHomeCoordinateLine: View {
     }
 }
 
-/// 搜索栏下方的坐标条：默认收起一行，展开后可切换坐标系并复制。
+/// 搜索栏下方的坐标条：默认收起一行，左边坐标、右边地点，展开后可切换坐标系并复制。
 struct MapHomeTopInfoBar: View {
     let pair: CoordinatePair
     let mapSystem: CoordinateConverter.MapCoordinateSystem
+    let placeName: String
     @State private var isExpanded = false
 
     var body: some View {
@@ -128,12 +129,18 @@ struct MapHomeTopInfoBar: View {
                     Text(mapSystem.rawValue)
                         .font(.caption2.weight(.semibold))
                         .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: true, vertical: false)
                     Text(MapHomeCoordinateLine.compactLine(pair: pair, mapSystem: mapSystem))
                         .font(.caption.monospacedDigit())
                         .foregroundStyle(.primary)
                         .lineLimit(1)
-                        .minimumScaleFactor(0.8)
-                    Spacer(minLength: 4)
+                        .minimumScaleFactor(0.72)
+                        .layoutPriority(1)
+                    Text(placeName)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .frame(maxWidth: .infinity, alignment: .trailing)
                     Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(.secondary)
@@ -143,7 +150,7 @@ struct MapHomeTopInfoBar: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("当前坐标 \(MapHomeCoordinateLine.compactLine(pair: pair, mapSystem: mapSystem))")
+            .accessibilityLabel("\(placeName)，坐标 \(MapHomeCoordinateLine.compactLine(pair: pair, mapSystem: mapSystem))")
             .accessibilityHint(isExpanded ? "收起坐标详情" : "展开坐标详情")
 
             if isExpanded {

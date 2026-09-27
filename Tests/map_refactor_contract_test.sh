@@ -109,6 +109,8 @@ grep -q 'struct MapHomeCoordinateLine' "$ROOT/App/MapHomeCoordinateLine.swift" \
   || fail "current selection must share one switchable coordinate row"
 grep -q 'struct MapHomeTopInfoBar' "$ROOT/App/MapHomeCoordinateLine.swift" \
   || fail "map home must keep a collapsible coordinate strip under search"
+grep -q 'placeName' "$ROOT/App/MapHomeCoordinateLine.swift" \
+  || fail "collapsed coordinate strip must show the place name beside the coordinates"
 grep -q 'quickActions' "$ROOT/App/MapHomeBottomCard.swift" \
   || fail "collapsed bottom card must keep walk shortcuts outside the expanded lists"
 grep -q 'enum PhysicalWalkHeadingPicker' "$ROOT/Shared/PhysicalWalkDisplacement.swift" \

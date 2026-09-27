@@ -58,7 +58,7 @@ collection services.
 - **Native map interaction**
   - Uses MapKit for the map and system blue dot;
   - Supports place search, pasted map links, typed latitude/longitude, map taps, center-point dragging, and zooming;
-  - A collapsible coordinate strip under the search bar; expand it to switch domestic and international coordinates
+  - A collapsible strip under the search bar with coordinates on the left and the place name on the right; expand it to switch domestic and international coordinates
     and copy each one separately;
   - Keeps the latest 10 discrete selections (tap, search, favorite, or realtime fix). Panning the map updates the current
     center only and does not write history;

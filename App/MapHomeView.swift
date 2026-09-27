@@ -745,7 +745,11 @@ struct MapHomeView: View {
                         .contentShape(Circle())
                 }.accessibilityLabel("更多")
             }
-            MapHomeTopInfoBar(pair: currentSelectionPair, mapSystem: displayedMapCoordinateSystem)
+            MapHomeTopInfoBar(
+                pair: currentSelectionPair,
+                mapSystem: displayedMapCoordinateSystem,
+                placeName: mapState.displayName ?? "当前选点"
+            )
         }
     }
 
