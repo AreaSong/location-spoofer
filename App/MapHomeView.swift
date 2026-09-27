@@ -428,6 +428,7 @@ struct MapHomeView: View {
             handoffRouteLocationIfNeeded(from: lastRoutePhase, to: phase)
             lastRoutePhase = phase
             syncRouteActivity()
+            syncDeveloperLocationKeepAlive()
         }
         .onChange(of: route.speedKilometersPerHour) { _ in
             syncRouteActivity()
@@ -461,6 +462,10 @@ struct MapHomeView: View {
                 spotActionFailed = false
             }
             syncRouteActivity()
+            syncDeveloperLocationKeepAlive()
+        }
+        .onChange(of: routeLocation.isSimulating) { _ in
+            syncDeveloperLocationKeepAlive()
         }
         .onAppear {
             displayedMapCoordinateSystem = CoordinateConverter.currentMapCoordinateSystem
@@ -476,6 +481,7 @@ struct MapHomeView: View {
                 refreshThirdPartyState()
             }
             syncDeveloperTunnelMonitor()
+            syncDeveloperLocationKeepAlive()
         }
         .onDisappear {
             routeLocation.stopTunnelMonitor()
@@ -498,9 +504,9 @@ struct MapHomeView: View {
             guard phase == .active else {
                 if route.phase == .playing {
                     BackgroundKeepAlive.shared.retain(.routePlayback)
-                } else if runtimeMode.mode == .developerTunnel, !UIPreview.isEnabled() {
-                    routeLocation.abandonStaleSession()
                 }
+                // 切走时留着模拟连接。丢掉后回来重连，会和设备上还没回收的旧会话抢坐标。
+                syncDeveloperLocationKeepAlive()
                 return
             }
             routeLocation.refresh()
@@ -582,6 +588,7 @@ struct MapHomeView: View {
                 settleRouteSimulation(after: route.cancelWaiting(), from: .preparing)
             }
             syncDeveloperTunnelMonitor()
+            syncDeveloperLocationKeepAlive()
         }
         .sheet(isPresented: $showEnableTip) { enableTipSheet }
         .sheet(isPresented: $showDisableTip) { disableTipSheet }

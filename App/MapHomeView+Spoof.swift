@@ -3,6 +3,21 @@ import MapKit
 import UIKit
 import CoreLocation
 
+/// 开发者隧道的定位模拟必须留着进程，连接一断，系统就会回到真实坐标，再重连就变成两点来回跳。
+enum DeveloperLocationKeepAlive {
+    static func shouldHold(
+        preview: Bool,
+        mode: ProxyRuntimeMode,
+        isSimulating: Bool,
+        spoofState: SpoofState,
+        routePhase: RoutePhase
+    ) -> Bool {
+        if preview || mode != .developerTunnel { return false }
+        if isSimulating || spoofState != .idle { return true }
+        return routePhase == .playing
+    }
+}
+
 extension MapHomeView {
     var needsSwitchButton: Bool {
         SpoofSelectionSwitch.needsSwitch(
@@ -125,18 +140,34 @@ extension MapHomeView {
         guard runtimeMode.mode == .developerTunnel else { return }
         guard routeLocation.status.tunnelConnected else { return }
         if route.phase == .playing { return }
+        // 正在写入新坐标时不要用旧坐标再推一次，否则两条写入会交替生效。
+        if spoofState == .verifying { return }
         guard let coordinate = developerTunnelRecoveryCoordinate() else { return }
         if let last = lastDeveloperTunnelRecoveryAt, Date().timeIntervalSince(last) < 2 {
             return
         }
         lastDeveloperTunnelRecoveryAt = Date()
         Task { @MainActor in
-            if let failure = await routeLocation.set(
+            if let failure = await routeLocation.reassertIfNeeded(
                 latitude: coordinate.latitude,
                 longitude: coordinate.longitude
             ), failure != .superseded {
                 developerLocationError = failure.message
             }
+        }
+    }
+
+    func syncDeveloperLocationKeepAlive() {
+        if DeveloperLocationKeepAlive.shouldHold(
+            preview: UIPreview.isEnabled(),
+            mode: runtimeMode.mode,
+            isSimulating: routeLocation.isSimulating,
+            spoofState: spoofState,
+            routePhase: route.phase
+        ) {
+            BackgroundKeepAlive.shared.retain(.developerLocation)
+        } else {
+            BackgroundKeepAlive.shared.release(.developerLocation)
         }
     }
 

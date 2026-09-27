@@ -87,7 +87,7 @@ final class RouteLocationTests: XCTestCase {
     }
 
     @MainActor
-    func testDroppedTunnelAbandonsTheStaleSession() async throws {
+    func testTunnelFlapKeepsTheLiveSimulation() async throws {
         let client = FakeIdeviceClient(results: [nil])
         var connected = true
         let store = try readyStore(client: client, isTunnelConnected: { connected })
@@ -98,28 +98,33 @@ final class RouteLocationTests: XCTestCase {
 
         connected = false
         store.refresh()
+        connected = true
+        store.refresh()
 
-        XCTAssertEqual(client.abandons, 1)
-        XCTAssertFalse(client.retainsSimulation)
-        XCTAssertTrue(store.activity.simulationMayStillBeActive)
-        XCTAssertEqual(store.readiness, .tunnelDisconnected)
+        XCTAssertEqual(client.abandons, 0)
+        XCTAssertTrue(client.retainsSimulation)
+        XCTAssertTrue(store.isSimulating)
+        XCTAssertFalse(store.activity.simulationMayStillBeActive)
+        XCTAssertEqual(store.readiness, .ready)
+        let reasserted = await store.reassertIfNeeded(latitude: 22.6, longitude: 114.0)
+        XCTAssertNil(reasserted)
+        XCTAssertEqual(client.pushes.count, 1)
     }
 
     @MainActor
-    func testInactiveAppAbandonsSessionSoTheDeviceCanReclaimTheTunnel() async throws {
-        let client = FakeIdeviceClient(results: [nil])
+    func testReassertReconnectsOnlyAfterTheHandleIsGone() async throws {
+        let client = FakeIdeviceClient(results: [.rejected, nil])
         let store = try readyStore(client: client)
 
-        let setFailure = await store.set(latitude: 22.5, longitude: 113.9)
-        XCTAssertNil(setFailure)
-        XCTAssertTrue(client.retainsSimulation)
-
-        store.abandonStaleSession()
-
-        XCTAssertEqual(client.abandons, 1)
+        let failure = await store.set(latitude: 22.5, longitude: 113.9)
+        XCTAssertEqual(failure, .rejected)
         XCTAssertFalse(client.retainsSimulation)
+
+        let reasserted = await store.reassertIfNeeded(latitude: 22.5, longitude: 113.9)
+        XCTAssertNil(reasserted)
+        XCTAssertEqual(client.pushes.count, 2)
+        XCTAssertTrue(client.retainsSimulation)
         XCTAssertTrue(store.isSimulating)
-        XCTAssertTrue(store.activity.simulationMayStillBeActive)
     }
 
     @MainActor
@@ -261,6 +266,51 @@ final class RouteLocationTests: XCTestCase {
 
         XCTAssertEqual(failure, .notReady(.needsInstall))
         XCTAssertTrue(client.pushes.isEmpty)
+    }
+
+    func testDeveloperLocationKeepAliveStaysUpWhileTheSimulationIsHeld() {
+        XCTAssertTrue(DeveloperLocationKeepAlive.shouldHold(
+            preview: false,
+            mode: .developerTunnel,
+            isSimulating: true,
+            spoofState: .idle,
+            routePhase: .inactive
+        ))
+        XCTAssertTrue(DeveloperLocationKeepAlive.shouldHold(
+            preview: false,
+            mode: .developerTunnel,
+            isSimulating: false,
+            spoofState: .active,
+            routePhase: .inactive
+        ))
+        XCTAssertTrue(DeveloperLocationKeepAlive.shouldHold(
+            preview: false,
+            mode: .developerTunnel,
+            isSimulating: false,
+            spoofState: .idle,
+            routePhase: .playing
+        ))
+        XCTAssertFalse(DeveloperLocationKeepAlive.shouldHold(
+            preview: false,
+            mode: .developerTunnel,
+            isSimulating: false,
+            spoofState: .idle,
+            routePhase: .paused
+        ))
+        XCTAssertFalse(DeveloperLocationKeepAlive.shouldHold(
+            preview: true,
+            mode: .developerTunnel,
+            isSimulating: true,
+            spoofState: .active,
+            routePhase: .playing
+        ))
+        XCTAssertFalse(DeveloperLocationKeepAlive.shouldHold(
+            preview: false,
+            mode: .localWiFi,
+            isSimulating: true,
+            spoofState: .active,
+            routePhase: .playing
+        ))
     }
 
     func testStopAndFinishKeepSimulationInsteadOfClearing() {

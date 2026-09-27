@@ -79,8 +79,10 @@ grep -q 'recoverDeveloperTunnelIfNeeded' "$MAP" || fail "returning to the foregr
 grep -q 'tunnelRetryDelaysNanoseconds' "$ROOT/App/RouteLocationSetupStore.swift" \
   || fail "developer tunnel push must retry with backoff after LocalDevVPN drops"
 grep -q 'func abandonSession' "$ROOT/App/IdeviceLocationClient.swift" \
-  || fail "a dropped tunnel must abandon the stale idevice session without clearing a dead socket"
-grep -q 'abandonStaleSession' "$MAP" || fail "leaving the app must drop the stale tunnel session so overnight recovery is not required"
+  || fail "a dead socket must abandon the stale idevice session without clearing it"
+grep -q 'reassertIfNeeded' "$MAP" || fail "foreground recovery must not open a second simulation while one is held"
+grep -q 'syncDeveloperLocationKeepAlive' "$MAP" || fail "an active developer-tunnel location must keep the process alive"
+! grep -q 'abandonStaleSession' "$MAP" || fail "leaving the app must keep the live location simulation"
 
 grep -q 'case .developerTunnel:' "$DIAGNOSTICS" || fail "diagnostics must run a developer tunnel check"
 grep -q '开发者隧道环境检测' "$DIAGNOSTICS" || fail "diagnostics must log the developer tunnel check"

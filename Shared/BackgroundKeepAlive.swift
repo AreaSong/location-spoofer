@@ -5,6 +5,7 @@ import UIKit
 enum BackgroundKeepAliveOwner: Hashable {
     case proxy
     case routePlayback
+    case developerLocation
     case thirdPartyImport
 }
 

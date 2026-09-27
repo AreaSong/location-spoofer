@@ -51,15 +51,13 @@ final class RouteLocationSetupStore: ObservableObject, DeveloperLocationPushing 
     }
 
     func refresh() {
-        let previousConnected = status.tunnelConnected
+        // 网卡上下线只更新就绪状态。模拟进行中如果在这里丢掉连接，
+        // 隧道一恢复又会新开一条，系统定位就会在两个坐标之间来回跳。
         status = RouteLocationStatus(
             vpnInstalled: environment.isVPNInstalled(),
             tunnelConnected: environment.isTunnelConnected(),
             hasPairing: pairingStore.hasPairingFile
         )
-        if previousConnected != status.tunnelConnected {
-            handleTunnelConnectionChange(from: previousConnected, to: status.tunnelConnected)
-        }
     }
 
     func startTunnelMonitor() {
@@ -77,12 +75,6 @@ final class RouteLocationSetupStore: ObservableObject, DeveloperLocationPushing 
     func stopTunnelMonitor() {
         monitorTask?.cancel()
         monitorTask = nil
-    }
-
-    /// 锁屏、切走 App 时丢掉本地句柄，让设备侧把半开隧道回收掉。
-    /// 否则会出现：重启 LocalDevVPN 没用，什么都不做过一晚上却又好了。
-    func abandonStaleSession() {
-        dropLocalSession(reason: "app inactive")
     }
 
     /// 丢掉卡住的隧道句柄。隧道仍可用时会先尝试恢复真实定位。不删除配对文件。
@@ -161,6 +153,12 @@ final class RouteLocationSetupStore: ObservableObject, DeveloperLocationPushing 
         return applySetResult(outcome, mutation: mutation)
     }
 
+    /// 连接还在时不要再推。恢复拿到的是上次坐标，和正在写入的点叠在一起就会来回跳。
+    func reassertIfNeeded(latitude: Double, longitude: Double) async -> RouteLocationPushFailure? {
+        guard !client.retainsSimulation else { return nil }
+        return await set(latitude: latitude, longitude: longitude)
+    }
+
     func clear() async -> RouteLocationPushFailure? {
         isClearing = true
         defer { isClearing = false }
@@ -183,10 +181,6 @@ final class RouteLocationSetupStore: ObservableObject, DeveloperLocationPushing 
             return client.clear(mutation: mutation)
         }
         return applyClearResult(outcome, mutation: mutation)
-    }
-
-    private func handleTunnelConnectionChange(from previous: Bool, to connected: Bool) {
-        dropLocalSession(reason: "tunnel \(previous ? "up" : "down") -> \(connected ? "up" : "down")")
     }
 
     private func dropLocalSession(reason: String) {
