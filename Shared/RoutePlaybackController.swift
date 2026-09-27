@@ -88,7 +88,7 @@ final class RoutePlaybackController: ObservableObject {
     }
 
     var canPlay: Bool {
-        (path?.totalMeters ?? distanceMeters) >= RoutePlayback.minimumDistanceMeters
+        distanceMeters >= RoutePlayback.minimumDistanceMeters
     }
 
     var canReverse: Bool {
@@ -113,8 +113,7 @@ final class RoutePlaybackController: ObservableObject {
     }
 
     var distanceMeters: Double {
-        if let path, path.totalMeters > 0 { return path.totalMeters }
-        return RoutePlayback.distanceMeters(along: anchors)
+        max(path?.totalMeters ?? 0, RoutePlayback.distanceMeters(along: anchors))
     }
 
     var remainingMeters: Double {

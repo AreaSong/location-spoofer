@@ -136,21 +136,20 @@ struct RoutePlaybackPanel: View {
     private var actionRow: some View {
         if route.phase == .preparing {
             VStack(alignment: .leading, spacing: 6) {
-                Text(preparingSummary)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
+                if let preparingSummary {
+                    Text(preparingSummary)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
                 pinRow
             }
         }
     }
 
-    private var preparingSummary: String {
+    private var preparingSummary: String? {
         if route.isRouting { return "正在规划路线" }
-        if route.start == nil { return "先设起点" }
-        if route.end == nil {
-            return route.vias.isEmpty ? "再设终点" : "已加 \(route.vias.count) 个途经，再设终点"
-        }
+        if route.start == nil || route.end == nil { return nil }
         if !route.canPlay { return "起点和终点太近" }
         return distanceLine
     }
@@ -185,7 +184,7 @@ struct RoutePlaybackPanel: View {
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
             }
-            .frame(minHeight: 32)
+            .frame(minHeight: 44)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -207,14 +206,16 @@ struct RoutePlaybackPanel: View {
             pinButton(route.end == nil ? "终点" : "终点已设", isSet: route.end != nil) {
                 route.setEnd(currentPair)
             }
-            pinButton(route.vias.isEmpty ? "途经" : "途经 \(route.vias.count)", isSet: !route.vias.isEmpty, enabled: route.canEditVias) {
-                route.addVia(currentPair)
+            if route.canEditVias {
+                pinButton(route.vias.isEmpty ? "途经" : "途经 \(route.vias.count)", isSet: !route.vias.isEmpty) {
+                    route.addVia(currentPair)
+                }
             }
             if !route.vias.isEmpty {
                 pinButton("撤销", isSet: false) { route.removeLastVia() }
             }
         }
-        .padding(2)
+        .padding(3)
         .background(Color.secondary.opacity(0.12), in: RoundedRectangle(cornerRadius: AppRadius.control, style: .continuous))
     }
 
@@ -231,16 +232,17 @@ struct RoutePlaybackPanel: View {
     ) -> some View {
         Button(action: action) {
             Text(title)
-                .font(.subheadline.weight(.semibold))
+                .font(.caption.weight(.semibold))
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 5)
+                .frame(minHeight: 32)
                 .foregroundStyle(isSet ? Color.accentColor : Color.primary)
                 .background(
                     isSet ? Color.accentColor.opacity(0.16) : Color.clear,
                     in: RoundedRectangle(cornerRadius: AppRadius.inset, style: .continuous)
                 )
+                .contentShape(Rectangle().inset(by: -6))
         }
         .buttonStyle(.plain)
         .disabled(!enabled)
@@ -251,12 +253,14 @@ struct RoutePlaybackPanel: View {
     private var utilityRow: some View {
         HStack(spacing: 8) {
             if route.phase != .playing {
-                Button("倒着走") { route.reverseDirection() }
-                    .buttonStyle(CapsuleChipStyle())
-                    .disabled(!route.canReverse)
-                Button("保存") { onSave() }
-                    .buttonStyle(CapsuleChipStyle())
-                    .disabled(!route.canPlay || route.isRouting || route.waitingForActivation)
+                if route.canReverse {
+                    Button("倒着走") { route.reverseDirection() }
+                        .buttonStyle(CapsuleChipStyle())
+                }
+                if route.canPlay && !route.isRouting && !route.waitingForActivation {
+                    Button("保存") { onSave() }
+                        .buttonStyle(CapsuleChipStyle())
+                }
                 Button("已存路线") { onOpenSaved() }
                     .buttonStyle(CapsuleChipStyle())
             }

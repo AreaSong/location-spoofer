@@ -399,9 +399,12 @@ extension MapHomeView {
         case .paused: return "继续"
         case .preparing where route.interruption == .activationFailed && route.end != nil:
             return "重试"
-        case .preparing where route.start == nil: return "设为起点"
-        case .preparing: return "设为终点"
-        default: return "开始走"
+        case .preparing where route.start == nil:
+            return "设为起点"
+        case .preparing where route.end == nil:
+            return "设为终点"
+        default:
+            return "出发"
         }
     }
 
@@ -415,10 +418,9 @@ extension MapHomeView {
 
     var routePeekDisabled: Bool {
         if route.phase == .playing { return false }
-        if route.phase == .preparing, route.start == nil || route.end == nil || !route.canPlay {
-            return route.isRouting
-        }
-        return !route.canPlay || route.waitingForActivation || route.isRouting
+        if route.waitingForActivation || route.isRouting { return true }
+        if route.phase == .preparing { return false }
+        return !route.canPlay
     }
 
     func handlePeekTap() {
@@ -439,7 +441,7 @@ extension MapHomeView {
             route.pause()
         case .preparing where route.start == nil:
             route.setStart(currentSelectionPair)
-        case .preparing where route.end == nil || !route.canPlay:
+        case .preparing where route.end == nil:
             route.setEnd(currentSelectionPair)
         default:
             playRoute()
@@ -539,8 +541,9 @@ extension MapHomeView {
             route.resume()
             return
         }
-        guard route.start != nil, route.canPlay else { return }
+        guard route.start != nil else { return }
         route.requestPlay()
+        guard route.waitingForActivation else { return }
         route.noteActivated()
     }
 
@@ -552,7 +555,11 @@ extension MapHomeView {
             route.resume()
             return
         }
-        guard let start = route.start, route.canPlay else { return }
+        guard route.start != nil else { return }
+        guard route.canPlay else {
+            route.requestPlay()
+            return
+        }
         guard beginRouteLocation() else { return }
         route.requestPlay()
         route.beginActivation()
@@ -567,8 +574,9 @@ extension MapHomeView {
             route.resume()
             return
         }
-        guard let start = route.start, route.canPlay else { return }
+        guard let start = route.start else { return }
         route.requestPlay()
+        guard route.waitingForActivation else { return }
         if spoofState == .active {
             route.beginActivation()
             return
@@ -718,8 +726,9 @@ struct HomePeekCaption: View {
             return "已走完"
         case .preparing:
             if route.isRouting { return "正在规划路线" }
+            if route.start == nil || route.end == nil { return "先设起点和终点" }
             if route.canPlay { return RoutePlayback.formattedDistance(route.distanceMeters) }
-            return "先设起点和终点"
+            return "起点和终点太近"
         case .inactive:
             return nil
         }

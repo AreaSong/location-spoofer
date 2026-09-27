@@ -189,7 +189,14 @@ grep -q 'Label("排序"' "$ROOT/App/FavoriteListView.swift" || fail "favorite li
 grep -q 'displayedFavorites' "$MAP_HOME" || fail "home favorite chips must share the sorted favorite order"
 grep -q 'displayedFavorites' "$ROOT/App/FavoriteListView.swift" || fail "favorite list must share the sorted favorite order"
 grep -q 'setSortOrder' "$ROOT/Shared/FavoriteLocationStore.swift" || fail "favorite sort preference must be persistable"
-grep -q 'switchChip(title: "走路"' "$MAP_HOME" || fail "map home must expose route walking from the bottom switcher"
+grep -q 'return "出发"' "$MAP_HOME" || fail "after start and end are set, one more tap must depart without a 开始 label"
+! grep -q '开始走' "$MAP_HOME" || fail "walking launch must not use 开始走"
+! grep -q 'route.end == nil || !route.canPlay' "$MAP_HOME" \
+  || fail "a set end pin must not keep the peek button on 设为终点"
+grep -q 'if route.phase == .preparing { return false }' "$MAP_HOME" \
+  || fail "walking peek must stay tappable after start and end pins are set"
+grep -q 'if route.start == nil || route.end == nil { return "先设起点和终点" }' "$MAP_HOME" \
+  || fail "collapsed walking caption must not say 先设起点和终点 after both pins are set"
 grep -q 'Button("已存路线")' "$ROOT/App/RoutePlaybackPanel.swift" || fail "route panel must expose saved routes"
 grep -q 'struct RunningRouteSpotNotice' "$MAP_HOME" || fail "spot card must use a distinct running-route notice while playback continues"
 grep -q 'showsSpotHelp: spoofState != .idle && !routeKeepsRunningWhileSpotShown' "$MAP_HOME" \
@@ -211,8 +218,15 @@ grep -q 'route.load(saved)' "$MAP_HOME" || fail "saved routes must restore into 
 ! grep -q 'routeDeparturePair' "$MAP_HOME" || fail "route start must not be derived from GPS or the active spoofed point"
 grep -q '直接出现在起点' "$ROOT/Shared/RoutePlaybackController.swift" \
   || fail "playback must jump to the chosen start instead of walking from the current location"
-grep -q 'Button("起点")' "$ROOT/App/RoutePlaybackPanel.swift" || fail "route panel must let the user set a start pin"
-grep -q 'Button("终点")' "$ROOT/App/RoutePlaybackPanel.swift" || fail "route panel must let the user set an end pin"
+grep -q 'route.start == nil ? "起点" : "起点已设"' "$ROOT/App/RoutePlaybackPanel.swift" \
+  || fail "route panel must let the user set a start pin"
+grep -q 'route.end == nil ? "终点" : "终点已设"' "$ROOT/App/RoutePlaybackPanel.swift" \
+  || fail "route panel must let the user set an end pin"
+if grep -A18 'private func pinButton' "$ROOT/App/RoutePlaybackPanel.swift" | grep -q 'minHeight: 44'; then
+  fail "start and end pin chips must not use a full 44pt visual height"
+fi
+grep -A18 'private func pinButton' "$ROOT/App/RoutePlaybackPanel.swift" | grep -q 'minHeight: 32' \
+  || fail "start and end pin chips must match the compact capsule visual height"
 grep -q 'MKDirections' "$ROOT/Shared/RouteDirections.swift" || fail "route playback must request along-road directions"
 grep -q 'markerCoordinate' "$MAP_BRIDGE" || fail "the map must show the moving virtual location"
 grep -q '正在从起点沿路走到终点' "$ROOT/Shared/RoutePlaybackController+Status.swift" \
@@ -228,8 +242,8 @@ grep -q 'speedKilometersPerHour' "$ROOT/Shared/RoutePlaybackController.swift" \
   || fail "route playback must expose a custom speed"
 grep -q 'offsetMeters' "$ROOT/App/RoutePlaybackPanel.swift" \
   || fail "route panel must expose an offset slider"
-grep -q 'figure.walk' "$ROOT/App/RoutePlaybackPanel.swift" \
-  || fail "route panel must use an iOS 15 SF Symbol"
+grep -q 'figure.walk' "$MAP_HOME" \
+  || fail "walking UI must use an iOS 15 SF Symbol"
 ! grep -q 'curvepath' "$MAP_HOME" "$ROOT/App/RoutePlaybackPanel.swift" \
   || fail "route UI must not use iOS 16-only curvepath symbols"
 test -f "$ROOT/Shared/RoutePlayback.swift" || fail "route interpolation helper is missing"
@@ -251,7 +265,8 @@ grep -q 'playbackOrigin = Date()' "$ROOT/Shared/RoutePlaybackController.swift" \
   || fail "reversing a route leg must reset the playback clock"
 grep -q 'headingForward' "$ROOT/Shared/RoutePlaybackController.swift" \
   || fail "round-trip and loop playback must track heading"
-grep -q 'Button("途经")' "$ROOT/App/RoutePlaybackPanel.swift" || fail "route panel must let the user add via points"
+grep -q 'vias.isEmpty ? "途经"' "$ROOT/App/RoutePlaybackPanel.swift" \
+  || fail "route panel must let the user add via points"
 grep -q 'Button("倒着走")' "$ROOT/App/RoutePlaybackPanel.swift" || fail "route panel must let the user reverse a saved path"
 grep -q 'chevron.down' "$ROOT/App/RoutePlaybackPanel.swift" || fail "speed and offset must stay collapsed by default"
 grep -q 'formattedRemaining' "$ROOT/Shared/RoutePlayback.swift" || fail "playback must format remaining distance and time"
@@ -266,7 +281,7 @@ fi
 grep -q 'playbackClock' "$MAP_BRIDGE" || fail "map progress must follow the playback clock"
 grep -q 'SpoofSelectionSwitch.needsSwitch' "$MAP_HOME" \
   || fail "switch button must compare the last written coordinate"
-grep -q 'writtenLatitude = wgs.latitude' "$ROOT/App/SpoofSession.swift" \
+grep -q 'writtenLatitude: wgs.latitude' "$ROOT/App/SpoofSession.swift" \
   || fail "route writes must record the coordinate that was actually applied"
 test -f "$ROOT/Shared/RoutePlaybackClock.swift" \
   || fail "playback progress must publish separately from the route structure"
