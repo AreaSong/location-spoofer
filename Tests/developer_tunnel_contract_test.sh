@@ -26,7 +26,7 @@ for extra in "$ROOT"/App/SettingsView+*.swift; do
   [ -f "$extra" ] && cat "$extra" >> "$SETTINGS"
 done
 cat "$ROOT/App/MapHomeView.swift" > "$MAP"
-for extra in "$ROOT"/App/MapHomeView+*.swift "$ROOT"/App/MapHomeBottomCard.swift "$ROOT"/App/MapHomeCoordinateLine.swift; do
+for extra in "$ROOT"/App/MapHomeView+*.swift "$ROOT"/App/MapHomeBottomCard.swift "$ROOT"/App/MapHomeCoordinateLine.swift "$ROOT"/App/MapHomeSpotSections.swift; do
   [ -f "$extra" ] && cat "$extra" >> "$MAP"
 done
 

@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// 定点展开时的一行坐标：切换 GCJ-02 / WGS-84，点数字复制。
+/// 切换 GCJ-02 / WGS-84，点数字复制。
 struct MapHomeCoordinateLine: View {
     let pair: CoordinatePair
     let mapSystem: CoordinateConverter.MapCoordinateSystem
@@ -108,5 +108,55 @@ struct MapHomeCoordinateLine: View {
         case .gcj02: return "GCJ-02(国内)"
         case .wgs84: return "WGS-84(国际)"
         }
+    }
+
+    static func compactLine(pair: CoordinatePair, mapSystem: CoordinateConverter.MapCoordinateSystem) -> String {
+        pair.displayLine(for: mapSystem)
+    }
+}
+
+/// 搜索栏下方的坐标条：默认收起一行，展开后可切换坐标系并复制。
+struct MapHomeTopInfoBar: View {
+    let pair: CoordinatePair
+    let mapSystem: CoordinateConverter.MapCoordinateSystem
+    @State private var isExpanded = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Button(action: { isExpanded.toggle() }) {
+                HStack(spacing: 8) {
+                    Text(mapSystem.rawValue)
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                    Text(MapHomeCoordinateLine.compactLine(pair: pair, mapSystem: mapSystem))
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                    Spacer(minLength: 4)
+                    Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.horizontal, 14)
+                .frame(minHeight: 44)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("当前坐标 \(MapHomeCoordinateLine.compactLine(pair: pair, mapSystem: mapSystem))")
+            .accessibilityHint(isExpanded ? "收起坐标详情" : "展开坐标详情")
+
+            if isExpanded {
+                MapHomeCoordinateLine(pair: pair, mapSystem: mapSystem)
+                    .padding(.horizontal, 10)
+                    .padding(.bottom, 8)
+            }
+        }
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .strokeBorder(.white.opacity(0.18), lineWidth: 0.5)
+        )
+        .shadow(color: .black.opacity(0.08), radius: 12, y: 4)
     }
 }

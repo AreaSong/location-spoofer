@@ -105,20 +105,26 @@ struct PhysicalWalkSpotControl: View {
     let spoofActive: Bool
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 6) {
             Toggle("真实走动", isOn: enabledBinding)
-            Text(detailText)
-                .font(.caption)
-                .foregroundStyle(store.lastFailureMessage.isEmpty ? Color.secondary : Color.red)
-                .fixedSize(horizontal: false, vertical: true)
-            headingControls
+                .font(.subheadline.weight(.semibold))
+            if !store.lastFailureMessage.isEmpty {
+                Text(store.lastFailureMessage)
+                    .font(.caption)
+                    .foregroundStyle(.red)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else if store.isEnabled && !spoofActive {
+                Text("先开启虚拟定位")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            if store.isEnabled {
+                headingControls
+            }
         }
-        .padding(12)
+        .padding(.horizontal, 2)
+        .padding(.top, 2)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            Color.secondary.opacity(0.08),
-            in: RoundedRectangle(cornerRadius: AppRadius.inset, style: .continuous)
-        )
     }
 
     private var enabledBinding: Binding<Bool> {
@@ -128,22 +134,17 @@ struct PhysicalWalkSpotControl: View {
         )
     }
 
-    private var detailText: String {
-        PhysicalWalkStatusCopy.detail(
-            isEnabled: store.isEnabled,
-            spoofActive: spoofActive,
-            status: controller.status,
-            movedMeters: controller.movedMeters,
-            failureMessage: store.lastFailureMessage,
-            headingDegrees: controller.activeHeadingDegrees,
-            headingLocked: controller.headingMode.isLocked
-        )
-    }
-
     private var headingControls: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 8) {
-                Button("跟随罗盘") { controller.followCompass() }
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                ForEach(PhysicalWalkHeadingLock.cardinals, id: \.title) { item in
+                    Button(item.title) { controller.lockHeading(degrees: item.degrees) }
+                        .buttonStyle(CapsuleChipStyle(tint: isSelectedCardinal(item.degrees) ? .accentColor : nil))
+                        .accessibilityLabel("朝\(item.title)")
+                }
+            }
+            HStack(spacing: 6) {
+                Button("罗盘") { controller.followCompass() }
                     .buttonStyle(CapsuleChipStyle(tint: controller.headingMode == .followCompass ? .accentColor : nil))
                     .accessibilityLabel("跟随罗盘朝向")
                 Button {
@@ -161,16 +162,7 @@ struct PhysicalWalkSpotControl: View {
                 .buttonStyle(CapsuleChipStyle())
                 .accessibilityLabel("箭头向右偏 15 度")
             }
-            HStack(spacing: 8) {
-                ForEach(PhysicalWalkHeadingLock.cardinals, id: \.title) { item in
-                    Button(item.title) { controller.lockHeading(degrees: item.degrees) }
-                        .buttonStyle(CapsuleChipStyle(tint: isSelectedCardinal(item.degrees) ? .accentColor : nil))
-                        .accessibilityLabel("朝\(item.title)")
-                }
-            }
         }
-        .disabled(!store.isEnabled)
-        .opacity(store.isEnabled ? 1 : 0.45)
     }
 
     private func isSelectedCardinal(_ degrees: Double) -> Bool {

@@ -93,4 +93,13 @@ final class CoordinateConverterTests: XCTestCase {
         )
         XCTAssertEqual(unchanged, .unchanged(.gcj02))
     }
+
+    func testDisplayLineFormatsSixDecimals() {
+        let pair = CoordinatePair(
+            wgs84: .init(latitude: 25.276123, longitude: 110.371456),
+            gcj02: .init(latitude: 25.279381, longitude: 110.374361)
+        )
+        XCTAssertEqual(pair.displayLine(for: .gcj02), "25.279381, 110.374361")
+        XCTAssertEqual(pair.displayLine(for: .wgs84), "25.276123, 110.371456")
+    }
 }

@@ -28,7 +28,7 @@ SETTINGS_VIEW="$(mktemp)"
 FIRST_SETUP="$(mktemp)"
 trap 'rm -f "$MAP_HOME" "$SETTINGS_VIEW" "$FIRST_SETUP"' EXIT
 cat "$MAP_HOME_MAIN" > "$MAP_HOME"
-for extra in "$ROOT"/App/MapHomeView+*.swift "$ROOT"/App/MapHomeBottomCard.swift "$ROOT"/App/MapHomeCoordinateLine.swift; do
+for extra in "$ROOT"/App/MapHomeView+*.swift "$ROOT"/App/MapHomeBottomCard.swift "$ROOT"/App/MapHomeCoordinateLine.swift "$ROOT"/App/MapHomeSpotSections.swift; do
   [ -f "$extra" ] && cat "$extra" >> "$MAP_HOME"
 done
 cat "$ROOT/App/SettingsView.swift" > "$SETTINGS_VIEW"
@@ -107,6 +107,10 @@ grep -q '地图坐标类型已变化' "$MAP_HOME" || fail "map-type changes must
 grep -q '图钉已按新类型重设' "$MAP_HOME" || fail "map-type change log must report pin reprojection"
 grep -q 'struct MapHomeCoordinateLine' "$ROOT/App/MapHomeCoordinateLine.swift" \
   || fail "current selection must share one switchable coordinate row"
+grep -q 'struct MapHomeTopInfoBar' "$ROOT/App/MapHomeCoordinateLine.swift" \
+  || fail "map home must keep a collapsible coordinate strip under search"
+grep -q 'quickActions' "$ROOT/App/MapHomeBottomCard.swift" \
+  || fail "collapsed bottom card must keep walk shortcuts outside the expanded lists"
 grep -q 'GCJ-02(国内)' "$ROOT/App/MapHomeCoordinateLine.swift" || fail "current selection panel must label the domestic coordinate as GCJ-02"
 grep -q 'WGS-84(国际)' "$ROOT/App/MapHomeCoordinateLine.swift" || fail "current selection panel must label the international coordinate as WGS-84"
 grep -q 'fixedSize(horizontal: true, vertical: false)' "$MAP_HOME" || fail "coordinate labels must keep their natural single-line width"

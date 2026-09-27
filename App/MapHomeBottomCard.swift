@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// 底部卡片。默认只留地名、切换和主按钮；坐标、收藏和路线设置点开后出现在同一张卡里。
-struct MapHomeBottomCard<CoordinateRows: View, SpotContent: View, RoutePanel: View, PeekCaption: View>: View {
+/// 底部卡片。收起时只留地名、模式切换、主按钮和走动快捷控制；最近与收藏点开后出现。
+struct MapHomeBottomCard<QuickActions: View, SpotContent: View, RoutePanel: View, PeekCaption: View>: View {
     let displayName: String
     let spoofState: SpoofState
     let isFavoriteSelected: Bool
@@ -24,7 +24,7 @@ struct MapHomeBottomCard<CoordinateRows: View, SpotContent: View, RoutePanel: Vi
     let peekOpensDetail: Bool
     let showsSpotHelp: Bool
     let expandedMaxHeight: CGFloat
-    let coordinateRows: CoordinateRows
+    let quickActions: QuickActions
     let spotContent: SpotContent
     let routePanel: RoutePanel
     let peekCaption: PeekCaption
@@ -64,7 +64,7 @@ struct MapHomeBottomCard<CoordinateRows: View, SpotContent: View, RoutePanel: Vi
         showsSpotHelp: Bool = true,
         expandedMaxHeight: CGFloat,
         playbackClock: RoutePlaybackClock,
-        @ViewBuilder coordinateRows: () -> CoordinateRows,
+        @ViewBuilder quickActions: () -> QuickActions,
         @ViewBuilder spotContent: () -> SpotContent,
         @ViewBuilder routePanel: () -> RoutePanel,
         @ViewBuilder peekCaption: () -> PeekCaption,
@@ -99,7 +99,7 @@ struct MapHomeBottomCard<CoordinateRows: View, SpotContent: View, RoutePanel: Vi
         self.peekOpensDetail = peekOpensDetail
         self.showsSpotHelp = showsSpotHelp
         self.expandedMaxHeight = expandedMaxHeight
-        self.coordinateRows = coordinateRows()
+        self.quickActions = quickActions()
         self.spotContent = spotContent()
         self.routePanel = routePanel()
         self.peekCaption = peekCaption()
@@ -118,6 +118,9 @@ struct MapHomeBottomCard<CoordinateRows: View, SpotContent: View, RoutePanel: Vi
         VStack(alignment: .leading, spacing: 6) {
             peekHeader
             peekActionRow
+            if !showsRoute {
+                quickActions
+            }
             if isExpanded {
                 expandedDetail
             }
@@ -336,7 +339,6 @@ struct MapHomeBottomCard<CoordinateRows: View, SpotContent: View, RoutePanel: Vi
 
     private var expandedSpot: some View {
         VStack(alignment: .leading, spacing: 8) {
-            coordinateRows
             spotContent
             if needsSwitchButton {
                 spotActions

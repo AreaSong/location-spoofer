@@ -1,40 +1,29 @@
 import SwiftUI
 
-/// 定点卡展开、走路仍占着定位时的状态条。不用「无法取消？」芯片，避免和帮助入口长得一样。
+/// 定点卡上、走路仍占着定位时的返回入口。一行按钮，避免挡住常用控制。
 struct RunningRouteSpotNotice: View {
     let isPaused: Bool
     let isWaiting: Bool
     let onReturnToRoute: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        Button(action: onReturnToRoute) {
             Label(title, systemImage: "figure.walk")
                 .font(.subheadline.weight(.semibold))
-            Text(detail)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-            Button(action: onReturnToRoute) {
-                Text("回到走路")
-                    .frame(maxWidth: .infinity)
-                    .frame(minHeight: 28)
-                    .padding(.horizontal, 12)
-            }
-            .buttonStyle(PrimaryActionStyle(tint: .orange, compact: true))
-            .accessibilityHint("打开走路面板")
+                .lineLimit(1)
+                .frame(maxWidth: .infinity)
+                .frame(minHeight: 28)
+                .padding(.horizontal, 12)
         }
-        .padding(12)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            Color.orange.opacity(0.12),
-            in: RoundedRectangle(cornerRadius: AppRadius.inset, style: .continuous)
-        )
+        .buttonStyle(PrimaryActionStyle(tint: .orange, compact: true))
+        .accessibilityLabel("回到走路")
+        .accessibilityHint(detail)
     }
 
     private var title: String {
         if isWaiting { return "正在开启走路" }
         if isPaused { return "走路已暂停" }
-        return "走路还在进行"
+        return "回到走路"
     }
 
     private var detail: String {
@@ -44,7 +33,7 @@ struct RunningRouteSpotNotice: View {
     }
 }
 
-/// 定点卡片里的最近选点和收藏两行。
+/// 定点卡片展开区的最近选点和收藏两行。
 struct MapHomeSelectionChips<RecentChips: View, FavoriteChips: View, AllFavorites: View>: View {
     let hasRecents: Bool
     let favoritesEmpty: Bool

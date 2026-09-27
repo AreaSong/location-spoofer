@@ -58,8 +58,8 @@ collection services.
 - **Native map interaction**
   - Uses MapKit for the map and system blue dot;
   - Supports place search, pasted map links, typed latitude/longitude, map taps, center-point dragging, and zooming;
-  - Shows the current map coordinate system on the home screen, plus both domestic and international coordinates with
-    separate copy actions;
+  - A collapsible coordinate strip under the search bar; expand it to switch domestic and international coordinates
+    and copy each one separately;
   - Keeps the latest 10 discrete selections (tap, search, favorite, or realtime fix). Panning the map updates the current
     center only and does not write history;
   - Favorites support a searchable list, sort by time or name, and clipboard/file backup. Matching WGS-84 coordinates

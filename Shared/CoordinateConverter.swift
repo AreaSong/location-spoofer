@@ -38,6 +38,11 @@ struct CoordinatePair: Codable, Equatable {
         }
     }
 
+    func displayLine(for mapCoordinateSystem: CoordinateConverter.MapCoordinateSystem) -> String {
+        let coordinate = coordinate(for: mapCoordinateSystem)
+        return String(format: "%.6f, %.6f", coordinate.latitude, coordinate.longitude)
+    }
+
     func matchesWGS84(latitude: Double, longitude: Double, tolerance: Double = 0.0001) -> Bool {
         abs(wgs84.latitude - latitude) <= tolerance
             && abs(wgs84.longitude - longitude) <= tolerance

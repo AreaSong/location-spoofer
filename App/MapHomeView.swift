@@ -710,43 +710,46 @@ struct MapHomeView: View {
     }
 
     var topControls: some View {
-        HStack(spacing: 10) {
+        VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 10) {
-                Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
-                TextField("搜索地点、坐标或地图链接", text: $searchText)
-                    .textInputAutocapitalization(.never).autocorrectionDisabled().submitLabel(.search).onSubmit(doSearch)
-                if isSearching { ProgressView().controlSize(.small) }
-                else if !searchText.isEmpty {
-                    Button {
-                        searchRequestID &+= 1
-                        isSearching = false
-                        searchText = ""
-                        searchResults = []
-                        searchError = ""
-                    } label: {
-                        Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
-                    }.buttonStyle(.plain)
+                HStack(spacing: 10) {
+                    Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+                    TextField("搜索地点、坐标或地图链接", text: $searchText)
+                        .textInputAutocapitalization(.never).autocorrectionDisabled().submitLabel(.search).onSubmit(doSearch)
+                    if isSearching { ProgressView().controlSize(.small) }
+                    else if !searchText.isEmpty {
+                        Button {
+                            searchRequestID &+= 1
+                            isSearching = false
+                            searchText = ""
+                            searchResults = []
+                            searchError = ""
+                        } label: {
+                            Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
+                        }.buttonStyle(.plain)
+                    }
+                    Button(action: doSearch) { Image(systemName: "arrow.right.circle.fill").font(.title3) }
+                        .disabled(searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isSearching)
                 }
-                Button(action: doSearch) { Image(systemName: "arrow.right.circle.fill").font(.title3) }
-                    .disabled(searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isSearching)
+                .padding(.horizontal, 14).frame(height: 48)
+                .background(.regularMaterial, in: Capsule())
+                .shadow(color: .black.opacity(0.13), radius: 9, y: 4)
+                Menu {
+                    Button { activeSheet = .logs } label: { Label("日志", systemImage: "list.bullet.rectangle") }
+                    Button { activeSheet = .settings } label: { Label("设置", systemImage: "gearshape") }
+                } label: {
+                    Image(systemName: "ellipsis").font(.system(size: 20, weight: .bold))
+                        .frame(width: 48, height: 48)
+                        .background(.regularMaterial, in: Circle())
+                        .shadow(color: .black.opacity(0.13), radius: 9, y: 4)
+                        .contentShape(Circle())
+                }.accessibilityLabel("更多")
             }
-            .padding(.horizontal, 14).frame(height: 48)
-            .background(.regularMaterial, in: Capsule())
-            .shadow(color: .black.opacity(0.13), radius: 9, y: 4)
-            Menu {
-                Button { activeSheet = .logs } label: { Label("日志", systemImage: "list.bullet.rectangle") }
-                Button { activeSheet = .settings } label: { Label("设置", systemImage: "gearshape") }
-            } label: {
-                Image(systemName: "ellipsis").font(.system(size: 20, weight: .bold))
-                    .frame(width: 48, height: 48)
-                    .background(.regularMaterial, in: Circle())
-                    .shadow(color: .black.opacity(0.13), radius: 9, y: 4)
-                    .contentShape(Circle())
-            }.accessibilityLabel("更多")
+            MapHomeTopInfoBar(pair: currentSelectionPair, mapSystem: displayedMapCoordinateSystem)
         }
     }
 
-    // 底部：当前选点 + 收藏 + 主控按钮
+    // 底部：模式切换、主按钮和走动快捷控制；最近与收藏点开后出现
     func bottomControls(expandedMaxHeight: CGFloat) -> some View {
         MapHomeBottomCard(
             displayName: mapState.displayName ?? "当前选点",
@@ -775,10 +778,7 @@ struct MapHomeView: View {
             showsSpotHelp: spoofState != .idle && !routeKeepsRunningWhileSpotShown,
             expandedMaxHeight: expandedMaxHeight,
             playbackClock: route.clock,
-            coordinateRows: {
-                MapHomeCoordinateLine(pair: currentSelectionPair, mapSystem: displayedMapCoordinateSystem)
-            },
-            spotContent: {
+            quickActions: {
                 PhysicalWalkSpotControl(
                     store: physicalWalkStore,
                     controller: physicalWalk,
@@ -791,6 +791,8 @@ struct MapHomeView: View {
                         onReturnToRoute: { showsRoutePanel = true }
                     )
                 }
+            },
+            spotContent: {
                 MapHomeSelectionChips(
                     hasRecents: !recentSelections.items.isEmpty,
                     favoritesEmpty: favorites.favorites.isEmpty,
