@@ -5,32 +5,6 @@ import MapKit
 import SwiftUI
 import UIKit
 
-enum MapZoomMath {
-    private static let minimumDelta = 0.000_05
-    private static let maximumLatitudeDelta = 170.0
-    private static let maximumLongitudeDelta = 360.0
-
-    static func scaledSpan(_ span: MKCoordinateSpan, factor: Double) -> MKCoordinateSpan {
-        guard factor.isFinite, factor > 0 else { return span }
-        return MKCoordinateSpan(
-            latitudeDelta: min(max(span.latitudeDelta * factor, minimumDelta), maximumLatitudeDelta),
-            longitudeDelta: min(max(span.longitudeDelta * factor, minimumDelta), maximumLongitudeDelta)
-        )
-    }
-
-    static func viewportScaleLabel(distanceMeters: CLLocationDistance) -> String {
-        let meters = max(0, distanceMeters)
-        if meters < 1_000 {
-            return "\(Int(meters.rounded())) m"
-        }
-        let kilometers = meters / 1_000
-        if kilometers < 10 {
-            return String(format: "%.1f km", kilometers)
-        }
-        return "\(Int(kilometers.rounded())) km"
-    }
-}
-
 struct MapViewRepresentable: UIViewRepresentable {
     let selection: MapSelection
     let initialViewportMeters: CLLocationDistance
@@ -46,6 +20,8 @@ struct MapViewRepresentable: UIViewRepresentable {
     var routeCoordinates: [CLLocationCoordinate2D] = []
     var routePins: [RouteMapPin] = []
     var playbackClock: RoutePlaybackClock?
+    var walkHeadingDegrees: Double? = nil
+    var showsWalkHeading: Bool = false
 
     func makeCoordinator() -> Coordinator { Coordinator(parent: self) }
 
@@ -83,6 +59,7 @@ struct MapViewRepresentable: UIViewRepresentable {
         pin.layer.shadowOffset = CGSize(width: 0, height: 3)
         map.addSubview(pin)
         context.coordinator.centerPin = pin
+        context.coordinator.installWalkHeadingHud(on: map)
 
         // Zoom controls — UIKit subviews inside MKMapView, move with the map
         let zoomStack = UIStackView()
@@ -157,6 +134,11 @@ struct MapViewRepresentable: UIViewRepresentable {
         if let playbackClock {
             context.coordinator.bindPlaybackClock(playbackClock, on: map)
         }
+        context.coordinator.updateWalkHeadingHud(
+            degrees: walkHeadingDegrees,
+            visible: showsWalkHeading,
+            on: map
+        )
     }
 
     final class Coordinator: NSObject, MKMapViewDelegate, UIGestureRecognizerDelegate {
@@ -170,6 +152,7 @@ struct MapViewRepresentable: UIViewRepresentable {
         private var isPinchZoom = false
         weak var zoomLabel: UILabel?
         weak var centerPin: UIImageView?
+        weak var walkHeadingHud: WalkHeadingHud?
         private let pinSize: CGFloat = 38
         // 蓝点实际大小从 MKUserLocationView 取，默认 20pt
         private var userDotDiameter: CGFloat = 20
@@ -201,6 +184,7 @@ struct MapViewRepresentable: UIViewRepresentable {
                 x: centerPt.x,
                 y: centerPt.y - pinSize / 2 + 5
             )
+            positionWalkHeadingHud(on: mapView)
         }
 
         func setupKeyboardObservers() {

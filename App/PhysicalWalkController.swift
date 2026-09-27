@@ -7,6 +7,8 @@ final class PhysicalWalkController: ObservableObject {
     @Published private(set) var isTracking = false
     @Published private(set) var status: PhysicalWalkStatus = .idle
     @Published private(set) var movedMeters = 0.0
+    @Published private(set) var headingMode: PhysicalWalkHeadingMode = .followCompass
+    @Published private(set) var activeHeadingDegrees: Double?
 
     var ignoresWriteGate = false
     var applyCoordinate: ((CoordinatePair) async -> Bool)?
@@ -42,7 +44,11 @@ final class PhysicalWalkController: ObservableObject {
         writeGate.reset()
         movedMeters = 0
         isTracking = true
-        status = .waitingForHeading
+        if !heading.headingAvailable, !headingMode.isLocked {
+            headingMode = .locked(degrees: 0)
+        }
+        status = resolvedHeading()?.isReliable == true ? .tracking : .waitingForHeading
+        publishActiveHeading()
         keepAlive.retain(.physicalWalk)
         heading.onChange = { [weak self] in
             self?.flushHeading()
@@ -68,6 +74,9 @@ final class PhysicalWalkController: ObservableObject {
         let wasTracking = isTracking
         isTracking = false
         status = .idle
+        activeHeadingDegrees = headingMode.isLocked
+            ? PhysicalWalkHeadingLock.resolve(mode: headingMode, compass: nil)?.degrees
+            : nil
         if wasTracking {
             RuntimeLogger.info("APP", "真实走动", "停止跟踪")
         }
@@ -78,6 +87,25 @@ final class PhysicalWalkController: ObservableObject {
         if case .moved = apply(sample: sample) {
             await considerWrite(at: now)
         }
+    }
+
+    func followCompass() {
+        headingMode = .followCompass
+        publishActiveHeading()
+        flushHeading()
+    }
+
+    func lockHeading(degrees: Double) {
+        headingMode = .locked(degrees: PhysicalWalkHeadingLock.normalized(degrees))
+        publishActiveHeading()
+        flushHeading()
+    }
+
+    func rotateLockedHeading(by delta: Double) {
+        let current = activeHeadingDegrees
+            ?? heading.latest?.degrees
+            ?? 0
+        lockHeading(degrees: current + delta)
     }
 
     private func continueStart(
@@ -128,6 +156,7 @@ final class PhysicalWalkController: ObservableObject {
 
     private func flushHeading() {
         guard isTracking else { return }
+        publishActiveHeading()
         if case .moved = apply(sample: PhysicalWalkSample()) {
             writeTask = Task { [weak self] in
                 await self?.considerWrite(at: Date())
@@ -138,9 +167,10 @@ final class PhysicalWalkController: ObservableObject {
     @discardableResult
     private func apply(sample: PhysicalWalkSample) -> PhysicalWalkApplyResult {
         guard var engine else { return .unchanged }
-        let result = engine.apply(sample: sample, heading: heading.latest)
+        let result = engine.apply(sample: sample, heading: resolvedHeading())
         self.engine = engine
         movedMeters = engine.movedMeters
+        publishActiveHeading()
         switch result {
         case .unchanged:
             break
@@ -150,6 +180,14 @@ final class PhysicalWalkController: ObservableObject {
             status = .tracking
         }
         return result
+    }
+
+    private func resolvedHeading() -> PhysicalWalkHeading? {
+        PhysicalWalkHeadingLock.resolve(mode: headingMode, compass: heading.latest)
+    }
+
+    private func publishActiveHeading() {
+        activeHeadingDegrees = resolvedHeading()?.degrees
     }
 
     private func considerWrite(at now: Date) async {

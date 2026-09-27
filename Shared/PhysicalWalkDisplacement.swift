@@ -20,11 +20,11 @@ enum PhysicalWalkSensorPolicy {
     static func availabilityMessage(
         stepCountingAvailable: Bool,
         authorization: PhysicalWalkAuthorization,
-        headingAvailable: Bool
+        headingAvailable: Bool = true
     ) -> String? {
         guard stepCountingAvailable else { return stepCountingUnavailableMessage }
         if authorization == .denied { return permissionDeniedMessage }
-        guard headingAvailable else { return headingUnavailableMessage }
+        _ = headingAvailable
         return nil
     }
 
@@ -69,25 +69,75 @@ enum PhysicalWalkApplyResult: Equatable {
     case moved(deltaMeters: Double)
 }
 
+enum PhysicalWalkHeadingMode: Equatable {
+    case followCompass
+    case locked(degrees: Double)
+
+    var isLocked: Bool {
+        if case .locked = self { return true }
+        return false
+    }
+}
+
+enum PhysicalWalkHeadingLock {
+    static let cardinals: [(title: String, degrees: Double)] = [
+        ("北", 0), ("东", 90), ("南", 180), ("西", 270)
+    ]
+
+    static func resolve(
+        mode: PhysicalWalkHeadingMode,
+        compass: PhysicalWalkHeading?
+    ) -> PhysicalWalkHeading? {
+        switch mode {
+        case .followCompass:
+            return compass
+        case let .locked(degrees):
+            return PhysicalWalkHeading(degrees: normalized(degrees), accuracyDegrees: 0)
+        }
+    }
+
+    static func normalized(_ degrees: Double) -> Double {
+        var value = degrees.truncatingRemainder(dividingBy: 360)
+        if value < 0 { value += 360 }
+        return value
+    }
+
+    static func compassName(_ degrees: Double) -> String {
+        let value = normalized(degrees)
+        switch value {
+        case 0..<22.5, 337.5...360: return "北"
+        case 22.5..<67.5: return "东北"
+        case 67.5..<112.5: return "东"
+        case 112.5..<157.5: return "东南"
+        case 157.5..<202.5: return "南"
+        case 202.5..<247.5: return "西南"
+        case 247.5..<292.5: return "西"
+        default: return "西北"
+        }
+    }
+}
+
 enum PhysicalWalkStatusCopy {
     static func peek(
         isEnabled: Bool,
         spoofActive: Bool,
         isTracking: Bool,
         status: PhysicalWalkStatus,
-        movedMeters: Double
+        movedMeters: Double,
+        headingDegrees: Double? = nil
     ) -> String? {
         guard isEnabled else { return nil }
         guard spoofActive else { return "真实走动已开，先开启虚拟定位" }
         guard isTracking else { return "真实走动已开" }
         switch status {
         case .waitingForHeading:
-            return "等待朝向，请把手机朝前"
+            return "点东南西北锁定方向，或把手机朝前"
         case .tracking:
             let meters = Int(movedMeters.rounded())
-            return meters > 0 ? "真实走动中 · \(meters)米" : "真实走动中，走起来才会移动"
+            let prefix = meters > 0 ? "真实走动中 · \(meters)米" : "真实走动中，走起来才会移动"
+            return appendedHeading(prefix, headingDegrees)
         case .idle:
-            return "真实走动已开"
+            return appendedHeading("真实走动已开", headingDegrees)
         }
     }
 
@@ -96,29 +146,45 @@ enum PhysicalWalkStatusCopy {
         spoofActive: Bool,
         status: PhysicalWalkStatus,
         movedMeters: Double,
-        failureMessage: String
+        failureMessage: String,
+        headingDegrees: Double? = nil,
+        headingLocked: Bool = false
     ) -> String {
         if !failureMessage.isEmpty { return failureMessage }
         if !isEnabled {
-            return "打开后，你走动时虚拟点会按相同方向移动。请把手机朝向行走方向。"
+            return "打开后，你走动时虚拟点沿箭头方向移动。地图北朝上，可点东南西北锁定方向。"
         }
         if !spoofActive {
             return "先开启虚拟定位，再走动。"
         }
+        let headingNote = headingNote(degrees: headingDegrees, locked: headingLocked)
         switch status {
         case .waitingForHeading:
-            return "正在读取朝向，请把手机朝向行走方向。"
+            return "还没有朝向。点北/东/南/西锁定地图方向，或把手机朝前跟随罗盘。"
         case .tracking:
             let meters = Int(movedMeters.rounded())
-            return meters > 0 ? "已移动 \(meters) 米" : "已开启，走起来虚拟点才会移动。"
+            let movement = meters > 0 ? "已移动 \(meters) 米" : "已开启，走起来虚拟点才会移动"
+            return headingNote.map { "\(movement)，\($0)。" } ?? "\(movement)。"
         case .idle:
-            return "已开启，走起来虚拟点才会移动。"
+            return headingNote.map { "已开启，\($0)。走起来虚拟点才会移动。" }
+                ?? "已开启，走起来虚拟点才会移动。"
         }
     }
 
     static func chipSubtitle(isEnabled: Bool, isTracking: Bool) -> String? {
         guard isEnabled else { return nil }
         return isTracking ? "走动中" : "已开"
+    }
+
+    private static func appendedHeading(_ prefix: String, _ headingDegrees: Double?) -> String {
+        guard let headingDegrees else { return prefix }
+        return "\(prefix) · \(PhysicalWalkHeadingLock.compassName(headingDegrees))"
+    }
+
+    private static func headingNote(degrees: Double?, locked: Bool) -> String? {
+        guard let degrees else { return nil }
+        let name = PhysicalWalkHeadingLock.compassName(degrees)
+        return locked ? "朝向\(name)（已锁定）" : "朝向\(name)（跟随罗盘）"
     }
 }
 

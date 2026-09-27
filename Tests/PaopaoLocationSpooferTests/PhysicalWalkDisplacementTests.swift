@@ -258,6 +258,40 @@ final class PhysicalWalkDisplacementTests: XCTestCase {
             ),
             "已开启，走起来虚拟点才会移动。"
         )
+        XCTAssertEqual(
+            PhysicalWalkStatusCopy.peek(
+                isEnabled: true,
+                spoofActive: true,
+                isTracking: true,
+                status: .tracking,
+                movedMeters: 12,
+                headingDegrees: 90
+            ),
+            "真实走动中 · 12米 · 东"
+        )
+    }
+
+    func testHeadingLockIgnoresCompassAndNamesCardinals() {
+        let northCompass = PhysicalWalkHeading(degrees: 0, accuracyDegrees: 5)
+        let locked = PhysicalWalkHeadingLock.resolve(
+            mode: .locked(degrees: 90),
+            compass: northCompass
+        )
+        XCTAssertEqual(locked?.degrees, 90)
+        XCTAssertEqual(
+            PhysicalWalkHeadingLock.resolve(mode: .followCompass, compass: northCompass)?.degrees,
+            0
+        )
+        XCTAssertEqual(PhysicalWalkHeadingLock.compassName(0), "北")
+        XCTAssertEqual(PhysicalWalkHeadingLock.compassName(90), "东")
+        XCTAssertEqual(PhysicalWalkHeadingLock.normalized(-90), 270)
+        XCTAssertNil(
+            PhysicalWalkSensorPolicy.availabilityMessage(
+                stepCountingAvailable: true,
+                authorization: .allowed,
+                headingAvailable: false
+            )
+        )
     }
 }
 

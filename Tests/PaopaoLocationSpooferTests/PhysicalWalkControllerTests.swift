@@ -69,6 +69,31 @@ final class PhysicalWalkControllerTests: XCTestCase {
         XCTAssertFalse(BackgroundKeepAlive.shared.holds(.physicalWalk))
     }
 
+    func testLockedEastHeadingMovesEastEvenWhenCompassPointsNorth() async throws {
+        let sensor = FakePhysicalWalkSensor()
+        let heading = FakePhysicalWalkHeading()
+        heading.latest = PhysicalWalkHeading(degrees: 0, accuracyDegrees: 5)
+        let controller = PhysicalWalkController(sensor: sensor, heading: heading)
+        var written: CoordinatePair?
+        controller.applyCoordinate = { pair in
+            written = pair
+            return true
+        }
+        let originLatitude = 22.494
+        let originLongitude = 113.951
+        controller.start(latitude: originLatitude, longitude: originLongitude)
+        controller.lockHeading(degrees: 90)
+
+        await controller.ingest(sample: PhysicalWalkSample(distanceMeters: 0, steps: 0))
+        await controller.ingest(sample: PhysicalWalkSample(distanceMeters: 10, steps: 12))
+        let pair = try XCTUnwrap(written)
+        XCTAssertEqual(pair.wgs84.latitude, originLatitude, accuracy: 0.000_01)
+        XCTAssertGreaterThan(pair.wgs84.longitude, originLongitude)
+        XCTAssertEqual(controller.headingMode, .locked(degrees: 90))
+        XCTAssertEqual(controller.activeHeadingDegrees ?? -1, 90, accuracy: 0.01)
+        controller.stop()
+    }
+
     func testDeniedAuthorizationDoesNotWrite() {
         let sensor = FakePhysicalWalkSensor()
         sensor.authorization = .denied

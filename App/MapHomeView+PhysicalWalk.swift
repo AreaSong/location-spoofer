@@ -8,7 +8,8 @@ extension MapHomeView {
             spoofActive: spoofState == .active,
             isTracking: physicalWalk.isTracking,
             status: physicalWalk.status,
-            movedMeters: physicalWalk.movedMeters
+            movedMeters: physicalWalk.movedMeters,
+            headingDegrees: physicalWalk.activeHeadingDegrees
         )
     }
 
@@ -104,12 +105,13 @@ struct PhysicalWalkSpotControl: View {
     let spoofActive: Bool
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 8) {
             Toggle("真实走动", isOn: enabledBinding)
             Text(detailText)
                 .font(.caption)
                 .foregroundStyle(store.lastFailureMessage.isEmpty ? Color.secondary : Color.red)
                 .fixedSize(horizontal: false, vertical: true)
+            headingControls
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -132,7 +134,48 @@ struct PhysicalWalkSpotControl: View {
             spoofActive: spoofActive,
             status: controller.status,
             movedMeters: controller.movedMeters,
-            failureMessage: store.lastFailureMessage
+            failureMessage: store.lastFailureMessage,
+            headingDegrees: controller.activeHeadingDegrees,
+            headingLocked: controller.headingMode.isLocked
         )
+    }
+
+    private var headingControls: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                Button("跟随罗盘") { controller.followCompass() }
+                    .buttonStyle(CapsuleChipStyle(tint: controller.headingMode == .followCompass ? .accentColor : nil))
+                    .accessibilityLabel("跟随罗盘朝向")
+                Button {
+                    controller.rotateLockedHeading(by: -15)
+                } label: {
+                    Image(systemName: "arrow.counterclockwise")
+                }
+                .buttonStyle(CapsuleChipStyle())
+                .accessibilityLabel("箭头向左偏 15 度")
+                Button {
+                    controller.rotateLockedHeading(by: 15)
+                } label: {
+                    Image(systemName: "arrow.clockwise")
+                }
+                .buttonStyle(CapsuleChipStyle())
+                .accessibilityLabel("箭头向右偏 15 度")
+            }
+            HStack(spacing: 8) {
+                ForEach(PhysicalWalkHeadingLock.cardinals, id: \.title) { item in
+                    Button(item.title) { controller.lockHeading(degrees: item.degrees) }
+                        .buttonStyle(CapsuleChipStyle(tint: isSelectedCardinal(item.degrees) ? .accentColor : nil))
+                        .accessibilityLabel("朝\(item.title)")
+                }
+            }
+        }
+        .disabled(!store.isEnabled)
+        .opacity(store.isEnabled ? 1 : 0.45)
+    }
+
+    private func isSelectedCardinal(_ degrees: Double) -> Bool {
+        guard case let .locked(locked) = controller.headingMode else { return false }
+        return abs(PhysicalWalkHeadingLock.normalized(locked - degrees)) < 0.01
+            || abs(PhysicalWalkHeadingLock.normalized(locked - degrees) - 360) < 0.01
     }
 }

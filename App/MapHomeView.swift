@@ -263,7 +263,9 @@ struct MapHomeView: View {
                 onZoomOut: { mapState.zoom(by: 2) },
                 routeCoordinates: route.overlayCoordinates,
                 routePins: route.overlayPins,
-                playbackClock: route.clock
+                playbackClock: route.clock,
+                walkHeadingDegrees: physicalWalk.activeHeadingDegrees,
+                showsWalkHeading: physicalWalkStore.isEnabled && spoofState == .active
             )
             .ignoresSafeArea(.container)
 

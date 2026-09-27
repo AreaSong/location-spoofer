@@ -26,7 +26,7 @@ extension SettingsView {
         Section("定位模拟") {
             Toggle("真实走动", isOn: physicalWalkBinding)
                 .disabled(simulationControlsDisabled)
-            Text("也可在首页定点中开关。开启后，你走动时虚拟点会按相同方向移动。请把手机朝向行走方向。路线播放期间开启会暂停自动走路。")
+            Text("也可在首页定点中开关。走动沿地图箭头方向移动，北始终朝上，可锁定东南西北。")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
             if !physicalWalk.lastFailureMessage.isEmpty {
