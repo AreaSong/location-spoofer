@@ -149,6 +149,21 @@ final class SpoofSessionTests: XCTestCase {
         XCTAssertTrue(session.consumeEffects().isEmpty)
     }
 
+    func testNoteExternalClearIdlesWithoutCallingClear() {
+        let probe = SpoofServiceProbe()
+        probe.mode = .developerTunnel
+        let session = makeSession(probe)
+        session.adoptActiveLocation(latitude: 22.5, longitude: 113.9)
+
+        session.noteExternalClear()
+
+        XCTAssertEqual(session.state, .idle)
+        XCTAssertNil(session.writtenLatitude)
+        XCTAssertEqual(probe.developerClears, 0)
+        XCTAssertEqual(probe.pauseRouteCount, 1)
+        XCTAssertTrue(session.consumeEffects().isEmpty)
+    }
+
     func testRouteWriteUsesTheSameCoordinateEntry() async {
         let probe = SpoofServiceProbe()
         let session = makeSession(probe)
@@ -252,6 +267,7 @@ private final class SpoofServiceProbe {
     var developerPushes = 0
     var developerClears = 0
     var clearLocalCount = 0
+    var pauseRouteCount = 0
     var developerFailure: RouteLocationPushFailure?
     var developerClearFailure: RouteLocationPushFailure?
 
@@ -266,7 +282,7 @@ private final class SpoofServiceProbe {
             routeWaitsForActivation: { false },
             routeOffsetMeters: { 0 },
             accuracyMeters: { 25 },
-            pauseRoute: {},
+            pauseRoute: { self.pauseRouteCount += 1 },
             verify: {
                 self.verifyCount += 1
                 if let verifyImpl = self.verifyImpl {

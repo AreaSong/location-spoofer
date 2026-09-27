@@ -4,6 +4,7 @@ import UIKit
 
 enum LocalDevVPN {
     static let defaultAddress = "10.7.0.1"
+    static let addressPrefix = "10.7.0."
     static let appStoreURL = URL(string: "https://apps.apple.com/us/app/localdevvpn/id6755608044")!
     static let enableURL = URL(string: "localdevvpn://enable?scheme=paopaolocation")!
 
@@ -12,10 +13,13 @@ enum LocalDevVPN {
         return UIApplication.shared.canOpenURL(detectURL)
     }
 
+    /// 只说明本机有没有隧道网卡。网卡还在但 RSD 已死时，后续推送会重连。
     static var isConnected: Bool {
-        let addresses = ipv4Addresses()
-        if addresses.contains(defaultAddress) { return true }
-        return addresses.contains { $0.hasPrefix("10.7.0.") }
+        hasTunnelInterface(in: ipv4Addresses())
+    }
+
+    static func hasTunnelInterface(in addresses: [String]) -> Bool {
+        addresses.contains { $0 == defaultAddress || $0.hasPrefix(addressPrefix) }
     }
 
     static func openOrInstall() {

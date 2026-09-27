@@ -33,6 +33,8 @@ protocol IdeviceLocationPushing: AnyObject, Sendable {
         deviceAddress: String,
         mutation: UInt64
     ) -> IdeviceCommandOutcome
+    /// 丢掉本地句柄，不再向已死套接字发 clear。隧道掉线后下次 set 才能干净重连。
+    func abandonSession()
 }
 
 /// 通过 idevice 把坐标推进系统定位。模拟器没有这条通道。
@@ -130,6 +132,14 @@ final class IdeviceLocationClient: IdeviceLocationPushing, @unchecked Sendable {
         }
     }
 
+    func abandonSession() {
+        queue.sync {
+            #if !targetEnvironment(simulator)
+            abandonSessionLocked()
+            #endif
+        }
+    }
+
     private func setLocked(
         latitude: Double,
         longitude: Double,
@@ -147,8 +157,8 @@ final class IdeviceLocationClient: IdeviceLocationPushing, @unchecked Sendable {
             if location_simulation_set(simulation, latitude, longitude) == nil {
                 return nil
             }
-            // 旧套接字已死，丢掉本地句柄后重新连接。
-            discardSession()
+            // 旧套接字已死。再 clear 会堵在串行队列上，重启 LocalDevVPN 也解不开。
+            abandonSessionLocked()
         }
         return openSession(
             latitude: latitude,
@@ -175,12 +185,7 @@ final class IdeviceLocationClient: IdeviceLocationPushing, @unchecked Sendable {
     }
 
     #if !targetEnvironment(simulator)
-    private func discardSession() {
-        if let simulation {
-            if let error = location_simulation_clear(simulation) {
-                idevice_error_free(error)
-            }
-        }
+    private func abandonSessionLocked() {
         releaseSession()
     }
 
@@ -202,6 +207,7 @@ final class IdeviceLocationClient: IdeviceLocationPushing, @unchecked Sendable {
     }
 
     private func connectLocked(pairingPath: String, deviceAddress: String) -> RouteLocationPushFailure? {
+        abandonSessionLocked()
         var address = sockaddr_in()
         address.sin_family = sa_family_t(AF_INET)
         address.sin_port = Self.tunnelPort.bigEndian

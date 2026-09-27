@@ -102,6 +102,55 @@ extension MapHomeView {
         }
     }
 
+    func retryDeveloperLocation(command: String) {
+        if command == "stopSpoof" {
+            stopSpoofing()
+            return
+        }
+        beginLocationOperation()
+    }
+
+    func syncDeveloperTunnelMonitor() {
+        if UIPreview.isEnabled() || runtimeMode.mode != .developerTunnel {
+            routeLocation.stopTunnelMonitor()
+            return
+        }
+        routeLocation.startTunnelMonitor()
+    }
+
+    func recoverDeveloperTunnelIfNeeded() {
+        guard !UIPreview.isEnabled() else { return }
+        guard runtimeMode.mode == .developerTunnel else { return }
+        guard routeLocation.status.tunnelConnected else { return }
+        if route.phase == .playing { return }
+        guard let coordinate = developerTunnelRecoveryCoordinate() else { return }
+        if let last = lastDeveloperTunnelRecoveryAt, Date().timeIntervalSince(last) < 2 {
+            return
+        }
+        lastDeveloperTunnelRecoveryAt = Date()
+        Task { @MainActor in
+            if let failure = await routeLocation.set(
+                latitude: coordinate.latitude,
+                longitude: coordinate.longitude
+            ), failure != .superseded {
+                developerLocationError = failure.message
+            }
+        }
+    }
+
+    private func developerTunnelRecoveryCoordinate() -> (latitude: Double, longitude: Double)? {
+        if let pair = lastRouteWrittenPair, route.phase == .paused || route.phase == .finished {
+            let wgs = pair.wgs84
+            return (wgs.latitude, wgs.longitude)
+        }
+        guard spoofState == .active,
+              let latitude = session.writtenLatitude,
+              let longitude = session.writtenLongitude else {
+            return nil
+        }
+        return (latitude, longitude)
+    }
+
     var locationUseBlock: LocationUseBlock? {
         if UIPreview.isEnabled() { return nil }
         return LocationUseAvailability.current(

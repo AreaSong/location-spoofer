@@ -23,6 +23,7 @@ struct SettingsView: View {
     @ObservedObject var setup: SetupCoordinator
     @ObservedObject var actions: LocationActionCoordinator
     @ObservedObject var favorites: FavoriteLocationStore
+    @ObservedObject var session: SpoofSession
     @ObservedObject var proxy = ProxyManager.shared
     @ObservedObject var runtimeMode = ProxyRuntimeModeStore.shared
     @ObservedObject var routeLocation = RouteLocationSetupStore.shared
@@ -178,6 +179,20 @@ struct SettingsView: View {
         SigningExpiry.current()
     }
 
+
+    var restoreControlsDisabled: Bool {
+        UIPreview.isEnabled()
+            || modeOperationRunning
+            || actions.state.isBusy
+            || session.state == .verifying
+            || thirdPartyProxy.isRequesting
+            || routeLocation.isClearing
+    }
+
+    func restoreRealLocation() {
+        guard !restoreControlsDisabled else { return }
+        session.stop()
+    }
 
     var virtualLocationIsActive: Bool {
         if runtimeMode.mode == .developerTunnel {

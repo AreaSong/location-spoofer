@@ -47,9 +47,13 @@ test -f "$TESTS" || fail "RuntimeModeAvailability must have unit tests"
 test -f "$CHECKLIST" || fail "route location checklist is missing"
 grep -q 'struct RouteLocationChecklist' "$CHECKLIST" || fail "RouteLocationChecklist must be a shared view"
 grep -q 'RouteLocationChecklist()' "$SETUP" || fail "developer tunnel setup must use the shared checklist"
-grep -q 'RouteLocationChecklist()' "$SECTION" || fail "the settings section must use the shared checklist"
-grep -q 'RouteLocationSettingsSection()' "$SETTINGS" || fail "Settings must include the route location section"
-grep -B1 'RouteLocationSettingsSection()' "$SETTINGS" | grep -q 'developerTunnel' \
+grep -q 'RouteLocationChecklist(session: session)' "$SECTION" || fail "the settings section must use the shared checklist"
+grep -q '恢复真实定位' "$CHECKLIST" || fail "the checklist must offer restoring real location"
+grep -q '清理隧道会话' "$CHECKLIST" || fail "the checklist must offer clearing the stale tunnel session"
+grep -q 'func resetTunnelCache' "$ROOT/App/RouteLocationSetupStore.swift" \
+  || fail "tunnel cache reset must live in the setup store"
+grep -q 'RouteLocationSettingsSection(session: session)' "$SETTINGS" || fail "Settings must include the route location section"
+grep -B1 'RouteLocationSettingsSection(session: session)' "$SETTINGS" | grep -q 'developerTunnel' \
   || fail "the route location section must only appear in developer tunnel mode"
 grep -q 'scenePhase' "$CHECKLIST" || fail "the checklist must refresh when the app returns to the foreground"
 grep -q 'fileImporter' "$CHECKLIST" || fail "the checklist must own the pairing file importer"
@@ -67,6 +71,13 @@ grep -q '先连接隧道' "$MAP" || fail "the main button must guide the user to
 grep -q 'homeRuntimeStatusTone' "$MAP" || fail "the runtime status row must carry a tone"
 grep -q 'showsRoutePanel' "$MAP" || fail "switching back to 定点 must collapse the route panel without clearing the route"
 grep -q '退出会停止播放，虚拟定位留在当前点' "$MAP" || fail "exiting a playing route must ask for confirmation"
+grep -q '再试一次' "$MAP" || fail "a failed developer tunnel push must offer retry"
+grep -q 'recoverDeveloperTunnelIfNeeded' "$MAP" || fail "returning to the foreground must try to recover an active tunnel session"
+grep -q 'tunnelRetryDelaysNanoseconds' "$ROOT/App/RouteLocationSetupStore.swift" \
+  || fail "developer tunnel push must retry with backoff after LocalDevVPN drops"
+grep -q 'func abandonSession' "$ROOT/App/IdeviceLocationClient.swift" \
+  || fail "a dropped tunnel must abandon the stale idevice session without clearing a dead socket"
+grep -q 'abandonStaleSession' "$MAP" || fail "leaving the app must drop the stale tunnel session so overnight recovery is not required"
 
 grep -q 'case .developerTunnel:' "$DIAGNOSTICS" || fail "diagnostics must run a developer tunnel check"
 grep -q '开发者隧道环境检测' "$DIAGNOSTICS" || fail "diagnostics must log the developer tunnel check"

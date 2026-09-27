@@ -162,7 +162,7 @@ grep -q '检测未命中白名单，当前按国内标准显示' "$SETTINGS_VIEW
 test -f "$ROOT/Shared/CoordinateTextParser.swift" || fail "coordinate search must parse typed latitude/longitude"
 test -f "$ROOT/Shared/FavoriteTransfer.swift" || fail "favorite backup must use a dedicated transfer format"
 grep -q 'paopao-favorites' "$ROOT/Shared/FavoriteTransfer.swift" || fail "favorite backup JSON must use the paopao-favorites format"
-grep -q 'SettingsView(setup: setup, actions: actions, favorites: favorites)' "$MAP_HOME" || fail "settings must share the map favorite store"
+grep -q 'SettingsView(setup: setup, actions: actions, favorites: favorites, session: session)' "$MAP_HOME" || fail "settings must share the map favorite store"
 grep -q '按国内标准(GCJ-02)选点' "$MAP_HOME" || fail "typed coordinates must offer an explicit GCJ-02 choice"
 grep -q '当前地图：' "$MAP_HOME" || fail "map home must show the current map coordinate system"
 test -f "$ROOT/App/FavoriteListView.swift" || fail "favorites must have a searchable list sheet"

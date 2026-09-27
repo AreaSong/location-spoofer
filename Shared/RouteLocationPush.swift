@@ -77,9 +77,9 @@ enum RouteLocationPushFailure: Equatable, Sendable {
         case .notReady(let readiness):
             return readiness.blockingMessage ?? "路线定位还没准备好。"
         case .tunnel:
-            return "连不上本机隧道，路线已暂停。"
+            return "连不上本机隧道。请重新连接 LocalDevVPN，等几秒后再试；仍失败请划掉本 App 再打开。"
         case .pairing:
-            return "配对文件无效，路线已暂停。"
+            return "配对文件无效。请重新导入配对文件后再试。"
         case .rejected:
             return "系统定位推送失败，已暂停。"
         case .clearFailed:

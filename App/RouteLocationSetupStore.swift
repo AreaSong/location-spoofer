@@ -5,20 +5,21 @@ struct RouteLocationEnvironment {
     var isVPNInstalled: @MainActor () -> Bool
     var isTunnelConnected: @MainActor () -> Bool
     var deviceAddress: String
-    /// 手机放开上一条隧道需要一点时间，连不上时等这么久再试一次。
-    var tunnelRetryDelayNanoseconds: UInt64
+    /// LocalDevVPN 重启后 RSD 要几秒才起来，连不上就按这个间隔再试。
+    var tunnelRetryDelaysNanoseconds: [UInt64]
 
     static let live = RouteLocationEnvironment(
         isVPNInstalled: { LocalDevVPN.isInstalled },
         isTunnelConnected: { LocalDevVPN.isConnected },
         deviceAddress: LocalDevVPN.defaultAddress,
-        tunnelRetryDelayNanoseconds: 500_000_000
+        tunnelRetryDelaysNanoseconds: [500_000_000, 2_000_000_000, 4_000_000_000]
     )
 }
 
 @MainActor
 final class RouteLocationSetupStore: ObservableObject, DeveloperLocationPushing {
     static let shared = RouteLocationSetupStore()
+    static let tunnelMonitorIntervalNanoseconds: UInt64 = 2_000_000_000
 
     @Published private(set) var isSimulating = false
     @Published private(set) var isClearing = false
@@ -36,6 +37,7 @@ final class RouteLocationSetupStore: ObservableObject, DeveloperLocationPushing 
     private let environment: RouteLocationEnvironment
     /// 持有正在进行的设备调用，clear 或新的 set 可以取消它，避免脱离任务树的旧写入。
     private var deviceTask: Task<IdeviceCommandOutcome, Error>?
+    private var monitorTask: Task<Void, Never>?
 
     init(
         pairingStore: RoutePairingStore = RoutePairingStore(),
@@ -49,11 +51,58 @@ final class RouteLocationSetupStore: ObservableObject, DeveloperLocationPushing 
     }
 
     func refresh() {
+        let previousConnected = status.tunnelConnected
         status = RouteLocationStatus(
             vpnInstalled: environment.isVPNInstalled(),
             tunnelConnected: environment.isTunnelConnected(),
             hasPairing: pairingStore.hasPairingFile
         )
+        if previousConnected != status.tunnelConnected {
+            handleTunnelConnectionChange(from: previousConnected, to: status.tunnelConnected)
+        }
+    }
+
+    func startTunnelMonitor() {
+        guard monitorTask == nil else { return }
+        refresh()
+        monitorTask = Task { @MainActor [weak self] in
+            while let store = self, !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: Self.tunnelMonitorIntervalNanoseconds)
+                guard !Task.isCancelled else { return }
+                store.refresh()
+            }
+        }
+    }
+
+    func stopTunnelMonitor() {
+        monitorTask?.cancel()
+        monitorTask = nil
+    }
+
+    /// 锁屏、切走 App 时丢掉本地句柄，让设备侧把半开隧道回收掉。
+    /// 否则会出现：重启 LocalDevVPN 没用，什么都不做过一晚上却又好了。
+    func abandonStaleSession() {
+        dropLocalSession(reason: "app inactive")
+    }
+
+    /// 丢掉卡住的隧道句柄。隧道仍可用时会先尝试恢复真实定位。不删除配对文件。
+    func resetTunnelCache() async -> String {
+        refresh()
+        var warning: String?
+        if isSimulating || activity.simulationMayStillBeActive || client.retainsSimulation {
+            if let failure = await clear() {
+                warning = failure.message
+            }
+        }
+        dropLocalSession(reason: "cache reset")
+        if let warning {
+            isSimulating = false
+            activity.simulationMayStillBeActive = true
+            return "隧道会话已丢掉，但系统定位可能还停在虚拟点。\(warning)"
+        }
+        isSimulating = false
+        activity.simulationMayStillBeActive = false
+        return "隧道会话已清理。配对文件还在。"
     }
 
     func importPairing(_ data: Data) async throws {
@@ -96,18 +145,18 @@ final class RouteLocationSetupStore: ObservableObject, DeveloperLocationPushing 
         let mutation = client.beginMutation()
         let path = pairingStore.pairingURL.path
         let address = environment.deviceAddress
-        let delay = environment.tunnelRetryDelayNanoseconds
+        let delays = environment.tunnelRetryDelaysNanoseconds
         let client = client
         let outcome = await performDevice {
-            try await Self.push(
-                client: client,
-                latitude: latitude,
-                longitude: longitude,
-                pairingPath: path,
-                deviceAddress: address,
-                mutation: mutation,
-                retryDelayNanoseconds: delay
-            )
+            try await Self.retryingTunnel(delays: delays) {
+                client.set(
+                    latitude: latitude,
+                    longitude: longitude,
+                    pairingPath: path,
+                    deviceAddress: address,
+                    mutation: mutation
+                )
+            }
         }
         return applySetResult(outcome, mutation: mutation)
     }
@@ -119,18 +168,38 @@ final class RouteLocationSetupStore: ObservableObject, DeveloperLocationPushing 
         let reconnect = activity.simulationMayStillBeActive && !client.retainsSimulation
         let path = pairingStore.pairingURL.path
         let address = environment.deviceAddress
+        let delays = environment.tunnelRetryDelaysNanoseconds
         let client = client
         let outcome = await performDevice {
             if reconnect {
-                return client.clearReconnecting(
-                    pairingPath: path,
-                    deviceAddress: address,
-                    mutation: mutation
-                )
+                return try await Self.retryingTunnel(delays: delays) {
+                    client.clearReconnecting(
+                        pairingPath: path,
+                        deviceAddress: address,
+                        mutation: mutation
+                    )
+                }
             }
             return client.clear(mutation: mutation)
         }
         return applyClearResult(outcome, mutation: mutation)
+    }
+
+    private func handleTunnelConnectionChange(from previous: Bool, to connected: Bool) {
+        dropLocalSession(reason: "tunnel \(previous ? "up" : "down") -> \(connected ? "up" : "down")")
+    }
+
+    private func dropLocalSession(reason: String) {
+        let hasSession = isSimulating || activity.simulationMayStillBeActive || client.retainsSimulation
+        guard hasSession else { return }
+        client.abandonSession()
+        if isSimulating {
+            activity.simulationMayStillBeActive = true
+        }
+        RuntimeLogger.warning("APP", "隧道", "已丢掉旧会话，等待设备侧回收隧道", details: [
+            "原因": reason,
+            "模拟可能仍在生效": String(activity.simulationMayStillBeActive)
+        ])
     }
 
     private func applySetResult(
@@ -148,6 +217,11 @@ final class RouteLocationSetupStore: ObservableObject, DeveloperLocationPushing 
                 isSimulating = true
                 activity.simulationMayStillBeActive = false
                 return nil
+            }
+            // 失败后立刻丢掉半开隧道，避免占到系统隔夜才回收。
+            client.abandonSession()
+            if isSimulating {
+                activity.simulationMayStillBeActive = true
             }
             // 推送失败先看隧道是不是断了，把具体原因告诉用户。
             refresh()
@@ -222,32 +296,21 @@ final class RouteLocationSetupStore: ObservableObject, DeveloperLocationPushing 
         }
     }
 
-    nonisolated private static func push(
-        client: IdeviceLocationPushing,
-        latitude: Double,
-        longitude: Double,
-        pairingPath: String,
-        deviceAddress: String,
-        mutation: UInt64,
-        retryDelayNanoseconds: UInt64
+    nonisolated private static func retryingTunnel(
+        delays: [UInt64],
+        operation: () -> IdeviceCommandOutcome
     ) async throws -> IdeviceCommandOutcome {
-        var outcome = client.set(
-            latitude: latitude,
-            longitude: longitude,
-            pairingPath: pairingPath,
-            deviceAddress: deviceAddress,
-            mutation: mutation
-        )
-        if case .finished(.tunnel) = outcome {
-            try await Task.sleep(nanoseconds: retryDelayNanoseconds)
+        var remaining = delays
+        var outcome = operation()
+        while case .finished(.tunnel) = outcome, let delay = remaining.first {
+            remaining.removeFirst()
+            RuntimeLogger.warning("APP", "隧道", "本机隧道连不上，准备重试", details: [
+                "等待毫秒": String(delay / 1_000_000),
+                "剩余次数": String(remaining.count + 1)
+            ])
+            try await Task.sleep(nanoseconds: delay)
             try Task.checkCancellation()
-            outcome = client.set(
-                latitude: latitude,
-                longitude: longitude,
-                pairingPath: pairingPath,
-                deviceAddress: deviceAddress,
-                mutation: mutation
-            )
+            outcome = operation()
         }
         return outcome
     }

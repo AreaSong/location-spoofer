@@ -22,6 +22,15 @@ final class RouteLocationTests: XCTestCase {
         )
         XCTAssertNotNil(RouteLocationReadiness.needsInstall.blockingMessage)
         XCTAssertNil(RouteLocationReadiness.ready.blockingMessage)
+        XCTAssertTrue(RouteLocationPushFailure.tunnel.message.contains("LocalDevVPN"))
+        XCTAssertTrue(RouteLocationPushFailure.tunnel.message.contains("划掉"))
+    }
+
+    func testTunnelInterfaceDetectionAcceptsTheDefaultSubnet() {
+        XCTAssertTrue(LocalDevVPN.hasTunnelInterface(in: ["10.7.0.1"]))
+        XCTAssertTrue(LocalDevVPN.hasTunnelInterface(in: ["192.168.1.2", "10.7.0.2"]))
+        XCTAssertFalse(LocalDevVPN.hasTunnelInterface(in: ["192.168.1.2", "10.8.0.1"]))
+        XCTAssertFalse(LocalDevVPN.hasTunnelInterface(in: []))
     }
 
     @MainActor
@@ -51,7 +60,7 @@ final class RouteLocationTests: XCTestCase {
     }
 
     @MainActor
-    func testSetupStoreRetriesOnceWhenTheTunnelIsBusy() async throws {
+    func testSetupStoreRetriesWhenTheTunnelIsBusy() async throws {
         let client = FakeIdeviceClient(results: [.tunnel, nil])
         let store = try readyStore(client: client)
 
@@ -60,6 +69,114 @@ final class RouteLocationTests: XCTestCase {
         XCTAssertNil(failure)
         XCTAssertEqual(client.pushes.count, 2)
         XCTAssertTrue(store.isSimulating)
+    }
+
+    @MainActor
+    func testSetupStoreRetriesUntilTheTunnelRecovers() async throws {
+        let client = FakeIdeviceClient(results: [.tunnel, .tunnel, nil])
+        let store = try readyStore(
+            client: client,
+            tunnelRetryDelaysNanoseconds: [1_000_000, 1_000_000]
+        )
+
+        let failure = await store.set(latitude: 22.5, longitude: 113.9)
+
+        XCTAssertNil(failure)
+        XCTAssertEqual(client.pushes.count, 3)
+        XCTAssertTrue(store.isSimulating)
+    }
+
+    @MainActor
+    func testDroppedTunnelAbandonsTheStaleSession() async throws {
+        let client = FakeIdeviceClient(results: [nil])
+        var connected = true
+        let store = try readyStore(client: client, isTunnelConnected: { connected })
+
+        let failure = await store.set(latitude: 22.5, longitude: 113.9)
+        XCTAssertNil(failure)
+        XCTAssertTrue(client.retainsSimulation)
+
+        connected = false
+        store.refresh()
+
+        XCTAssertEqual(client.abandons, 1)
+        XCTAssertFalse(client.retainsSimulation)
+        XCTAssertTrue(store.activity.simulationMayStillBeActive)
+        XCTAssertEqual(store.readiness, .tunnelDisconnected)
+    }
+
+    @MainActor
+    func testInactiveAppAbandonsSessionSoTheDeviceCanReclaimTheTunnel() async throws {
+        let client = FakeIdeviceClient(results: [nil])
+        let store = try readyStore(client: client)
+
+        let setFailure = await store.set(latitude: 22.5, longitude: 113.9)
+        XCTAssertNil(setFailure)
+        XCTAssertTrue(client.retainsSimulation)
+
+        store.abandonStaleSession()
+
+        XCTAssertEqual(client.abandons, 1)
+        XCTAssertFalse(client.retainsSimulation)
+        XCTAssertTrue(store.isSimulating)
+        XCTAssertTrue(store.activity.simulationMayStillBeActive)
+    }
+
+    @MainActor
+    func testResetTunnelCacheKeepsPairingAndDropsTheSession() async throws {
+        let client = FakeIdeviceClient(results: [nil], clearResults: [.clearFailed])
+        let store = try readyStore(client: client)
+        let setFailure = await store.set(latitude: 22.5, longitude: 113.9)
+        XCTAssertNil(setFailure)
+        XCTAssertTrue(store.status.hasPairing)
+
+        let message = await store.resetTunnelCache()
+
+        XCTAssertTrue(message.contains("可能还停在虚拟点"))
+        XCTAssertTrue(store.status.hasPairing)
+        XCTAssertFalse(client.retainsSimulation)
+        XCTAssertGreaterThanOrEqual(client.abandons, 1)
+        XCTAssertFalse(store.isSimulating)
+        XCTAssertTrue(store.activity.simulationMayStillBeActive)
+    }
+
+    @MainActor
+    func testResetTunnelCacheWithoutASessionStillSucceeds() async throws {
+        let client = FakeIdeviceClient(results: [nil])
+        let store = try readyStore(client: client)
+
+        let message = await store.resetTunnelCache()
+
+        XCTAssertEqual(message, "隧道会话已清理。配对文件还在。")
+        XCTAssertTrue(store.status.hasPairing)
+        XCTAssertFalse(store.isSimulating)
+    }
+
+    @MainActor
+    func testFailedPushAbandonsTheHalfOpenTunnel() async throws {
+        let client = FakeIdeviceClient(results: [.rejected])
+        let store = try readyStore(client: client)
+
+        let failure = await store.set(latitude: 22.5, longitude: 113.9)
+
+        XCTAssertEqual(failure, .rejected)
+        XCTAssertEqual(client.abandons, 1)
+        XCTAssertFalse(client.retainsSimulation)
+    }
+
+    @MainActor
+    func testSetupStoreGivesUpAfterTunnelRetries() async throws {
+        let client = FakeIdeviceClient(results: [.tunnel, .tunnel, .tunnel])
+        let store = try readyStore(
+            client: client,
+            tunnelRetryDelaysNanoseconds: [1_000_000, 1_000_000]
+        )
+
+        let failure = await store.set(latitude: 22.5, longitude: 113.9)
+
+        XCTAssertEqual(failure, .tunnel)
+        XCTAssertEqual(client.pushes.count, 3)
+        XCTAssertFalse(store.isSimulating)
     }
 
     @MainActor
@@ -84,7 +201,7 @@ final class RouteLocationTests: XCTestCase {
         let client = FakeIdeviceClient(results: [.tunnel, nil])
         let pushed = expectation(description: "first push")
         client.afterSet = { pushed.fulfill() }
-        let store = try readyStore(client: client, tunnelRetryDelayNanoseconds: 5_000_000_000)
+        let store = try readyStore(client: client, tunnelRetryDelaysNanoseconds: [5_000_000_000])
 
         let task = Task { await store.set(latitude: 22.5, longitude: 113.9) }
         await fulfillment(of: [pushed], timeout: 2)
@@ -249,7 +366,7 @@ final class RouteLocationTests: XCTestCase {
     @MainActor
     func testSetAndClearRecordTimesWithoutOverwritingOnSupersede() async throws {
         let client = FakeIdeviceClient(results: [nil], clearResults: [.clearFailed])
-        let store = try readyStore(client: client, tunnelRetryDelayNanoseconds: 5_000_000_000)
+        let store = try readyStore(client: client, tunnelRetryDelaysNanoseconds: [5_000_000_000])
         let setFailure = await store.set(latitude: 22.5, longitude: 113.9)
         XCTAssertNil(setFailure)
         XCTAssertNotNil(store.activity.lastSetAt)
@@ -379,7 +496,7 @@ final class RouteLocationTests: XCTestCase {
         client: FakeIdeviceClient,
         isVPNInstalled: @escaping @MainActor () -> Bool = { true },
         isTunnelConnected: @escaping @MainActor () -> Bool = { true },
-        tunnelRetryDelayNanoseconds: UInt64 = 1_000_000
+        tunnelRetryDelaysNanoseconds: [UInt64] = [1_000_000]
     ) throws -> RouteLocationSetupStore {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("RouteLocationSetupStoreTests.\(UUID().uuidString)", isDirectory: true)
@@ -394,7 +511,7 @@ final class RouteLocationTests: XCTestCase {
             isVPNInstalled: isVPNInstalled,
             isTunnelConnected: isTunnelConnected,
             deviceAddress: "10.7.0.1",
-            tunnelRetryDelayNanoseconds: tunnelRetryDelayNanoseconds
+            tunnelRetryDelaysNanoseconds: tunnelRetryDelaysNanoseconds
         )
         return RouteLocationSetupStore(pairingStore: pairingStore, client: client, environment: environment)
     }
@@ -409,6 +526,7 @@ private final class FakeIdeviceClient: IdeviceLocationPushing, @unchecked Sendab
     private(set) var clears = 0
     private(set) var reconnectClears = 0
     private(set) var invalidations = 0
+    private(set) var abandons = 0
     var retainsSimulation = false
     var beforeSet: (@Sendable () -> Void)?
     var afterSet: (@Sendable () -> Void)?
@@ -486,6 +604,13 @@ private final class FakeIdeviceClient: IdeviceLocationPushing, @unchecked Sendab
         reconnectClears += 1
         pushes.append((0, 0, pairingPath))
         return finishClear()
+    }
+
+    func abandonSession() {
+        lock.lock()
+        defer { lock.unlock() }
+        abandons += 1
+        retainsSimulation = false
     }
 
     private func finishClear() -> IdeviceCommandOutcome {

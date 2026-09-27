@@ -100,6 +100,14 @@ final class SpoofSession: ObservableObject {
         effectRevision &+= 1
     }
 
+    /// 设置里清理隧道会话之后：只同步界面，不再向设备发一次 clear。
+    func noteExternalClear() {
+        services?.pauseRoute()
+        invalidateOperation()
+        clearWrittenCoordinate()
+        state = .idle
+    }
+
     func begin(target: FavoriteLocation) {
         guard let services else { return }
         if services.isUseBlocked() { return }

@@ -85,6 +85,17 @@ extension SettingsView {
                     Spacer()
                     Text(virtualLocationStatusText).foregroundStyle(.secondary)
                 }
+                if runtimeMode.mode != .developerTunnel {
+                    Button {
+                        restoreRealLocation()
+                    } label: {
+                        Label("恢复真实定位", systemImage: "location.slash")
+                    }
+                    .disabled(restoreControlsDisabled)
+                    Text("关掉当前虚拟定位，让系统回到真实位置。")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
                 HStack {
                     Label("地图坐标标准", systemImage: "globe")
                     Spacer()
@@ -99,7 +110,7 @@ extension SettingsView {
 
             locationSimulationSection
             if runtimeMode.mode == .developerTunnel {
-                RouteLocationSettingsSection()
+                RouteLocationSettingsSection(session: session)
             }
             favoriteBackupSection
 

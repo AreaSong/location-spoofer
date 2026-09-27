@@ -112,6 +112,7 @@ struct MapHomeView: View {
     @State var developerLocationError = ""
     @State var lastRoutePhase = RoutePhase.inactive
     @State var lastRouteWrittenPair: CoordinatePair?
+    @State var lastDeveloperTunnelRecoveryAt: Date?
     @State var realtimeRequestTask: Task<Void, Never>?
     @State var realtimeRequestContext: RealtimeLocationRequestContext?
     @State var wifiChangeObserverToken: UUID?
@@ -321,7 +322,7 @@ struct MapHomeView: View {
         .sheet(item: $activeSheet) { sheet in
             NavigationView {
                 switch sheet {
-                case .settings: SettingsView(setup: setup, actions: actions, favorites: favorites)
+                case .settings: SettingsView(setup: setup, actions: actions, favorites: favorites, session: session)
                 case .logs: RuntimeLogsView(setup: setup, actions: actions, testFavorite: testFavorite)
                 case .favorites:
                     FavoriteListView(
@@ -401,7 +402,7 @@ struct MapHomeView: View {
         }
         .sheet(isPresented: $showRouteLocationSetup) {
             NavigationView {
-                List { RouteLocationSettingsSection() }
+                List { RouteLocationSettingsSection(session: session) }
                     .navigationTitle("路线定位")
                     .toolbar {
                         Button("关闭") { showRouteLocationSetup = false }
@@ -471,8 +472,10 @@ struct MapHomeView: View {
             } else if runtimeMode.mode == .thirdParty {
                 refreshThirdPartyState()
             }
+            syncDeveloperTunnelMonitor()
         }
         .onDisappear {
+            routeLocation.stopTunnelMonitor()
             if let token = wifiChangeObserverToken {
                 net.removeWiFiChangeObserver(token)
                 wifiChangeObserverToken = nil
@@ -492,10 +495,15 @@ struct MapHomeView: View {
             guard phase == .active else {
                 if route.phase == .playing {
                     BackgroundKeepAlive.shared.retain(.routePlayback)
+                } else if runtimeMode.mode == .developerTunnel, !UIPreview.isEnabled() {
+                    routeLocation.abandonStaleSession()
                 }
                 return
             }
             routeLocation.refresh()
+            if runtimeMode.mode == .developerTunnel {
+                recoverDeveloperTunnelIfNeeded()
+            }
             if runtimeMode.mode == .localWiFi, proxy.isRunning {
                 BackgroundKeepAlive.shared.retain(.proxy)
             }
@@ -510,6 +518,10 @@ struct MapHomeView: View {
             Task { @MainActor in
                 await awaitCoordinatedMapCoordinateSystemRefresh(reason: "App回到前台")
             }
+        }
+        .onChange(of: routeLocation.status.tunnelConnected) { connected in
+            guard connected else { return }
+            recoverDeveloperTunnelIfNeeded()
         }
         .onChange(of: mapState.selection.revision) { _ in
             refreshCachedSelectionPair()
@@ -566,6 +578,7 @@ struct MapHomeView: View {
             if route.waitingForActivation {
                 settleRouteSimulation(after: route.cancelWaiting(), from: .preparing)
             }
+            syncDeveloperTunnelMonitor()
         }
         .sheet(isPresented: $showEnableTip) { enableTipSheet }
         .sheet(isPresented: $showDisableTip) { disableTipSheet }
@@ -573,6 +586,9 @@ struct MapHomeView: View {
             get: { !developerLocationError.isEmpty },
             set: { if !$0 { developerLocationError = "" } }
         )) {
+            Button("再试一次") {
+                retryDeveloperLocation(command: spotRetryCommand)
+            }
             Button("打开路线定位") { showRouteLocationSetup = true }
             Button("知道了", role: .cancel) {}
         } message: {

@@ -5,10 +5,14 @@ import UniformTypeIdentifiers
 /// 每行带状态图标和一个内联动作，回到前台时自动刷新。
 struct RouteLocationChecklist: View {
     @ObservedObject var setup = RouteLocationSetupStore.shared
+    var session: SpoofSession? = nil
     @Environment(\.scenePhase) private var scenePhase
     @State private var showsImporter = false
     @State private var showsDeleteConfirm = false
     @State private var importError = ""
+    @State private var actionMessage = ""
+    @State private var actionIsWarning = false
+    @State private var isResettingCache = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -48,6 +52,11 @@ struct RouteLocationChecklist: View {
             Text("路线播放会把坐标推进系统定位，不用反复开关定位服务。请先连上 LocalDevVPN，并导入 RPPairing 文件。iOS 18 到 26 用电脑生成一次即可。需要 iOS 18 或更新的系统。")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
+            if !actionMessage.isEmpty {
+                Text(actionMessage)
+                    .font(.footnote)
+                    .foregroundStyle(actionIsWarning ? Color.orange : Color.secondary)
+            }
             if !importError.isEmpty {
                 Text(importError)
                     .font(.footnote)
@@ -73,17 +82,58 @@ struct RouteLocationChecklist: View {
     }
 
     private var tunnelActivity: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 8) {
             Text(setup.activity.diagnosticText)
                 .font(.caption.monospaced())
                 .foregroundStyle(.secondary)
-            Button(setup.isClearing ? "正在清除…" : "重试清除") {
-                Task { _ = await setup.clear() }
+            Button {
+                restoreRealLocation()
+            } label: {
+                Label(setup.isClearing ? "正在恢复…" : "恢复真实定位", systemImage: "location.slash")
             }
             .buttonStyle(.bordered)
             .controlSize(.small)
-            .disabled(setup.isClearing)
+            .disabled(setup.isClearing || isResettingCache || session?.state == .verifying)
+            Button {
+                Task { await resetTunnelCache() }
+            } label: {
+                Label(isResettingCache ? "正在清理…" : "清理隧道会话", systemImage: "xmark.bin")
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+            .disabled(setup.isClearing || isResettingCache || session?.state == .verifying)
+            Text("恢复真实定位会关掉系统模拟。清理隧道会话只丢掉卡住的连接，不删除配对文件。虚拟定位用着用着连不上时，先点这个再重连 LocalDevVPN。")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
         }
+    }
+
+    private func restoreRealLocation() {
+        actionMessage = ""
+        actionIsWarning = false
+        if let session {
+            session.stop()
+            actionMessage = "正在恢复真实定位。"
+            return
+        }
+        Task {
+            if let failure = await setup.clear() {
+                actionMessage = failure.message
+                actionIsWarning = true
+            } else {
+                actionMessage = "已恢复真实定位。"
+                actionIsWarning = false
+            }
+        }
+    }
+
+    private func resetTunnelCache() async {
+        isResettingCache = true
+        defer { isResettingCache = false }
+        let message = await setup.resetTunnelCache()
+        session?.noteExternalClear()
+        actionIsWarning = message.contains("可能还停在虚拟点")
+        actionMessage = message
     }
 
     private func checklistRow(
