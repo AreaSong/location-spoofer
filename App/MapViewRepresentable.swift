@@ -22,7 +22,6 @@ struct MapViewRepresentable: UIViewRepresentable {
     var playbackClock: RoutePlaybackClock?
     var walkHeadingDegrees: Double? = nil
     var showsWalkHeading: Bool = false
-    var showsWalkCompassRing: Bool = false
 
     func makeCoordinator() -> Coordinator { Coordinator(parent: self) }
 
@@ -138,7 +137,6 @@ struct MapViewRepresentable: UIViewRepresentable {
         context.coordinator.updateWalkHeadingHud(
             degrees: walkHeadingDegrees,
             visible: showsWalkHeading,
-            showsCompassRing: showsWalkCompassRing,
             on: map
         )
     }
@@ -359,6 +357,7 @@ struct MapViewRepresentable: UIViewRepresentable {
                 for sub in view.subviews where sub.bounds.width > userDotDiameter + 4 {
                     sub.isHidden = true
                 }
+                view.isHidden = parent.showsWalkHeading
             }
         }
 

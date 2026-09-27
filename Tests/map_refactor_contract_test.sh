@@ -118,12 +118,13 @@ grep -q 'quickActions' "$ROOT/App/MapHomeBottomCard.swift" \
   || fail "collapsed bottom card must keep walk shortcuts outside the expanded lists"
 grep -q 'enum PhysicalWalkHeadingPicker' "$ROOT/Shared/PhysicalWalkDisplacement.swift" \
   || fail "heading chips must stay collapsed after the walk direction is chosen"
-grep -q 'showsWalkCompassRing' "$ROOT/App/MapHomeView.swift" \
-  || fail "selecting 罗盘 must show the map compass ring"
-grep -q 'static let compassSize: CGFloat = 108' "$ROOT/App/WalkHeadingHud.swift" \
-  || fail "follow-compass mode must restore the N/E/S/W ring on the map"
-grep -q 'static let compactSize: CGFloat = 40' "$ROOT/App/WalkHeadingHud.swift" \
-  || fail "locked cardinal heading must keep a compact map arrow"
+grep -q 'applyNativeUserLocationVisibility' "$ROOT/App/WalkHeadingHud.swift" \
+  || fail "walk heading must sit on the selected coordinate instead of a second location mark"
+grep -q 'static let puckSize: CGFloat = 28' "$ROOT/App/WalkHeadingHud.swift" \
+  || fail "walk heading must use a location-puck arrow on the selected coordinate"
+if grep -q 'compassSize' "$ROOT/App/WalkHeadingHud.swift"; then
+  fail "walk heading must not draw a separate compass ring on the map"
+fi
 grep -q 'func startHeadingPreview' "$ROOT/App/PhysicalWalkController.swift" \
   || fail "compass heading must update before virtual location tracking starts"
 grep -q 'GCJ-02(国内)' "$ROOT/App/MapHomeCoordinateLine.swift" || fail "current selection panel must label the domestic coordinate as GCJ-02"
