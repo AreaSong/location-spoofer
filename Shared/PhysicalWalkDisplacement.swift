@@ -1,5 +1,48 @@
 import Foundation
 
+enum PhysicalWalkAuthorization: Equatable {
+    case notDetermined
+    case allowed
+    case denied
+}
+
+enum PhysicalWalkSensorErrorAction: Equatable {
+    case ignore
+    case fail(String)
+}
+
+enum PhysicalWalkSensorPolicy {
+    static let permissionDeniedMessage = "需要运动与健身权限才能真实走动。"
+    static let sensorUnavailableMessage = "真实走动无法读取步伐，请稍后重试。"
+    static let stepCountingUnavailableMessage = "这台设备不支持计步，无法使用真实走动。"
+    static let headingUnavailableMessage = "这台设备没有罗盘，无法按朝向移动虚拟定位。"
+
+    static func availabilityMessage(
+        stepCountingAvailable: Bool,
+        authorization: PhysicalWalkAuthorization,
+        headingAvailable: Bool
+    ) -> String? {
+        guard stepCountingAvailable else { return stepCountingUnavailableMessage }
+        if authorization == .denied { return permissionDeniedMessage }
+        guard headingAvailable else { return headingUnavailableMessage }
+        return nil
+    }
+
+    static func action(
+        forAuthorization authorization: PhysicalWalkAuthorization,
+        isAuthorizationError: Bool
+    ) -> PhysicalWalkSensorErrorAction {
+        switch authorization {
+        case .notDetermined:
+            return .ignore
+        case .denied:
+            return .fail(permissionDeniedMessage)
+        case .allowed:
+            return isAuthorizationError ? .ignore : .fail(sensorUnavailableMessage)
+        }
+    }
+}
+
 struct PhysicalWalkSample: Equatable {
     var distanceMeters: Double?
     var steps: Int?

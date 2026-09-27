@@ -51,13 +51,14 @@ final class PhysicalWalkController: ObservableObject {
         status = .waitingForHeading
         keepAlive.retain(.physicalWalk)
         heading.start()
-        sensor.start(from: Date()) { [weak self] sample, error in
-            self?.handleUpdate(sample: sample, error: error, generation: generation)
+        sensor.requestAuthorization { [weak self] status in
+            self?.continueStart(
+                after: status,
+                generation: generation,
+                latitude: latitude,
+                longitude: longitude
+            )
         }
-        RuntimeLogger.info("APP", "真实走动", "开始跟踪", details: [
-            "纬度": String(latitude),
-            "经度": String(longitude)
-        ])
     }
 
     func stop() {
@@ -81,10 +82,30 @@ final class PhysicalWalkController: ObservableObject {
         }
     }
 
+    private func continueStart(
+        after status: PhysicalWalkAuthorization,
+        generation: UInt64,
+        latitude: Double,
+        longitude: Double
+    ) {
+        guard generation == self.generation, isTracking else { return }
+        if status == .denied {
+            fail(PhysicalWalkSensorPolicy.permissionDeniedMessage)
+            return
+        }
+        sensor.start(from: Date()) { [weak self] sample, error in
+            self?.handleUpdate(sample: sample, error: error, generation: generation)
+        }
+        RuntimeLogger.info("APP", "真实走动", "开始跟踪", details: [
+            "纬度": String(latitude),
+            "经度": String(longitude)
+        ])
+    }
+
     private func handleUpdate(sample: PhysicalWalkSample?, error: Error?, generation: UInt64) {
         guard generation == self.generation, isTracking else { return }
         if let error {
-            fail(Self.message(for: error))
+            handleSensorError(error)
             return
         }
         guard let sample else { return }
@@ -92,6 +113,18 @@ final class PhysicalWalkController: ObservableObject {
             writeTask = Task { [weak self] in
                 await self?.considerWrite(at: Date())
             }
+        }
+    }
+
+    private func handleSensorError(_ error: Error) {
+        switch PhysicalWalkSensorPolicy.action(
+            forAuthorization: sensor.authorizationStatus(),
+            isAuthorizationError: Self.isMotionAuthorizationError(error)
+        ) {
+        case .ignore:
+            return
+        case let .fail(message):
+            fail(message)
         }
     }
 
@@ -128,16 +161,11 @@ final class PhysicalWalkController: ObservableObject {
     }
 
     private func availabilityMessage() -> String? {
-        guard sensor.isStepCountingAvailable else {
-            return "这台设备不支持计步，无法使用真实走动。"
-        }
-        if sensor.authorizationStatus() == .denied {
-            return "需要运动与健身权限才能真实走动。"
-        }
-        guard heading.headingAvailable else {
-            return "这台设备没有罗盘，无法按朝向移动虚拟定位。"
-        }
-        return nil
+        PhysicalWalkSensorPolicy.availabilityMessage(
+            stepCountingAvailable: sensor.isStepCountingAvailable,
+            authorization: sensor.authorizationStatus(),
+            headingAvailable: heading.headingAvailable
+        )
     }
 
     private func fail(_ message: String) {
@@ -152,11 +180,15 @@ final class PhysicalWalkController: ObservableObject {
         keepAlive.release(.physicalWalk)
     }
 
-    private static func message(for error: Error) -> String {
+    private static func isMotionAuthorizationError(_ error: Error) -> Bool {
         let nsError = error as NSError
-        if nsError.domain == CMErrorDomain {
-            return "需要运动与健身权限才能真实走动。"
+        guard nsError.domain == CMErrorDomain else { return false }
+        switch nsError.code {
+        case Int(CMErrorMotionActivityNotAuthorized.rawValue),
+             Int(CMErrorNotAuthorized.rawValue):
+            return true
+        default:
+            return false
         }
-        return "真实走动无法读取步伐，请稍后重试。"
     }
 }

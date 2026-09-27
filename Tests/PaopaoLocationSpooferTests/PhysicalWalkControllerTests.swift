@@ -1,3 +1,4 @@
+import CoreMotion
 import XCTest
 @testable import PaopaoLocationSpoofer
 
@@ -107,6 +108,61 @@ final class PhysicalWalkControllerTests: XCTestCase {
         XCTAssertEqual(controller.status, .waitingForHeading)
         controller.stop()
     }
+
+    func testPrematureAuthorizationErrorDoesNotFailWhilePromptIsOpen() {
+        let sensor = FakePhysicalWalkSensor()
+        sensor.authorization = .notDetermined
+        let heading = FakePhysicalWalkHeading()
+        let controller = PhysicalWalkController(sensor: sensor, heading: heading)
+        var failure = ""
+        controller.onFailure = { failure = $0 }
+
+        controller.start(latitude: 22.494, longitude: 113.951)
+        sensor.emit(error: Self.motionAuthorizationError)
+
+        XCTAssertTrue(controller.isTracking)
+        XCTAssertEqual(failure, "")
+        controller.stop()
+    }
+
+    func testDeniedAfterPromptFailsWithPermissionMessage() {
+        let sensor = FakePhysicalWalkSensor()
+        sensor.authorization = .notDetermined
+        let heading = FakePhysicalWalkHeading()
+        let controller = PhysicalWalkController(sensor: sensor, heading: heading)
+        var failure = ""
+        controller.onFailure = { failure = $0 }
+
+        controller.start(latitude: 22.494, longitude: 113.951)
+        sensor.authorization = .denied
+        sensor.emit(error: Self.motionAuthorizationError)
+
+        XCTAssertFalse(controller.isTracking)
+        XCTAssertEqual(failure, PhysicalWalkSensorPolicy.permissionDeniedMessage)
+        XCTAssertFalse(BackgroundKeepAlive.shared.holds(.physicalWalk))
+    }
+
+    func testStaleAuthorizationErrorAfterAllowDoesNotFail() {
+        let sensor = FakePhysicalWalkSensor()
+        let heading = FakePhysicalWalkHeading()
+        let controller = PhysicalWalkController(sensor: sensor, heading: heading)
+        var failure = ""
+        controller.onFailure = { failure = $0 }
+
+        controller.start(latitude: 22.494, longitude: 113.951)
+        sensor.emit(error: Self.motionAuthorizationError)
+
+        XCTAssertTrue(controller.isTracking)
+        XCTAssertEqual(failure, "")
+        controller.stop()
+    }
+
+    private static var motionAuthorizationError: NSError {
+        NSError(
+            domain: CMErrorDomain,
+            code: Int(CMErrorMotionActivityNotAuthorized.rawValue)
+        )
+    }
 }
 
 @MainActor
@@ -117,9 +173,17 @@ private final class FakePhysicalWalkSensor: PhysicalWalkSensing {
 
     func authorizationStatus() -> PhysicalWalkAuthorization { authorization }
 
+    func requestAuthorization(_ completion: @escaping (PhysicalWalkAuthorization) -> Void) {
+        completion(authorization)
+    }
+
     func start(from date: Date, handler: @escaping (PhysicalWalkSample?, Error?) -> Void) {
         _ = date
         self.handler = handler
+    }
+
+    func emit(sample: PhysicalWalkSample? = nil, error: Error? = nil) {
+        handler?(sample, error)
     }
 
     func stop() {

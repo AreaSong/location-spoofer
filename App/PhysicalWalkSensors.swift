@@ -2,16 +2,11 @@ import CoreLocation
 import CoreMotion
 import Foundation
 
-enum PhysicalWalkAuthorization: Equatable {
-    case notDetermined
-    case allowed
-    case denied
-}
-
 @MainActor
 protocol PhysicalWalkSensing: AnyObject {
     var isStepCountingAvailable: Bool { get }
     func authorizationStatus() -> PhysicalWalkAuthorization
+    func requestAuthorization(_ completion: @escaping (PhysicalWalkAuthorization) -> Void)
     func start(from date: Date, handler: @escaping (PhysicalWalkSample?, Error?) -> Void)
     func stop()
 }
@@ -27,6 +22,7 @@ protocol PhysicalWalkHeadingSensing: AnyObject {
 @MainActor
 final class CoreMotionPedometerDriver: PhysicalWalkSensing {
     private let pedometer = CMPedometer()
+    private let activityManager = CMMotionActivityManager()
 
     var isStepCountingAvailable: Bool {
         CMPedometer.isStepCountingAvailable()
@@ -40,6 +36,24 @@ final class CoreMotionPedometerDriver: PhysicalWalkSensing {
             return .allowed
         default:
             return .notDetermined
+        }
+    }
+
+    func requestAuthorization(_ completion: @escaping (PhysicalWalkAuthorization) -> Void) {
+        let current = authorizationStatus()
+        guard current == .notDetermined else {
+            completion(current)
+            return
+        }
+        guard CMMotionActivityManager.isActivityAvailable() else {
+            completion(.notDetermined)
+            return
+        }
+        let now = Date()
+        activityManager.queryActivityStarting(from: now.addingTimeInterval(-15), to: now, to: .main) { [weak self] _, _ in
+            Task { @MainActor in
+                completion(self?.authorizationStatus() ?? .denied)
+            }
         }
     }
 

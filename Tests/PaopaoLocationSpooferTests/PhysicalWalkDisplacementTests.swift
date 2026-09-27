@@ -166,6 +166,43 @@ final class PhysicalWalkDisplacementTests: XCTestCase {
         XCTAssertTrue(PhysicalWalkSession.shouldPauseRoute(isEnabled: true, routePlaying: true))
         XCTAssertTrue(PhysicalWalkSession.shouldDisableForRoutePlayback(routePlaying: false, routeWaiting: true))
     }
+
+    func testSensorPolicyIgnoresAuthorizationErrorsUntilTheUserResponds() {
+        XCTAssertEqual(
+            PhysicalWalkSensorPolicy.action(forAuthorization: .notDetermined, isAuthorizationError: true),
+            .ignore
+        )
+        XCTAssertEqual(
+            PhysicalWalkSensorPolicy.action(forAuthorization: .allowed, isAuthorizationError: true),
+            .ignore
+        )
+        XCTAssertEqual(
+            PhysicalWalkSensorPolicy.action(forAuthorization: .denied, isAuthorizationError: true),
+            .fail(PhysicalWalkSensorPolicy.permissionDeniedMessage)
+        )
+        XCTAssertEqual(
+            PhysicalWalkSensorPolicy.action(forAuthorization: .allowed, isAuthorizationError: false),
+            .fail(PhysicalWalkSensorPolicy.sensorUnavailableMessage)
+        )
+    }
+
+    func testAvailabilityMessageAsksForMotionPermissionOnlyAfterDenial() {
+        XCTAssertNil(
+            PhysicalWalkSensorPolicy.availabilityMessage(
+                stepCountingAvailable: true,
+                authorization: .notDetermined,
+                headingAvailable: true
+            )
+        )
+        XCTAssertEqual(
+            PhysicalWalkSensorPolicy.availabilityMessage(
+                stepCountingAvailable: true,
+                authorization: .denied,
+                headingAvailable: true
+            ),
+            PhysicalWalkSensorPolicy.permissionDeniedMessage
+        )
+    }
 }
 
 private func XCTAssertEqual(
