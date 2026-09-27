@@ -115,6 +115,24 @@ enum PhysicalWalkHeadingLock {
         default: return "西北"
         }
     }
+
+    static func pickerSummary(headingDegrees: Double?, locked: Bool) -> String {
+        guard let headingDegrees else { return "未定" }
+        let name = compassName(headingDegrees)
+        return locked ? name : "罗盘 · \(name)"
+    }
+}
+
+/// 朝向点选主要在开走前用一次：还没有方向时展开，已有方向则收起。
+enum PhysicalWalkHeadingPicker {
+    static func shouldRevealControls(
+        isEnabled: Bool,
+        status: PhysicalWalkStatus,
+        hasResolvedHeading: Bool
+    ) -> Bool {
+        guard isEnabled else { return false }
+        return status == .waitingForHeading || !hasResolvedHeading
+    }
 }
 
 enum PhysicalWalkStatusCopy {

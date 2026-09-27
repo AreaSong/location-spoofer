@@ -284,6 +284,26 @@ final class PhysicalWalkDisplacementTests: XCTestCase {
         )
         XCTAssertEqual(PhysicalWalkHeadingLock.compassName(0), "北")
         XCTAssertEqual(PhysicalWalkHeadingLock.compassName(90), "东")
+        XCTAssertEqual(PhysicalWalkHeadingLock.pickerSummary(headingDegrees: 90, locked: true), "东")
+        XCTAssertEqual(
+            PhysicalWalkHeadingLock.pickerSummary(headingDegrees: 0, locked: false),
+            "罗盘 · 北"
+        )
+        XCTAssertEqual(PhysicalWalkHeadingLock.pickerSummary(headingDegrees: nil, locked: false), "未定")
+        XCTAssertTrue(
+            PhysicalWalkHeadingPicker.shouldRevealControls(
+                isEnabled: true,
+                status: .waitingForHeading,
+                hasResolvedHeading: false
+            )
+        )
+        XCTAssertFalse(
+            PhysicalWalkHeadingPicker.shouldRevealControls(
+                isEnabled: true,
+                status: .tracking,
+                hasResolvedHeading: true
+            )
+        )
         XCTAssertEqual(PhysicalWalkHeadingLock.normalized(-90), 270)
         XCTAssertNil(
             PhysicalWalkSensorPolicy.availabilityMessage(
