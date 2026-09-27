@@ -115,48 +115,36 @@ struct MapHomeCoordinateLine: View {
     }
 }
 
-/// 搜索栏下方的坐标条：默认收起一行，左边坐标、右边地点，展开后可切换坐标系并复制。
+/// 搜索栏下方：左边坐标，右边朝向。点坐标可复制并切换坐标系，点朝向可改方向。
 struct MapHomeTopInfoBar: View {
     let pair: CoordinatePair
     let mapSystem: CoordinateConverter.MapCoordinateSystem
-    let placeName: String
-    @State private var isExpanded = false
+    @ObservedObject var walkStore: PhysicalWalkStore
+    @ObservedObject var walkController: PhysicalWalkController
+    @State private var showsCoordinates = false
+    @State private var showsHeading = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Button(action: { isExpanded.toggle() }) {
-                HStack(spacing: 8) {
-                    Text(mapSystem.rawValue)
-                        .font(.caption2.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: true, vertical: false)
-                    Text(MapHomeCoordinateLine.compactLine(pair: pair, mapSystem: mapSystem))
-                        .font(.caption.monospacedDigit())
-                        .foregroundStyle(.primary)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.72)
-                        .layoutPriority(1)
-                    Text(placeName)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                        .frame(maxWidth: .infinity, alignment: .trailing)
-                    Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                }
-                .padding(.horizontal, 14)
-                .frame(minHeight: 44)
-                .contentShape(Rectangle())
+            HStack(spacing: 8) {
+                coordinateButton
+                headingChip
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel("\(placeName)，坐标 \(MapHomeCoordinateLine.compactLine(pair: pair, mapSystem: mapSystem))")
-            .accessibilityHint(isExpanded ? "收起坐标详情" : "展开坐标详情")
+            .padding(.leading, 14)
+            .padding(.trailing, 8)
+            .frame(minHeight: 44)
 
-            if isExpanded {
+            if showsCoordinates {
                 MapHomeCoordinateLine(pair: pair, mapSystem: mapSystem)
                     .padding(.horizontal, 10)
                     .padding(.bottom, 8)
+            }
+            if showsHeading {
+                PhysicalWalkHeadingControls(controller: walkController) {
+                    showsHeading = false
+                }
+                .padding(.horizontal, 10)
+                .padding(.bottom, 8)
             }
         }
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
@@ -165,5 +153,80 @@ struct MapHomeTopInfoBar: View {
                 .strokeBorder(.white.opacity(0.18), lineWidth: 0.5)
         )
         .shadow(color: .black.opacity(0.08), radius: 12, y: 4)
+        .onAppear { showsHeading = needsHeadingSetup }
+        .onChange(of: needsHeadingSetup) { showsHeading = $0 }
+    }
+
+    private var needsHeadingSetup: Bool {
+        PhysicalWalkHeadingPicker.shouldRevealControls(
+            isEnabled: walkStore.isEnabled,
+            status: walkController.status,
+            hasResolvedHeading: walkController.activeHeadingDegrees != nil
+        )
+    }
+
+    private var coordinateButton: some View {
+        Button(action: toggleCoordinates) {
+            HStack(spacing: 6) {
+                Text(mapSystem.rawValue)
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: true, vertical: false)
+                Text(MapHomeCoordinateLine.compactLine(pair: pair, mapSystem: mapSystem))
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.72)
+                Image(systemName: showsCoordinates ? "chevron.up" : "chevron.down")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(minHeight: 44)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("坐标 \(MapHomeCoordinateLine.compactLine(pair: pair, mapSystem: mapSystem))")
+        .accessibilityHint(showsCoordinates ? "收起坐标详情" : "展开坐标详情")
+    }
+
+    private var headingChip: some View {
+        Button(action: toggleHeading) {
+            HStack(spacing: 6) {
+                Text("朝向")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                Text(headingSummary)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                Image(systemName: showsHeading ? "chevron.up" : "chevron.down")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.horizontal, 10)
+            .frame(minHeight: 32)
+            .background(Color.secondary.opacity(0.12), in: Capsule())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("朝向 \(headingSummary)")
+        .accessibilityHint(showsHeading ? "收起方向选项" : "展开方向选项")
+    }
+
+    private var headingSummary: String {
+        PhysicalWalkHeadingLock.pickerSummary(
+            headingDegrees: walkController.activeHeadingDegrees,
+            locked: walkController.headingMode.isLocked
+        )
+    }
+
+    private func toggleCoordinates() {
+        showsCoordinates.toggle()
+        if showsCoordinates { showsHeading = false }
+    }
+
+    private func toggleHeading() {
+        showsHeading.toggle()
+        if showsHeading { showsCoordinates = false }
     }
 }

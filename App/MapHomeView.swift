@@ -748,7 +748,8 @@ struct MapHomeView: View {
             MapHomeTopInfoBar(
                 pair: currentSelectionPair,
                 mapSystem: displayedMapCoordinateSystem,
-                placeName: mapState.displayName ?? "当前选点"
+                walkStore: physicalWalkStore,
+                walkController: physicalWalk
             )
         }
     }
@@ -785,7 +786,6 @@ struct MapHomeView: View {
             quickActions: {
                 PhysicalWalkSpotControl(
                     store: physicalWalkStore,
-                    controller: physicalWalk,
                     spoofActive: spoofState == .active
                 )
                 if routeKeepsRunningWhileSpotShown {

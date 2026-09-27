@@ -300,6 +300,13 @@ final class PhysicalWalkDisplacementTests: XCTestCase {
         XCTAssertFalse(
             PhysicalWalkHeadingPicker.shouldRevealControls(
                 isEnabled: true,
+                status: .waitingForHeading,
+                hasResolvedHeading: true
+            )
+        )
+        XCTAssertFalse(
+            PhysicalWalkHeadingPicker.shouldRevealControls(
+                isEnabled: true,
                 status: .tracking,
                 hasResolvedHeading: true
             )

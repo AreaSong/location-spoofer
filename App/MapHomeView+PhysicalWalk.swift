@@ -101,9 +101,7 @@ extension MapHomeView {
 
 struct PhysicalWalkSpotControl: View {
     @ObservedObject var store: PhysicalWalkStore
-    @ObservedObject var controller: PhysicalWalkController
     let spoofActive: Bool
-    @State private var showsHeadingPicker = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -119,15 +117,10 @@ struct PhysicalWalkSpotControl: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
-            if store.isEnabled {
-                headingPicker
-            }
         }
         .padding(.horizontal, 2)
         .padding(.top, 2)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .onAppear { showsHeadingPicker = needsHeadingSetup }
-        .onChange(of: needsHeadingSetup) { showsHeadingPicker = $0 }
     }
 
     private var enabledBinding: Binding<Bool> {
@@ -136,57 +129,19 @@ struct PhysicalWalkSpotControl: View {
             set: { store.setEnabled($0) }
         )
     }
+}
 
-    private var needsHeadingSetup: Bool {
-        PhysicalWalkHeadingPicker.shouldRevealControls(
-            isEnabled: store.isEnabled,
-            status: controller.status,
-            hasResolvedHeading: controller.activeHeadingDegrees != nil
-        )
-    }
+struct PhysicalWalkHeadingControls: View {
+    @ObservedObject var controller: PhysicalWalkController
+    var onChoseHeading: () -> Void = {}
 
-    private var headingPicker: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Button(action: { showsHeadingPicker.toggle() }) {
-                HStack(spacing: 8) {
-                    Text("朝向")
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(.primary)
-                    Text(headingSummary)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                    Spacer(minLength: 4)
-                    Image(systemName: showsHeadingPicker ? "chevron.up" : "chevron.down")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                }
-                .frame(minHeight: 32)
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("朝向 \(headingSummary)")
-            .accessibilityHint(showsHeadingPicker ? "收起方向选项" : "展开方向选项")
-
-            if showsHeadingPicker {
-                headingControls
-            }
-        }
-    }
-
-    private var headingSummary: String {
-        PhysicalWalkHeadingLock.pickerSummary(
-            headingDegrees: controller.activeHeadingDegrees,
-            locked: controller.headingMode.isLocked
-        )
-    }
-
-    private var headingControls: some View {
+    var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
                 ForEach(PhysicalWalkHeadingLock.cardinals, id: \.title) { item in
                     Button(item.title) {
                         controller.lockHeading(degrees: item.degrees)
-                        showsHeadingPicker = false
+                        onChoseHeading()
                     }
                     .buttonStyle(CapsuleChipStyle(tint: isSelectedCardinal(item.degrees) ? .accentColor : nil))
                     .accessibilityLabel("朝\(item.title)")
@@ -195,7 +150,7 @@ struct PhysicalWalkSpotControl: View {
             HStack(spacing: 6) {
                 Button("罗盘") {
                     controller.followCompass()
-                    showsHeadingPicker = false
+                    onChoseHeading()
                 }
                 .buttonStyle(CapsuleChipStyle(tint: controller.headingMode == .followCompass ? .accentColor : nil))
                 .accessibilityLabel("跟随罗盘朝向")

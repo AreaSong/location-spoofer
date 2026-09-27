@@ -127,11 +127,11 @@ enum PhysicalWalkHeadingLock {
 enum PhysicalWalkHeadingPicker {
     static func shouldRevealControls(
         isEnabled: Bool,
-        status: PhysicalWalkStatus,
+        status _: PhysicalWalkStatus,
         hasResolvedHeading: Bool
     ) -> Bool {
         guard isEnabled else { return false }
-        return status == .waitingForHeading || !hasResolvedHeading
+        return !hasResolvedHeading
     }
 }
 
