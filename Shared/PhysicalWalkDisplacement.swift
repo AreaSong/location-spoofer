@@ -284,10 +284,15 @@ enum WalkPuckMapPlacement {
         spoofActive: Bool,
         writtenLatitude: Double?,
         writtenLongitude: Double?,
+        liveLatitude: Double? = nil,
+        liveLongitude: Double? = nil,
         realtimeCoordinate: CLLocationCoordinate2D?,
         mapSystem: CoordinateConverter.MapCoordinateSystem
     ) -> CLLocationCoordinate2D? {
-        if spoofActive, let latitude = writtenLatitude, let longitude = writtenLongitude {
+        if spoofActive {
+            let latitude = liveLatitude ?? writtenLatitude
+            let longitude = liveLongitude ?? writtenLongitude
+            guard let latitude, let longitude else { return nil }
             return CoordinatePair(
                 mapCoordinate: CLLocationCoordinate2D(latitude: latitude, longitude: longitude),
                 mapCoordinateSystem: .wgs84
@@ -357,12 +362,15 @@ struct PhysicalWalkEngine: Equatable {
         lastDistance: Double?,
         lastSteps: Int?
     ) -> Double {
-        if let current = sample.distanceMeters {
-            guard let lastDistance else { return 0 }
+        let fromDistance: Double? = {
+            guard let current = sample.distanceMeters, let lastDistance else { return nil }
             return max(0, current - lastDistance)
-        }
-        guard let steps = sample.steps else { return 0 }
-        guard let lastSteps else { return 0 }
-        return Double(max(0, steps - lastSteps)) * PhysicalWalkDisplacement.defaultStrideMeters
+        }()
+        let fromSteps: Double? = {
+            guard let steps = sample.steps, let lastSteps else { return nil }
+            return Double(max(0, steps - lastSteps)) * PhysicalWalkDisplacement.defaultStrideMeters
+        }()
+        // 定点后系统 GPS 不再动，CMPedometer.distance 会冻住；步数仍来自加速度计。
+        return max(fromDistance ?? 0, fromSteps ?? 0)
     }
 }

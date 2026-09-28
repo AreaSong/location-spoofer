@@ -7,6 +7,8 @@ final class PhysicalWalkController: ObservableObject {
     @Published private(set) var isTracking = false
     @Published private(set) var status: PhysicalWalkStatus = .idle
     @Published private(set) var movedMeters = 0.0
+    @Published private(set) var currentLatitude: Double?
+    @Published private(set) var currentLongitude: Double?
     @Published private(set) var headingMode: PhysicalWalkHeadingMode = .followCompass
     @Published private(set) var usesCustomHeading = false
     @Published private(set) var initialHeadingDegrees: Double = 0
@@ -47,6 +49,8 @@ final class PhysicalWalkController: ObservableObject {
         engine = PhysicalWalkEngine(latitude: latitude, longitude: longitude)
         writeGate.reset()
         movedMeters = 0
+        currentLatitude = latitude
+        currentLongitude = longitude
         isTracking = true
         status = .tracking
         publishActiveHeading()
@@ -69,6 +73,8 @@ final class PhysicalWalkController: ObservableObject {
         writeTask = nil
         sensor.stop()
         engine = nil
+        currentLatitude = nil
+        currentLongitude = nil
         let wasTracking = isTracking
         isTracking = false
         status = .idle
@@ -204,6 +210,8 @@ final class PhysicalWalkController: ObservableObject {
         let result = engine.apply(sample: sample, heading: resolvedHeading())
         self.engine = engine
         movedMeters = engine.movedMeters
+        currentLatitude = engine.latitude
+        currentLongitude = engine.longitude
         publishActiveHeading()
         switch result {
         case .unchanged:

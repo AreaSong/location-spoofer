@@ -747,7 +747,7 @@ struct MapHomeView: View {
                 }.accessibilityLabel("更多")
             }
             MapHomeTopInfoBar(
-                pair: currentSelectionPair,
+                pair: displayedCoordinatePair,
                 mapSystem: displayedMapCoordinateSystem,
                 walkStore: physicalWalkStore,
                 walkController: physicalWalk,
@@ -872,6 +872,20 @@ struct MapHomeView: View {
     }
 
     var currentSelectionPair: CoordinatePair { cachedSelectionPair }
+
+    /// 走动跟踪时显示蓝点当前坐标；否则仍是地图中心选点。
+    var displayedCoordinatePair: CoordinatePair {
+        if physicalWalk.isTracking,
+           let latitude = physicalWalk.currentLatitude,
+           let longitude = physicalWalk.currentLongitude {
+            return CoordinateConverter.coordinatePair(
+                lat: latitude,
+                lon: longitude,
+                mapCoordinateSystem: .wgs84
+            )
+        }
+        return currentSelectionPair
+    }
 
     func refreshCachedSelectionPair() {
         if let stored = LastCoordinateStore.load(),

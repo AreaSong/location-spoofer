@@ -76,6 +76,38 @@ final class PhysicalWalkControllerTests: XCTestCase {
         XCTAssertFalse(BackgroundKeepAlive.shared.holds(.physicalWalk))
     }
 
+    func testFrozenPedometerDistanceStillWritesUsingSteps() async throws {
+        let sensor = FakePhysicalWalkSensor()
+        let heading = FakePhysicalWalkHeading()
+        heading.latestYawDegrees = 0
+        let controller = PhysicalWalkController(sensor: sensor, heading: heading)
+        var written: CoordinatePair?
+        controller.applyCoordinate = { pair in
+            written = pair
+            return true
+        }
+        let originLatitude = 22.494
+        let originLongitude = 113.951
+        controller.start(latitude: originLatitude, longitude: originLongitude)
+
+        await controller.ingest(sample: PhysicalWalkSample(distanceMeters: 0, steps: 0))
+        XCTAssertNil(written)
+        XCTAssertEqual(controller.currentLatitude ?? 0, originLatitude, accuracy: 0.000_000_1)
+
+        await controller.ingest(sample: PhysicalWalkSample(distanceMeters: 0, steps: 10))
+        let pair = try XCTUnwrap(written)
+        let distance = CoordinateConverter.distance(
+            lat1: originLatitude,
+            lon1: originLongitude,
+            lat2: pair.wgs84.latitude,
+            lon2: pair.wgs84.longitude
+        )
+        XCTAssertEqual(distance, 7.4, accuracy: 0.5)
+        XCTAssertGreaterThan(controller.currentLatitude ?? originLatitude, originLatitude)
+        controller.stop()
+        XCTAssertNil(controller.currentLatitude)
+    }
+
     func testLockedEastHeadingMovesEastEvenWhenCompassPointsNorth() async throws {
         let sensor = FakePhysicalWalkSensor()
         let heading = FakePhysicalWalkHeading()

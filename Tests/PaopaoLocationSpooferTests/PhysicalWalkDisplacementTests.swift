@@ -114,8 +114,8 @@ final class PhysicalWalkDisplacementTests: XCTestCase {
             sample: PhysicalWalkSample(distanceMeters: 12.2, steps: 17),
             heading: PhysicalWalkHeading(degrees: 0, accuracyDegrees: 8)
         )
-        XCTAssertEqual(later, .moved(deltaMeters: 12.2), accuracy: 0.000_1)
-        XCTAssertEqual(engine.movedMeters, 12.2, accuracy: 0.000_1)
+        XCTAssertEqual(later, .moved(deltaMeters: 12.74), accuracy: 0.000_1)
+        XCTAssertEqual(engine.movedMeters, 12.74, accuracy: 0.000_1)
         XCTAssertEqual(engine.pendingMeters, 0, accuracy: 0.000_1)
         let distance = CoordinateConverter.distance(
             lat1: originLatitude,
@@ -123,7 +123,7 @@ final class PhysicalWalkDisplacementTests: XCTestCase {
             lat2: engine.latitude,
             lon2: engine.longitude
         )
-        XCTAssertEqual(distance, 12.2, accuracy: 0.5)
+        XCTAssertEqual(distance, 12.74, accuracy: 0.5)
         XCTAssertGreaterThan(engine.latitude, originLatitude)
     }
 
@@ -133,6 +133,28 @@ final class PhysicalWalkDisplacementTests: XCTestCase {
         _ = engine.apply(sample: PhysicalWalkSample(steps: 0), heading: heading)
 
         let moved = engine.apply(sample: PhysicalWalkSample(steps: 10), heading: heading)
+        XCTAssertEqual(moved, .moved(deltaMeters: 7.4), accuracy: 0.000_1)
+        let distance = CoordinateConverter.distance(
+            lat1: originLatitude,
+            lon1: originLongitude,
+            lat2: engine.latitude,
+            lon2: engine.longitude
+        )
+        XCTAssertEqual(distance, 7.4, accuracy: 0.5)
+    }
+
+    func testFrozenPedometerDistanceStillMovesUsingSteps() {
+        var engine = PhysicalWalkEngine(latitude: originLatitude, longitude: originLongitude)
+        let heading = PhysicalWalkHeading(degrees: 0, accuracyDegrees: 5)
+        _ = engine.apply(
+            sample: PhysicalWalkSample(distanceMeters: 0, steps: 0),
+            heading: heading
+        )
+
+        let moved = engine.apply(
+            sample: PhysicalWalkSample(distanceMeters: 0, steps: 10),
+            heading: heading
+        )
         XCTAssertEqual(moved, .moved(deltaMeters: 7.4), accuracy: 0.000_1)
         let distance = CoordinateConverter.distance(
             lat1: originLatitude,
@@ -369,6 +391,17 @@ final class PhysicalWalkDisplacementTests: XCTestCase {
         )
         XCTAssertEqual(puck?.latitude ?? 0, 22.5, accuracy: 0.000_000_1)
         XCTAssertEqual(puck?.longitude ?? 0, 113.9, accuracy: 0.000_000_1)
+        let livePuck = WalkPuckMapPlacement.coordinate(
+            spoofActive: true,
+            writtenLatitude: 22.5,
+            writtenLongitude: 113.9,
+            liveLatitude: 22.51,
+            liveLongitude: 113.91,
+            realtimeCoordinate: realtime,
+            mapSystem: .wgs84
+        )
+        XCTAssertEqual(livePuck?.latitude ?? 0, 22.51, accuracy: 0.000_000_1)
+        XCTAssertEqual(livePuck?.longitude ?? 0, 113.91, accuracy: 0.000_000_1)
     }
 
     func testHeadingInstrumentAddsYawDeltaToInitialAndReturnsWhenYawReturns() {

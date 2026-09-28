@@ -158,6 +158,8 @@ grep -q 'enum WalkPuckMapPlacement' "$ROOT/Shared/PhysicalWalkDisplacement.swift
 if grep -q 'walkEnabled' "$ROOT/Shared/PhysicalWalkDisplacement.swift"; then
   fail "spoofed puck must appear even when physical walking is off"
 fi
+grep -q 'fromSteps' "$ROOT/Shared/PhysicalWalkDisplacement.swift" \
+  || fail "physical walk must keep moving from steps when spoofed GPS freezes pedometer distance"
 grep -q 'struct PhysicalWalkHeadingInstrument' "$ROOT/Shared/PhysicalWalkDisplacement.swift" \
   || fail "heading slider must set the instrument initial, not freeze the output"
 grep -q 'xArbitraryZVertical' "$ROOT/App/PhysicalWalkSensors.swift" \

@@ -19,6 +19,8 @@ extension MapHomeView {
             spoofActive: spoofState == .active,
             writtenLatitude: session.writtenLatitude,
             writtenLongitude: session.writtenLongitude,
+            liveLatitude: physicalWalk.currentLatitude,
+            liveLongitude: physicalWalk.currentLongitude,
             realtimeCoordinate: mapState.realtimeCoordinate,
             mapSystem: displayedMapCoordinateSystem
         )
@@ -160,6 +162,10 @@ struct PhysicalWalkHeadingControls: View {
                 .fixedSize(horizontal: false, vertical: true)
         } else if store.isEnabled && !spoofActive {
             Text("先开启虚拟定位")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        } else if !store.isEnabled {
+            Text("打开真实走动后，走路才会移动坐标")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         } else if !store.isCustomHeadingEnabled {
