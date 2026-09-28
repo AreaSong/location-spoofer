@@ -24,6 +24,8 @@ final class RouteLocationTests: XCTestCase {
         XCTAssertNil(RouteLocationReadiness.ready.blockingMessage)
         XCTAssertTrue(RouteLocationPushFailure.tunnel.message.contains("LocalDevVPN"))
         XCTAssertTrue(RouteLocationPushFailure.tunnel.message.contains("划掉"))
+        XCTAssertTrue(RouteLocationPushFailure.tunnelOnCellular.message.contains("流量"))
+        XCTAssertTrue(RouteLocationPushFailure.tunnelOnCellular.message.contains("Wi-Fi"))
     }
 
     func testTunnelInterfaceDetectionAcceptsTheDefaultSubnet() {
@@ -188,6 +190,23 @@ final class RouteLocationTests: XCTestCase {
         XCTAssertEqual(failure, .rejected)
         XCTAssertEqual(client.abandons, 1)
         XCTAssertFalse(client.retainsSimulation)
+    }
+
+    @MainActor
+    func testSetupStoreExplainsCellularWithoutRetrying() async throws {
+        let client = FakeIdeviceClient(results: [.tunnel, .tunnel, .tunnel])
+        let store = try readyStore(
+            client: client,
+            tunnelRetryDelaysNanoseconds: [1_000_000, 1_000_000],
+            isCellularWithoutWiFi: { true }
+        )
+
+        let failure = await store.set(latitude: 22.5, longitude: 113.9)
+
+        XCTAssertEqual(failure, .tunnelOnCellular)
+        XCTAssertEqual(client.pushes.count, 1)
+        XCTAssertFalse(store.isSimulating)
+        XCTAssertEqual(store.activity.lastFailure, .tunnelOnCellular)
     }
 
     @MainActor
@@ -589,7 +608,8 @@ final class RouteLocationTests: XCTestCase {
         client: FakeIdeviceClient,
         isVPNInstalled: @escaping @MainActor () -> Bool = { true },
         isTunnelConnected: @escaping @MainActor () -> Bool = { true },
-        tunnelRetryDelaysNanoseconds: [UInt64] = [1_000_000]
+        tunnelRetryDelaysNanoseconds: [UInt64] = [1_000_000],
+        isCellularWithoutWiFi: @escaping @MainActor () -> Bool = { false }
     ) throws -> RouteLocationSetupStore {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("RouteLocationSetupStoreTests.\(UUID().uuidString)", isDirectory: true)
@@ -604,7 +624,8 @@ final class RouteLocationTests: XCTestCase {
             isVPNInstalled: isVPNInstalled,
             isTunnelConnected: isTunnelConnected,
             deviceAddress: "10.7.0.1",
-            tunnelRetryDelaysNanoseconds: tunnelRetryDelaysNanoseconds
+            tunnelRetryDelaysNanoseconds: tunnelRetryDelaysNanoseconds,
+            isCellularWithoutWiFi: isCellularWithoutWiFi
         )
         return RouteLocationSetupStore(pairingStore: pairingStore, client: client, environment: environment)
     }

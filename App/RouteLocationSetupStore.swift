@@ -7,12 +7,17 @@ struct RouteLocationEnvironment {
     var deviceAddress: String
     /// LocalDevVPN 重启后 RSD 要几秒才起来，连不上就按这个间隔再试。
     var tunnelRetryDelaysNanoseconds: [UInt64]
+    /// 只有蜂窝、没有 Wi-Fi 时，系统通常拒绝开发者隧道握手。
+    var isCellularWithoutWiFi: @MainActor () -> Bool
 
     static let live = RouteLocationEnvironment(
         isVPNInstalled: { LocalDevVPN.isInstalled },
         isTunnelConnected: { LocalDevVPN.isConnected },
         deviceAddress: LocalDevVPN.defaultAddress,
-        tunnelRetryDelaysNanoseconds: [500_000_000, 2_000_000_000, 4_000_000_000]
+        tunnelRetryDelaysNanoseconds: [500_000_000, 2_000_000_000, 4_000_000_000],
+        isCellularWithoutWiFi: {
+            NetworkMonitor.shared.usesCellular && !NetworkMonitor.shared.isWiFiEnabled
+        }
     )
 }
 
@@ -137,7 +142,8 @@ final class RouteLocationSetupStore: ObservableObject, DeveloperLocationPushing 
         let mutation = client.beginMutation()
         let path = pairingStore.pairingURL.path
         let address = environment.deviceAddress
-        let delays = environment.tunnelRetryDelaysNanoseconds
+        let cellularWithoutWiFi = environment.isCellularWithoutWiFi()
+        let delays = cellularWithoutWiFi ? [] : environment.tunnelRetryDelaysNanoseconds
         let client = client
         let outcome = await performDevice {
             try await Self.retryingTunnel(delays: delays) {
@@ -150,7 +156,7 @@ final class RouteLocationSetupStore: ObservableObject, DeveloperLocationPushing 
                 )
             }
         }
-        return applySetResult(outcome, mutation: mutation)
+        return applySetResult(outcome, mutation: mutation, cellularWithoutWiFi: cellularWithoutWiFi)
     }
 
     /// 连接还在时不要再推。恢复拿到的是上次坐标，和正在写入的点叠在一起就会来回跳。
@@ -198,16 +204,18 @@ final class RouteLocationSetupStore: ObservableObject, DeveloperLocationPushing 
 
     private func applySetResult(
         _ outcome: IdeviceCommandOutcome,
-        mutation: UInt64
+        mutation: UInt64,
+        cellularWithoutWiFi: Bool = false
     ) -> RouteLocationPushFailure? {
         guard client.currentMutation() == mutation else { return .superseded }
         switch outcome {
         case .superseded:
             return .superseded
         case .finished(let failure):
+            let reported = Self.explained(failure, cellularWithoutWiFi: cellularWithoutWiFi)
             activity.lastSetAt = Date()
-            activity.lastFailure = failure
-            guard let failure else {
+            activity.lastFailure = reported
+            guard let reported else {
                 isSimulating = true
                 activity.simulationMayStillBeActive = false
                 return nil
@@ -223,8 +231,18 @@ final class RouteLocationSetupStore: ObservableObject, DeveloperLocationPushing 
                 isSimulating = false
                 return .notReady(readiness)
             }
-            return failure
+            return reported
         }
+    }
+
+    private static func explained(
+        _ failure: RouteLocationPushFailure?,
+        cellularWithoutWiFi: Bool
+    ) -> RouteLocationPushFailure? {
+        if failure == .tunnel, cellularWithoutWiFi {
+            return .tunnelOnCellular
+        }
+        return failure
     }
 
     private func applyClearResult(

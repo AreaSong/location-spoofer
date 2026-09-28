@@ -65,6 +65,8 @@ struct RouteLocationStatus: Equatable {
 enum RouteLocationPushFailure: Equatable, Sendable {
     case notReady(RouteLocationReadiness)
     case tunnel
+    /// 隧道网卡还在，但当前只有蜂窝：系统不把 10.7.0.x 当成可握手的本地地址。
+    case tunnelOnCellular
     case pairing
     case rejected
     /// 系统侧 clear 失败。本地句柄还在，模拟定位不能当成已关闭。
@@ -78,6 +80,8 @@ enum RouteLocationPushFailure: Equatable, Sendable {
             return readiness.blockingMessage ?? "路线定位还没准备好。"
         case .tunnel:
             return "连不上本机隧道。请重新连接 LocalDevVPN，等几秒后再试；仍失败请划掉本 App 再打开。"
+        case .tunnelOnCellular:
+            return "当前是流量网络。系统只把本机隧道当成 Wi-Fi 局域网地址，所以连不上。请打开 Wi-Fi（不用上网），或先开飞行模式连上 LocalDevVPN，再关掉飞行模式。"
         case .pairing:
             return "配对文件无效。请重新导入配对文件后再试。"
         case .rejected:

@@ -49,7 +49,7 @@ struct RouteLocationChecklist: View {
                 .buttonStyle(.bordered)
                 .controlSize(.small)
             }
-            Text("路线播放会把坐标推进系统定位，不用反复开关定位服务。请先连上 LocalDevVPN，并导入 RPPairing 文件。iOS 18 到 26 用电脑生成一次即可。需要 iOS 18 或更新的系统。")
+            Text("路线播放会把坐标推进系统定位，不用反复开关定位服务。请先连上 LocalDevVPN，并导入 RPPairing 文件。iOS 18 到 26 用电脑生成一次即可。需要 iOS 18 或更新的系统。只开流量、关掉 Wi-Fi 时系统通常连不上本机隧道，请打开 Wi-Fi（不用上网）。")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
             if !actionMessage.isEmpty {
