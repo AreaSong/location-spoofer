@@ -259,6 +259,10 @@ test -f "$ROOT/App/FavoriteListView.swift" || fail "favorites must have a search
 grep -q 'case .favorites' "$MAP_HOME" || fail "map home must present the favorite list sheet"
 test -f "$ROOT/Shared/MapLinkParser.swift" || fail "search must parse Apple, Google, and Amap links"
 grep -q 'uri.amap.com' "$ROOT/Shared/MapLinkParser.swift" || fail "Amap marker links must be recognized"
+grep -q 'map.baidu.com' "$ROOT/Shared/MapLinkParser.swift" || fail "Baidu map links must be recognized"
+grep -q 'map.qq.com' "$ROOT/Shared/MapLinkParser.swift" || fail "Tencent map links must be recognized"
+grep -q 'bd09ToGcj02' "$ROOT/Shared/CoordinateConverter.swift" \
+  || fail "Baidu BD-09 coordinates must convert to GCJ-02 at the input boundary"
 test -f "$ROOT/Shared/RecentSelectionStore.swift" || fail "recent discrete selections must have a dedicated store"
 grep -q 'static let limit = 10' "$ROOT/Shared/RecentSelectionStore.swift" || fail "recent selections must keep at most 10 items"
 grep -q 'rememberDiscreteSelection' "$MAP_HOME" || fail "discrete map selections must record recent history"
@@ -336,6 +340,9 @@ test -f "$ROOT/Shared/RoutePlaybackController.swift" || fail "route playback con
 test -f "$ROOT/App/RoutePlaybackPanel.swift" || fail "route playback panel is missing"
 test -f "$ROOT/Shared/SavedRouteStore.swift" || fail "saved routes must have a dedicated store"
 test -f "$ROOT/App/SavedRouteListView.swift" || fail "saved routes must have a list sheet"
+test -f "$ROOT/Shared/RouteGPX.swift" || fail "saved routes must import GPX tracks"
+grep -q 'RouteGPX.decode' "$ROOT/App/SavedRouteListView.swift" \
+  || fail "the saved route list must decode GPX files"
 grep -q 'enum RouteRepeatMode' "$ROOT/Shared/RoutePlayback.swift" \
   || fail "route playback must expose once, round-trip, and loop modes"
 grep -q 'case roundTrip' "$ROOT/Shared/RoutePlayback.swift" || fail "route playback must support round-trip"
@@ -343,6 +350,12 @@ grep -q 'case loop' "$ROOT/Shared/RoutePlayback.swift" || fail "route playback m
 grep -q 'return "一次"' "$ROOT/Shared/RoutePlayback.swift" || fail "once mode must be labeled 一次"
 grep -q 'return "往返"' "$ROOT/Shared/RoutePlayback.swift" || fail "round-trip mode must be labeled 往返"
 grep -q 'return "循环"' "$ROOT/Shared/RoutePlayback.swift" || fail "loop mode must be labeled 循环"
+grep -q 'case drive' "$ROOT/Shared/RoutePlayback.swift" || fail "route playback must support driving"
+grep -q 'return "驾车"' "$ROOT/Shared/RoutePlayback.swift" || fail "drive mode must be labeled 驾车"
+grep -q 'var mapKitTransportTypes' "$ROOT/Shared/RouteDirections.swift" \
+  || fail "travel modes must declare MapKit transport types"
+grep -q 'case .drive: return \[.automobile\]' "$ROOT/Shared/RouteDirections.swift" \
+  || fail "driving must prefer automobile directions"
 grep -q 'RouteRepeatMode' "$ROOT/App/RoutePlaybackPanel.swift" || fail "route panel must expose repeat modes"
 grep -q 'Button("保存")' "$ROOT/App/RoutePlaybackPanel.swift" || fail "route panel must let the user save a route"
 grep -q 'case .savedRoutes' "$MAP_HOME" || fail "map home must present the saved route list sheet"

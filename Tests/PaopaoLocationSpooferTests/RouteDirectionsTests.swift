@@ -1,3 +1,4 @@
+import MapKit
 import XCTest
 @testable import PaopaoLocationSpoofer
 
@@ -80,6 +81,15 @@ final class RouteDirectionsTests: XCTestCase {
         XCTAssertEqual(plan.points[0].wgs84.latitude, start.wgs84.latitude, accuracy: 0.000_000_1)
         XCTAssertEqual(plan.points[2].wgs84.latitude, via.wgs84.latitude, accuracy: 0.000_000_1)
         XCTAssertEqual(plan.points[4].wgs84.longitude, end.wgs84.longitude, accuracy: 0.000_000_1)
+    }
+
+    func testDrivePrefersAutomobileOnly() {
+        XCTAssertEqual(RouteTravelMode.walk.mapKitTransportTypes, [.walking, .automobile])
+        XCTAssertEqual(RouteTravelMode.bike.mapKitTransportTypes, [.automobile, .walking])
+        XCTAssertEqual(RouteTravelMode.drive.mapKitTransportTypes, [.automobile])
+        XCTAssertEqual(RouteTravelMode.drive.displayName, "驾车")
+        XCTAssertEqual(RouteTravelMode.drive.kilometersPerHour, 40, accuracy: 0.01)
+        XCTAssertEqual(RouteTravelMode.drive.symbolName, "car.fill")
     }
 }
 

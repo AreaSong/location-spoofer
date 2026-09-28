@@ -76,15 +76,16 @@ collection services.
   - Does not require changes to the target app.
 
 - **Route playback**
-  - Drop a start pin, up to five via pins, and an end pin; the path follows roads for walking or cycling;
+  - Drop a start pin, up to five via pins, and an end pin; the path follows roads for walking, cycling, or driving;
   - Configure speed, offset distance, and once / round-trip / loop repeat;
-  - Routes can be saved, overwritten, and reversed, up to 20 entries;
+  - Routes can be saved, overwritten, and reversed, up to 20 entries. GPX tracks can be imported and played back along
+    the recorded path without re-routing;
   - Playback writes coordinates through the current runtime mode: App Mode and Third-party Proxy Mode write through
     the proxy with an 8 m / 5 s write gate; Developer Tunnel Mode pushes every second directly into system location.
 
 - **Live Activity / Dynamic Island**
   - Spot spoofing and route walking show status on the Dynamic Island and Lock Screen. The island can switch to a
-    favorite or the current pin, and cycle walking speed during route playback.
+    favorite or the current pin, and cycle the current travel-mode speed during route playback.
 
 - **Three runtime modes**
   - App Mode: runs the Go proxy on-device and covers only the current Wi-Fi network. After a test location is enabled,
@@ -405,8 +406,9 @@ and explicit user actions. Only whitelisted fixed-anchor names are classified as
 systems, an unrecognized name is not treated as WGS-84, which avoids a roughly 200–500 m offset on a domestic map.
 
 The home screen and Settings both show the current map coordinate system. The search field accepts place names, raw
-latitude/longitude, and Apple, Google, or Amap links. Raw coordinates remember the last chosen standard; map links infer
-the standard from the source.
+latitude/longitude, and Apple, Google, Amap, Baidu, or Tencent Map links. Raw coordinates remember the last chosen
+standard; map links infer the standard from the source. Baidu links are converted from BD-09 to the domestic standard
+before the place is offered.
 
 Each write boundary stores a complete WGS-84/GCJ-02 pair. Rendering selects the field matching the confirmed map
 representation instead of repeatedly converting an already typed value.

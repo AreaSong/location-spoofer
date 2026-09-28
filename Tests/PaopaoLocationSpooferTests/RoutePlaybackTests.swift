@@ -114,6 +114,9 @@ final class RoutePlaybackTests: XCTestCase {
             RoutePlayback.formattedRemaining(meters: 320, speedMetersPerSecond: 1.4),
             "还剩 320 米，约 4 分钟"
         )
+        XCTAssertEqual(RouteTravelMode.drive.displayName, "驾车")
+        XCTAssertEqual(RouteTravelMode.drive.clampedSpeed(120), 80, accuracy: 0.01)
+        XCTAssertEqual(RouteTravelMode.walk.clampedSpeed(50), 40, accuracy: 0.01)
     }
 
     func testCustomSpeedChangesDuration() {
@@ -210,6 +213,19 @@ final class RoutePlaybackTests: XCTestCase {
 
 @MainActor
 final class RoutePlaybackControllerTests: XCTestCase {
+    func testApplyDriveModeSetsDefaultCarSpeed() {
+        let route = makeRoute()
+        route.applyTravelMode(.drive)
+        XCTAssertEqual(route.travelMode, .drive)
+        XCTAssertEqual(route.speedKilometersPerHour, 40, accuracy: 0.01)
+        route.setSpeedKilometersPerHour(120)
+        XCTAssertEqual(route.speedKilometersPerHour, 80, accuracy: 0.01)
+        route.applyTravelMode(.walk)
+        XCTAssertEqual(route.speedKilometersPerHour, 5, accuracy: 0.01)
+        route.setSpeedKilometersPerHour(50)
+        XCTAssertEqual(route.speedKilometersPerHour, 40, accuracy: 0.01)
+    }
+
     func testCanPlayRequiresMinimumDistance() {
         let route = makeRoute()
         let start = CoordinateConverter.coordinatePair(

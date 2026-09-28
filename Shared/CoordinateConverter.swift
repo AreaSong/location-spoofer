@@ -58,6 +58,8 @@ enum CoordinateConverter {
     // 椭球参数 (Krasovsky 1940)
     private static let a = 6378245.0
     private static let ee = 0.00669342162296594323
+    /// 百度 BD-09 相对 GCJ-02 的极坐标偏转常数。
+    private static let xPi = Double.pi * 3000.0 / 180.0
 
     /// 坐标类型
     enum MapCoordinateSystem: String {
@@ -195,6 +197,22 @@ enum CoordinateConverter {
         guard usesGCJ02ServiceArea(lat: lat, lon: lon) else { return (lat, lon) }
         let d = delta(lat: lat, lon: lon)
         return (lat + d.lat, lon + d.lon)
+    }
+
+    /// BD-09 → GCJ-02。百度地图链接默认是 BD-09，入口处转成项目已有的国内标准，不单独存第三套坐标。
+    static func bd09ToGcj02(lat: Double, lon: Double) -> (lat: Double, lon: Double) {
+        let x = lon - 0.0065
+        let y = lat - 0.006
+        let z = sqrt(x * x + y * y) - 0.00002 * sin(y * xPi)
+        let theta = atan2(y, x) - 0.000003 * cos(x * xPi)
+        return (z * sin(theta), z * cos(theta))
+    }
+
+    /// GCJ-02 → BD-09。用于往返校验，以及构造百度链接测试数据。
+    static func gcj02ToBd09(lat: Double, lon: Double) -> (lat: Double, lon: Double) {
+        let z = sqrt(lon * lon + lat * lat) + 0.00002 * sin(lat * xPi)
+        let theta = atan2(lat, lon) + 0.000003 * cos(lon * xPi)
+        return (z * sin(theta) + 0.006, z * cos(theta) + 0.0065)
     }
 
     /// Keep the GCJ-02 service region explicit. Outside this region, conversion

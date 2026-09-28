@@ -70,7 +70,7 @@ struct SavedRouteListView: View {
                 Button("完成") { dismiss() }
             }
         }
-        .fileImporter(isPresented: $showsImporter, allowedContentTypes: [.json]) { result in
+        .fileImporter(isPresented: $showsImporter, allowedContentTypes: Self.importTypes) { result in
             importFile(result)
         }
         .alert(transferTitle, isPresented: $showsTransferAlert) {
@@ -165,7 +165,10 @@ struct SavedRouteListView: View {
             let accessing = url.startAccessingSecurityScopedResource()
             defer { if accessing { url.stopAccessingSecurityScopedResource() } }
             do {
-                importRoutes(from: try Data(contentsOf: url))
+                importRoutes(
+                    from: try Data(contentsOf: url),
+                    fallbackName: url.deletingPathExtension().lastPathComponent
+                )
             } catch {
                 present("路线导入失败", error.localizedDescription)
             }
@@ -174,9 +177,9 @@ struct SavedRouteListView: View {
         }
     }
 
-    private func importRoutes(from data: Data) {
+    private func importRoutes(from data: Data, fallbackName: String = "导入路线") {
         do {
-            let incoming = try RouteTransfer.decode(data)
+            let incoming = try Self.decodeIncoming(data, fallbackName: fallbackName)
             let result = store.importTransferred(incoming)
             present(
                 "路线已导入",
@@ -185,6 +188,28 @@ struct SavedRouteListView: View {
         } catch {
             present("路线导入失败", error.localizedDescription)
         }
+    }
+
+    private static func decodeIncoming(_ data: Data, fallbackName: String) throws -> [SavedRoute] {
+        if RouteGPX.looksLikeGPX(data) {
+            return try RouteGPX.decode(data, fallbackName: fallbackName)
+        }
+        do {
+            return try RouteTransfer.decode(data)
+        } catch {
+            if let routes = try? RouteGPX.decode(data, fallbackName: fallbackName) {
+                return routes
+            }
+            throw error
+        }
+    }
+
+    private static var importTypes: [UTType] {
+        var types: [UTType] = [.json, .xml]
+        if let gpx = UTType(filenameExtension: "gpx") {
+            types.append(gpx)
+        }
+        return types
     }
 
     private func present(_ title: String, _ message: String) {
@@ -207,7 +232,7 @@ struct SavedRouteListView: View {
 
     private var emptyText: String {
         query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            ? "还没有保存的路线。设好起点和终点后点「保存」。"
+            ? "还没有保存的路线。设好起点和终点后点「保存」，或从文件导入 GPX。"
             : "没有匹配的路线"
     }
 }

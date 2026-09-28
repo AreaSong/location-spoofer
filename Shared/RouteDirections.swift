@@ -49,9 +49,7 @@ struct MapKitRouteDirections: RouteDirectionsProviding {
         let system = CoordinateConverter.currentMapCoordinateSystem
         let source = start.coordinate(for: system)
         let destination = end.coordinate(for: system)
-        let types: [MKDirectionsTransportType] = mode == .walk
-            ? [.walking, .automobile]
-            : [.automobile, .walking]
+        let types = mode.mapKitTransportTypes
         for transportType in types {
             if let points = await Self.routePoints(
                 from: source,
@@ -110,6 +108,16 @@ struct MapKitRouteDirections: RouteDirectionsProviding {
         )
         polyline.getCoordinates(&points, range: NSRange(location: 0, length: polyline.pointCount))
         return points.filter { CLLocationCoordinate2DIsValid($0) }
+    }
+}
+
+extension RouteTravelMode {
+    var mapKitTransportTypes: [MKDirectionsTransportType] {
+        switch self {
+        case .walk: return [.walking, .automobile]
+        case .bike: return [.automobile, .walking]
+        case .drive: return [.automobile]
+        }
     }
 }
 

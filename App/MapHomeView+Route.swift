@@ -111,7 +111,10 @@ extension MapHomeView {
             stopSpoofing()
         case "cycleSpeed":
             route.setSpeedKilometersPerHour(
-                RouteSpeedPreset.nextKilometersPerHour(after: route.speedKilometersPerHour)
+                RouteSpeedPreset.nextKilometersPerHour(
+                    after: route.speedKilometersPerHour,
+                    mode: route.travelMode
+                )
             )
             syncRouteActivity()
         case "openApp":
@@ -197,7 +200,7 @@ extension MapHomeView {
             interruption: route.interruption,
             waitingForActivation: route.waitingForActivation
         )
-        let travelSymbol = route.travelMode == .bike ? "bicycle" : "figure.walk"
+        let travelSymbol = route.travelMode.symbolName
         let routeName = route.editingSavedRoute?.name ?? route.travelMode.displayName
         let confirmStopped = route.phase == .preparing
             && route.interruption != .activationFailed
@@ -215,7 +218,8 @@ extension MapHomeView {
             isRetrying: routeCommand.isRetrying,
             commandFailed: routeCommand.commandFailed,
             failedCommand: routeCommand.failedCommand,
-            confirmStopped: confirmStopped
+            confirmStopped: confirmStopped,
+            travelMode: route.travelMode
         )
         let liveRoute = routeSnapshotForIsland(routeSnapshot)
         let shortcutItems = IslandFavoriteShortcuts.pick(

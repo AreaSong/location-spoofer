@@ -102,4 +102,14 @@ final class CoordinateConverterTests: XCTestCase {
         XCTAssertEqual(pair.displayLine(for: .gcj02), "25.279381, 110.374361")
         XCTAssertEqual(pair.displayLine(for: .wgs84), "25.276123, 110.371456")
     }
+
+    func testBd09RoundTripsGcj02WithinAMeter() {
+        let gcjLat = 22.544577
+        let gcjLon = 113.94114
+        let bd = CoordinateConverter.gcj02ToBd09(lat: gcjLat, lon: gcjLon)
+        let back = CoordinateConverter.bd09ToGcj02(lat: bd.lat, lon: bd.lon)
+        XCTAssertNotEqual(bd.lat, gcjLat, accuracy: 0.001)
+        XCTAssertEqual(back.lat, gcjLat, accuracy: 0.000_001)
+        XCTAssertEqual(back.lon, gcjLon, accuracy: 0.000_001)
+    }
 }

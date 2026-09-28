@@ -220,7 +220,8 @@ enum RouteActivitySync {
         commandFailed: Bool = false,
         failedCommand: String = "",
         confirmStopped: Bool = false,
-        isPlanning: Bool = false
+        isPlanning: Bool = false,
+        travelMode: RouteTravelMode = .walk
     ) -> RouteActivitySnapshot? {
         if commandFailed, phase != .inactive, phase != .finished {
             return failedCommandSnapshot(
@@ -275,7 +276,8 @@ enum RouteActivitySync {
                 remainingMeters: remainingMeters,
                 speedMetersPerSecond: speedMetersPerSecond,
                 progress: progress,
-                symbolName: symbolName
+                symbolName: symbolName,
+                travelMode: travelMode
             )
         case .paused:
             return paused(
@@ -285,7 +287,8 @@ enum RouteActivitySync {
                 remainingMeters: remainingMeters,
                 speedMetersPerSecond: speedMetersPerSecond,
                 progress: progress,
-                modeSymbolName: symbolName
+                modeSymbolName: symbolName,
+                travelMode: travelMode
             )
         case .finished:
             return finished(routeName: routeName, modeSymbolName: symbolName)
@@ -362,7 +365,8 @@ enum RouteActivitySync {
         remainingMeters: Double,
         speedMetersPerSecond: Double,
         progress: Double,
-        symbolName: String
+        symbolName: String,
+        travelMode: RouteTravelMode
     ) -> RouteActivitySnapshot {
         let minutes = remainingMinutes(meters: remainingMeters, speedMetersPerSecond: speedMetersPerSecond)
         return routeSnapshot(
@@ -382,7 +386,7 @@ enum RouteActivitySync {
             secondaryAction: "stopRoute",
             secondaryTitle: "停止路线",
             tertiaryAction: "cycleSpeed",
-            tertiaryTitle: speedCycleTitle(speedMetersPerSecond: speedMetersPerSecond),
+            tertiaryTitle: speedCycleTitle(speedMetersPerSecond: speedMetersPerSecond, mode: travelMode),
             retryCommand: "",
             speedText: speedLabel(speedMetersPerSecond: speedMetersPerSecond)
         )
@@ -395,7 +399,8 @@ enum RouteActivitySync {
         remainingMeters: Double,
         speedMetersPerSecond: Double,
         progress: Double,
-        modeSymbolName: String
+        modeSymbolName: String,
+        travelMode: RouteTravelMode
     ) -> RouteActivitySnapshot {
         let minutes = remainingMinutes(meters: remainingMeters, speedMetersPerSecond: speedMetersPerSecond)
         let userPaused = interruption == .userPaused || statusMessage == userPauseMessage
@@ -417,7 +422,7 @@ enum RouteActivitySync {
                 secondaryAction: "stopRoute",
                 secondaryTitle: "停止路线",
                 tertiaryAction: "cycleSpeed",
-                tertiaryTitle: speedCycleTitle(speedMetersPerSecond: speedMetersPerSecond),
+                tertiaryTitle: speedCycleTitle(speedMetersPerSecond: speedMetersPerSecond, mode: travelMode),
                 retryCommand: "",
                 speedText: speedLabel(speedMetersPerSecond: speedMetersPerSecond)
             )
@@ -639,8 +644,14 @@ enum RouteActivitySync {
         return RouteSpeedPreset.compactText(kilometersPerHour: speedMetersPerSecond * 3.6)
     }
 
-    private static func speedCycleTitle(speedMetersPerSecond: Double) -> String {
-        let next = RouteSpeedPreset.nextKilometersPerHour(after: speedMetersPerSecond * 3.6)
+    private static func speedCycleTitle(
+        speedMetersPerSecond: Double,
+        mode: RouteTravelMode
+    ) -> String {
+        let next = RouteSpeedPreset.nextKilometersPerHour(
+            after: speedMetersPerSecond * 3.6,
+            mode: mode
+        )
         return RouteSpeedPreset.compactText(kilometersPerHour: next)
     }
 }

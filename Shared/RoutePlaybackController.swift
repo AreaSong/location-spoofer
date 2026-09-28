@@ -189,7 +189,7 @@ final class RoutePlaybackController: ObservableObject {
         end = saved.end
         vias = saved.viaPoints
         travelMode = saved.travelMode
-        speedKilometersPerHour = min(40, max(1, saved.speedKilometersPerHour))
+        speedKilometersPerHour = saved.travelMode.clampedSpeed(saved.speedKilometersPerHour)
         offsetMeters = min(80, max(0, saved.offsetMeters))
         repeatMode = saved.repeatMode
         progress = 0
@@ -481,7 +481,7 @@ final class RoutePlaybackController: ObservableObject {
     }
 
     func setSpeedKilometersPerHour(_ value: Double) {
-        let next = min(40, max(1, value))
+        let next = travelMode.clampedSpeed(value)
         if phase == .playing || phase == .paused {
             rebaseElapsed(toSpeedKilometersPerHour: next)
         }

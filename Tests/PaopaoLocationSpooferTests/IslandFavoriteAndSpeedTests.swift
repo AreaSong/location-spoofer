@@ -91,6 +91,11 @@ final class IslandFavoriteAndSpeedTests: XCTestCase {
         XCTAssertEqual(RouteSpeedPreset.nextKilometersPerHour(after: 5), 8)
         XCTAssertEqual(RouteSpeedPreset.nextKilometersPerHour(after: 7), 8)
         XCTAssertEqual(RouteSpeedPreset.nextKilometersPerHour(after: 15), 3)
+        XCTAssertEqual(RouteSpeedPreset.nextKilometersPerHour(after: 8, mode: .walk), 3)
+        XCTAssertEqual(RouteSpeedPreset.nextKilometersPerHour(after: 8, mode: .bike), 15)
+        XCTAssertEqual(RouteSpeedPreset.nextKilometersPerHour(after: 20, mode: .bike), 8)
+        XCTAssertEqual(RouteSpeedPreset.nextKilometersPerHour(after: 40, mode: .drive), 60)
+        XCTAssertEqual(RouteSpeedPreset.nextKilometersPerHour(after: 80, mode: .drive), 30)
         XCTAssertEqual(RouteSpeedPreset.compactText(kilometersPerHour: 5), "5km/h")
         XCTAssertEqual(RouteSpeedPreset.compactText(kilometersPerHour: 5.04), "5km/h")
     }
@@ -191,6 +196,22 @@ final class IslandFavoriteAndSpeedTests: XCTestCase {
         )
         XCTAssertEqual(buttons.tertiaryAction, "cycleSpeed")
         XCTAssertEqual(buttons.tertiaryTitle, "8km/h")
+    }
+
+    func testDrivingSnapshotCyclesHighwayPresets() {
+        let snapshot = RouteActivitySync.snapshot(
+            phase: .playing,
+            statusMessage: "正在走",
+            routeName: "驾车路线",
+            remainingMeters: 800,
+            speedMetersPerSecond: 40 / 3.6,
+            progress: 0.2,
+            symbolName: "car.fill",
+            travelMode: .drive
+        )
+        XCTAssertEqual(snapshot?.tertiaryTitle, "60km/h")
+        XCTAssertEqual(snapshot?.speedText, "40km/h")
+        XCTAssertEqual(snapshot?.modeSymbolName, "car.fill")
     }
 
     func testRetryResolvesToRecordedFavoriteCommand() {

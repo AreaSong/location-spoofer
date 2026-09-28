@@ -4,6 +4,7 @@ import CoreLocation
 enum RouteTravelMode: String, CaseIterable, Identifiable, Codable {
     case walk
     case bike
+    case drive
 
     var id: String { rawValue }
 
@@ -11,6 +12,7 @@ enum RouteTravelMode: String, CaseIterable, Identifiable, Codable {
         switch self {
         case .walk: return 5
         case .bike: return 15
+        case .drive: return 40
         }
     }
 
@@ -20,7 +22,51 @@ enum RouteTravelMode: String, CaseIterable, Identifiable, Codable {
         switch self {
         case .walk: return "步行"
         case .bike: return "骑行"
+        case .drive: return "驾车"
         }
+    }
+
+    var symbolName: String {
+        switch self {
+        case .walk: return "figure.walk"
+        case .bike: return "bicycle"
+        case .drive: return "car.fill"
+        }
+    }
+
+    var maximumKilometersPerHour: Double {
+        switch self {
+        case .walk, .bike: return 40
+        case .drive: return 80
+        }
+    }
+
+    var speedPresets: [RouteSpeedPreset] {
+        switch self {
+        case .walk:
+            return [
+                RouteSpeedPreset(title: "3", kilometersPerHour: 3),
+                RouteSpeedPreset(title: "5", kilometersPerHour: 5),
+                RouteSpeedPreset(title: "8", kilometersPerHour: 8)
+            ]
+        case .bike:
+            return [
+                RouteSpeedPreset(title: "8", kilometersPerHour: 8),
+                RouteSpeedPreset(title: "15", kilometersPerHour: 15),
+                RouteSpeedPreset(title: "20", kilometersPerHour: 20)
+            ]
+        case .drive:
+            return [
+                RouteSpeedPreset(title: "30", kilometersPerHour: 30),
+                RouteSpeedPreset(title: "40", kilometersPerHour: 40),
+                RouteSpeedPreset(title: "60", kilometersPerHour: 60),
+                RouteSpeedPreset(title: "80", kilometersPerHour: 80)
+            ]
+        }
+    }
+
+    func clampedSpeed(_ value: Double) -> Double {
+        min(maximumKilometersPerHour, max(1, value))
     }
 }
 
@@ -44,20 +90,18 @@ struct RouteSpeedPreset: Hashable {
     let title: String
     let kilometersPerHour: Double
 
-    static let all = [
-        RouteSpeedPreset(title: "3", kilometersPerHour: 3),
-        RouteSpeedPreset(title: "5", kilometersPerHour: 5),
-        RouteSpeedPreset(title: "8", kilometersPerHour: 8),
-        RouteSpeedPreset(title: "15", kilometersPerHour: 15)
-    ]
+    static let all = RouteTravelMode.walk.speedPresets
 
     static var kilometersPerHourValues: [Double] {
         all.map(\.kilometersPerHour)
     }
 
-    /// 自定义速度取严格更大的下一档；已是最快则回到 3 km/h。
-    static func nextKilometersPerHour(after current: Double) -> Double {
-        let values = kilometersPerHourValues
+    /// 自定义速度取当前出行方式里严格更大的下一档；已是最快则回到该方式的第一档。
+    static func nextKilometersPerHour(
+        after current: Double,
+        mode: RouteTravelMode = .walk
+    ) -> Double {
+        let values = mode.speedPresets.map(\.kilometersPerHour)
         if let next = values.first(where: { $0 > current + 0.05 }) {
             return next
         }

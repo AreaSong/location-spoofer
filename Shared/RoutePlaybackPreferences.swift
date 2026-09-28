@@ -32,7 +32,7 @@ struct RoutePlaybackPreferenceStore {
         }
         return RoutePlaybackPreferences(
             travelMode: decoded.travelMode,
-            speedKilometersPerHour: min(40, max(1, decoded.speedKilometersPerHour)),
+            speedKilometersPerHour: decoded.travelMode.clampedSpeed(decoded.speedKilometersPerHour),
             offsetMeters: min(80, max(0, decoded.offsetMeters)),
             repeatMode: decoded.repeatMode
         )

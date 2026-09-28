@@ -289,7 +289,7 @@ struct RoutePlaybackPanel: View {
                 customSpeed = true
             }
             RouteChoiceBar(
-                items: RouteSpeedPreset.all,
+                items: route.travelMode.speedPresets,
                 title: \.title,
                 isSelected: { abs(route.speedKilometersPerHour - $0.kilometersPerHour) < 0.05 },
                 onSelect: {
@@ -298,7 +298,11 @@ struct RoutePlaybackPanel: View {
                 }
             )
             if customSpeed || !speedMatchesPreset {
-                Slider(value: speedBinding, in: 1...40, step: 0.5)
+                Slider(
+                    value: speedBinding,
+                    in: 1...route.travelMode.maximumKilometersPerHour,
+                    step: 0.5
+                )
             }
             metricHeader("偏移", showsCustom: !customOffset && offsetMatchesPreset) {
                 customOffset = true
@@ -319,7 +323,9 @@ struct RoutePlaybackPanel: View {
     }
 
     private var speedMatchesPreset: Bool {
-        RouteSpeedPreset.all.contains { abs(route.speedKilometersPerHour - $0.kilometersPerHour) < 0.05 }
+        route.travelMode.speedPresets.contains {
+            abs(route.speedKilometersPerHour - $0.kilometersPerHour) < 0.05
+        }
     }
 
     private var offsetMatchesPreset: Bool {
