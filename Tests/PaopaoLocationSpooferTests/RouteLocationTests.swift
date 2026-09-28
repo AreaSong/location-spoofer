@@ -22,13 +22,13 @@ final class RouteLocationTests: XCTestCase {
         )
         XCTAssertNotNil(RouteLocationReadiness.needsInstall.blockingMessage)
         XCTAssertNil(RouteLocationReadiness.ready.blockingMessage)
-        XCTAssertTrue(RouteLocationPushFailure.tunnel.message.contains("LocalDevVPN"))
+        XCTAssertTrue(RouteLocationPushFailure.tunnel.message.contains("客户端"))
         XCTAssertTrue(RouteLocationPushFailure.tunnel.message.contains("划掉"))
-        XCTAssertTrue(RouteLocationPushFailure.tunnel.message.contains("172.20.10"))
+        XCTAssertTrue(RouteLocationPushFailure.tunnel.message.contains("Wi-Fi"))
         XCTAssertTrue(RouteLocationPushFailure.tunnelOnCellular.message.contains("流量"))
         XCTAssertTrue(RouteLocationPushFailure.tunnelOnCellular.message.contains("Wi-Fi"))
         XCTAssertTrue(DeveloperTunnelHelp.connectionChecks.contains("只开流量、关掉 Wi-Fi"))
-        XCTAssertTrue(DeveloperTunnelHelp.connectionChecks.contains("172.20.10.1"))
+        XCTAssertTrue(DeveloperTunnelHelp.connectionChecks.contains("自己开个人热点不算"))
     }
 
     func testTunnelInterfaceDetectionAcceptsPrivateTunnelAddresses() {

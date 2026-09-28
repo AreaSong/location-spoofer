@@ -109,6 +109,15 @@ grep -q 'struct MapHomeCoordinateLine' "$ROOT/App/MapHomeCoordinateLine.swift" \
   || fail "current selection must share one switchable coordinate row"
 grep -q 'struct MapHomeTopInfoBar' "$ROOT/App/MapHomeCoordinateLine.swift" \
   || fail "map home must keep a collapsible coordinate strip under search"
+grep -q 'struct MapChromeIconButton' "$ROOT/App/AppStyle.swift" \
+  || fail "map chrome icon buttons must be a dedicated control, not a Menu overlay"
+grep -q 'MapChromeIconButton(systemImage: "list.bullet.rectangle", accessibilityLabel: "日志")' "$MAP_HOME_MAIN" \
+  || fail "logs must open from a direct top-right button"
+grep -q 'MapChromeIconButton(systemImage: "gearshape", accessibilityLabel: "设置")' "$MAP_HOME_MAIN" \
+  || fail "settings must open from a direct top-right button"
+if awk '/var topControls: some View/{flag=1} flag{print; if (/MapHomeTopInfoBar/) exit}' "$MAP_HOME_MAIN" | grep -q 'Menu {'; then
+  fail "home logs and settings must not sit in a Menu over the map"
+fi
 grep -q 'headingChip' "$ROOT/App/MapHomeCoordinateLine.swift" \
   || fail "walk heading must sit in the trailing chip of the search-bar info strip"
 if grep -q 'placeName' "$ROOT/App/MapHomeCoordinateLine.swift"; then

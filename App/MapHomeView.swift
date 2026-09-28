@@ -732,19 +732,17 @@ struct MapHomeView: View {
                     Button(action: doSearch) { Image(systemName: "arrow.right.circle.fill").font(.title3) }
                         .disabled(searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isSearching)
                 }
-                .padding(.horizontal, 14).frame(height: 48)
+                .padding(.horizontal, 14)
+                .frame(maxWidth: .infinity)
+                .frame(height: 48)
                 .background(.regularMaterial, in: Capsule())
                 .shadow(color: .black.opacity(0.13), radius: 9, y: 4)
-                Menu {
-                    Button { activeSheet = .logs } label: { Label("日志", systemImage: "list.bullet.rectangle") }
-                    Button { activeSheet = .settings } label: { Label("设置", systemImage: "gearshape") }
-                } label: {
-                    Image(systemName: "ellipsis").font(.system(size: 20, weight: .bold))
-                        .frame(width: 48, height: 48)
-                        .background(.regularMaterial, in: Circle())
-                        .shadow(color: .black.opacity(0.13), radius: 9, y: 4)
-                        .contentShape(Circle())
-                }.accessibilityLabel("更多")
+                MapChromeIconButton(systemImage: "list.bullet.rectangle", accessibilityLabel: "日志") {
+                    activeSheet = .logs
+                }
+                MapChromeIconButton(systemImage: "gearshape", accessibilityLabel: "设置") {
+                    activeSheet = .settings
+                }
             }
             MapHomeTopInfoBar(
                 pair: displayedCoordinatePair,

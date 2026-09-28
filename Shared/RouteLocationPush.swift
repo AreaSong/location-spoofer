@@ -2,14 +2,14 @@ import Foundation
 
 enum DeveloperTunnelHelp {
     static let overview =
-        "定点和路线通过本机隧道写入系统定位。请先连上 LocalDevVPN，并导入配对文件。iOS 18 到 26 用电脑生成一次即可。"
+        "定点和路线通过本机隧道写入系统定位。请先连上 LocalDevVPN，并导入配对文件。这台手机必须作为客户端连着 Wi-Fi（无公网也可以，流量可同时开）；只开流量或自己开热点不行。iOS 18 到 26 用电脑生成一次即可。"
 
     static let connectionChecksTitle = "连不上时检查这些"
 
     static let connectionChecks = """
     1. LocalDevVPN 显示 Connected。
-    2. 连着 Wi-Fi，或已打开本机个人热点。只开流量、关掉 Wi-Fi 通常连不上。
-    3. 隧道 IP 和当前网段一致。家里对 192.168.x；个人热点时把 Device IP / Tunnel IP 改成 172.20.10.1 和 172.20.10.2。
+    2. 这台手机已作为客户端连上 Wi-Fi。家里路由、别人的热点、书包里的发射盒都行，不需要能上公网。只开流量、关掉 Wi-Fi 通常连不上。
+    3. 自己开个人热点不算。那是热点主人，系统仍当成没连 Wi-Fi。LocalDevVPN 是另一条虚线路，默认 10.7；家里普通 Wi-Fi 一般不用改 IP。只有已经连着 Wi-Fi 仍失败时，再把 Device / Tunnel IP 改到当前 Wi-Fi 网段。
     4. 仍失败：点「清理隧道会话」，重连 LocalDevVPN，或划掉本 App 再打开。
     """
 }
@@ -93,9 +93,9 @@ enum RouteLocationPushFailure: Equatable, Sendable {
         case .notReady(let readiness):
             return readiness.blockingMessage ?? "路线定位还没准备好。"
         case .tunnel:
-            return "连不上本机隧道。请确认已连 Wi-Fi 或已开个人热点，并且 LocalDevVPN 的 IP 和当前网段一致（热点一般是 172.20.10.x）。仍失败请清理隧道会话，或划掉本 App 再打开。"
+            return "连不上本机隧道。请确认这台手机已作为客户端连上 Wi-Fi（自己开热点不算）。只开流量系统不放行。仍失败请清理隧道会话，或划掉本 App 再打开。"
         case .tunnelOnCellular:
-            return "当前只开了流量。请打开 Wi-Fi 或本机个人热点，并在 LocalDevVPN 把 IP 改到同一网段（热点一般是 172.20.10.x）。"
+            return "当前只开了流量。请作为客户端连上 Wi-Fi（无公网也可以），不要用本机个人热点。"
         case .pairing:
             return "配对文件无效。请重新导入配对文件后再试。"
         case .rejected:

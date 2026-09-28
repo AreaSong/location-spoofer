@@ -14,6 +14,35 @@ enum AppLayout {
     static let bottomCardExpandedHeightFraction: CGFloat = 0.28
 }
 
+/// 地图页顶部圆形图标按钮。直接打开目标页，避免 SwiftUI Menu 叠在 MKMapView 上时第二次点击被地图手势吃掉。
+struct MapChromeIconButton: View {
+    let systemImage: String
+    let accessibilityLabel: String
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: systemImage)
+                .font(.system(size: 18, weight: .semibold))
+                .foregroundStyle(.primary)
+                .frame(width: 48, height: 48)
+                .background(.regularMaterial, in: Circle())
+                .shadow(color: .black.opacity(0.13), radius: 9, y: 4)
+                .contentShape(Circle())
+        }
+        .buttonStyle(MapChromeIconStyle())
+        .contentShape(Circle())
+        .accessibilityLabel(accessibilityLabel)
+    }
+}
+
+private struct MapChromeIconStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .opacity(configuration.isPressed ? 0.7 : 1)
+    }
+}
+
 /// 小胶囊按钮：视觉高度 32pt，命中区域外扩到 44pt，按下时变淡。
 struct CapsuleChipStyle: ButtonStyle {
     var tint: Color?

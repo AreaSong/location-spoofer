@@ -90,8 +90,8 @@ grep -q 'DeveloperTunnelHelp.connectionChecksTitle' "$CHECKLIST" \
   || fail "the checklist must show tunnel troubleshooting steps"
 grep -q '连不上时检查这些' "$ROOT/Shared/RouteLocationPush.swift" \
   || fail "tunnel help must keep a titled troubleshooting list"
-grep -q '172.20.10' "$ROOT/Shared/RouteLocationPush.swift" \
-  || fail "tunnel help must mention the personal-hotspot subnet"
+grep -q '自己开个人热点不算' "$ROOT/Shared/RouteLocationPush.swift" \
+  || fail "tunnel help must warn that hosting a personal hotspot is not a Wi-Fi client"
 grep -q 'func hostIdentity' "$PAIRING" \
   || fail "developer tunnel handshake must use the pairing-file host identity"
 grep -q 'reassertIfNeeded' "$MAP" || fail "foreground recovery must not open a second simulation while one is held"
