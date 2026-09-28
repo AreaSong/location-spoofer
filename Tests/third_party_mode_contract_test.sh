@@ -196,4 +196,9 @@ grep -q 'if spoofState == .active' "$MAP" || fail "manual help must follow the s
 grep -q 'MARKETING_VERSION: "1.0.7"' "$ROOT/project.yml" || fail "marketing version must be 1.0.7"
 grep -q 'CURRENT_PROJECT_VERSION: "8"' "$ROOT/project.yml" || fail "build version must be 8"
 
+grep -q 'func mustSucceed' "$ROOT/Shared/RuntimeModeSwitchCleanup.swift" \
+  || fail "leaving third-party for developer tunnel must not hard-block on WLOC clear"
+grep -q '仍继续切换' "$ROOT/App/SettingsView+AppMode.swift" \
+  || fail "developer-tunnel switch must continue if third-party clear fails"
+
 echo "PASS: third-party proxy mode contract"

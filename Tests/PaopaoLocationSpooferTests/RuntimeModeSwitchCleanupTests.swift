@@ -35,4 +35,21 @@ final class RuntimeModeSwitchCleanupTests: XCTestCase {
             RuntimeModeSwitchCleanup.required(from: .thirdParty, to: .thirdParty).isEmpty
         )
     }
+
+    func testLeavingThirdPartyToDeveloperTunnelWLOCIsBestEffort() {
+        XCTAssertEqual(
+            RuntimeModeSwitchCleanup.mustSucceed(from: .thirdParty, to: .developerTunnel),
+            []
+        )
+        XCTAssertTrue(
+            RuntimeModeSwitchCleanup.thirdPartyClearBestEffortMessage.contains("关掉 WLOC 模块")
+        )
+    }
+
+    func testLeavingThirdPartyToAppModeWLOCMustSucceed() {
+        XCTAssertEqual(
+            RuntimeModeSwitchCleanup.mustSucceed(from: .thirdParty, to: .localWiFi),
+            [.thirdPartyWLOC]
+        )
+    }
 }
