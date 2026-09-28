@@ -284,16 +284,16 @@ enum WalkPuckMapPlacement {
         spoofActive: Bool,
         writtenLatitude: Double?,
         writtenLongitude: Double?,
+        realtimeCoordinate: CLLocationCoordinate2D?,
         mapSystem: CoordinateConverter.MapCoordinateSystem
     ) -> CLLocationCoordinate2D? {
-        guard spoofActive else { return nil }
-        guard let latitude = writtenLatitude, let longitude = writtenLongitude else {
-            return nil
+        if spoofActive, let latitude = writtenLatitude, let longitude = writtenLongitude {
+            return CoordinatePair(
+                mapCoordinate: CLLocationCoordinate2D(latitude: latitude, longitude: longitude),
+                mapCoordinateSystem: .wgs84
+            ).coordinate(for: mapSystem)
         }
-        return CoordinatePair(
-            mapCoordinate: CLLocationCoordinate2D(latitude: latitude, longitude: longitude),
-            mapCoordinateSystem: .wgs84
-        ).coordinate(for: mapSystem)
+        return realtimeCoordinate
     }
 }
 

@@ -11,10 +11,17 @@ final class PhysicalWalkStoreTests: XCTestCase {
 
         let store = PhysicalWalkStore(defaults: defaults)
         XCTAssertFalse(store.isEnabled)
+        XCTAssertFalse(store.isCustomHeadingEnabled)
+        XCTAssertEqual(store.initialHeadingDegrees, 0, accuracy: 0.01)
         XCTAssertEqual(store.lastFailureMessage, "")
 
         store.setEnabled(true)
-        XCTAssertTrue(PhysicalWalkStore(defaults: defaults).isEnabled)
+        store.setCustomHeadingEnabled(true)
+        store.setInitialHeadingDegrees(92)
+        let restored = PhysicalWalkStore(defaults: defaults)
+        XCTAssertTrue(restored.isEnabled)
+        XCTAssertTrue(restored.isCustomHeadingEnabled)
+        XCTAssertEqual(restored.initialHeadingDegrees, 92, accuracy: 0.01)
 
         store.noteFailure("需要运动与健身权限才能真实走动。")
         XCTAssertFalse(store.isEnabled)
@@ -82,6 +89,7 @@ final class PhysicalWalkControllerTests: XCTestCase {
         let originLatitude = 22.494
         let originLongitude = 113.951
         controller.start(latitude: originLatitude, longitude: originLongitude)
+        controller.setCustomHeadingEnabled(true)
         controller.lockHeading(degrees: 90)
 
         await controller.ingest(sample: PhysicalWalkSample(distanceMeters: 0, steps: 0))
@@ -174,6 +182,7 @@ final class PhysicalWalkControllerTests: XCTestCase {
         let controller = PhysicalWalkController(sensor: sensor, heading: heading)
 
         controller.startHeadingPreview()
+        controller.setCustomHeadingEnabled(true)
         controller.lockHeading(degrees: 180)
         XCTAssertEqual(controller.initialHeadingDegrees, 180, accuracy: 0.01)
         XCTAssertEqual(controller.activeHeadingDegrees ?? -1, 180, accuracy: 0.01)
@@ -193,6 +202,7 @@ final class PhysicalWalkControllerTests: XCTestCase {
         let heading = FakePhysicalWalkHeading()
         heading.latestYawDegrees = 0
         let controller = PhysicalWalkController(sensor: FakePhysicalWalkSensor(), heading: heading)
+        controller.setCustomHeadingEnabled(true)
         controller.lockHeading(degrees: 270)
         controller.rotateLockedHeading(by: -15)
         XCTAssertEqual(controller.activeHeadingDegrees ?? -1, 255, accuracy: 0.01)
@@ -206,8 +216,92 @@ final class PhysicalWalkControllerTests: XCTestCase {
         heading.headingAvailable = false
         let controller = PhysicalWalkController(sensor: FakePhysicalWalkSensor(), heading: heading)
         controller.startHeadingPreview()
-        XCTAssertEqual(controller.headingMode, .locked(degrees: 0))
+        XCTAssertEqual(controller.headingMode, .followCompass)
+        XCTAssertFalse(controller.usesCustomHeading)
         XCTAssertEqual(controller.activeHeadingDegrees ?? -1, 0, accuracy: 0.01)
+        controller.stopHeading()
+    }
+
+    func testMapHeadingDrivesFanWhenCustomHeadingIsOff() {
+        let heading = FakePhysicalWalkHeading()
+        heading.latestYawDegrees = 10
+        heading.latestMapHeadingDegrees = 180
+        let controller = PhysicalWalkController(sensor: FakePhysicalWalkSensor(), heading: heading)
+
+        controller.applyPersistedInitial(92)
+        controller.startHeadingPreview()
+        XCTAssertFalse(controller.usesCustomHeading)
+        XCTAssertEqual(controller.headingMode, .followCompass)
+        XCTAssertEqual(controller.activeHeadingDegrees ?? -1, 180, accuracy: 0.01)
+        XCTAssertEqual(controller.initialHeadingDegrees, 92, accuracy: 0.01)
+
+        heading.latestYawDegrees = 90
+        heading.onChange?()
+        XCTAssertEqual(controller.activeHeadingDegrees ?? -1, 180, accuracy: 0.01)
+
+        heading.latestMapHeadingDegrees = 45
+        heading.onChange?()
+        XCTAssertEqual(controller.activeHeadingDegrees ?? -1, 45, accuracy: 0.01)
+        controller.stopHeading()
+    }
+
+    func testYawFallbackWhenMapHeadingIsMissing() {
+        let heading = FakePhysicalWalkHeading()
+        heading.latestYawDegrees = 45
+        let controller = PhysicalWalkController(sensor: FakePhysicalWalkSensor(), heading: heading)
+        controller.startHeadingPreview()
+        XCTAssertEqual(controller.headingMode, .followCompass)
+        XCTAssertEqual(controller.activeHeadingDegrees ?? -1, 45, accuracy: 0.01)
+        controller.stopHeading()
+    }
+
+    func testEnablingCustomHeadingAppliesPersistedInitialAndYawDelta() {
+        let heading = FakePhysicalWalkHeading()
+        heading.latestYawDegrees = 10
+        heading.latestMapHeadingDegrees = 180
+        let controller = PhysicalWalkController(sensor: FakePhysicalWalkSensor(), heading: heading)
+
+        controller.applyPersistedInitial(92)
+        controller.startHeadingPreview()
+        controller.setCustomHeadingEnabled(true)
+        XCTAssertTrue(controller.usesCustomHeading)
+        XCTAssertEqual(controller.headingMode, .locked(degrees: 92))
+        XCTAssertEqual(controller.activeHeadingDegrees ?? -1, 92, accuracy: 0.01)
+
+        heading.latestYawDegrees = 190
+        heading.onChange?()
+        XCTAssertEqual(controller.activeHeadingDegrees ?? -1, 272, accuracy: 0.01)
+
+        heading.latestYawDegrees = 10
+        heading.onChange?()
+        XCTAssertEqual(controller.activeHeadingDegrees ?? -1, 92, accuracy: 0.01)
+        controller.stopHeading()
+    }
+
+    func testStartDoesNotEnableCustomHeading() {
+        let heading = FakePhysicalWalkHeading()
+        heading.latestMapHeadingDegrees = 180
+        let controller = PhysicalWalkController(sensor: FakePhysicalWalkSensor(), heading: heading)
+        controller.start(latitude: 22.494, longitude: 113.951)
+        XCTAssertFalse(controller.usesCustomHeading)
+        XCTAssertEqual(controller.headingMode, .followCompass)
+        XCTAssertEqual(controller.activeHeadingDegrees ?? -1, 180, accuracy: 0.01)
+        controller.stop()
+    }
+
+    func testLockHeadingStaysLatentUntilCustomHeadingIsOn() {
+        let heading = FakePhysicalWalkHeading()
+        heading.latestYawDegrees = 0
+        heading.latestMapHeadingDegrees = 180
+        let controller = PhysicalWalkController(sensor: FakePhysicalWalkSensor(), heading: heading)
+        controller.startHeadingPreview()
+        controller.lockHeading(degrees: 90)
+        XCTAssertFalse(controller.usesCustomHeading)
+        XCTAssertEqual(controller.activeHeadingDegrees ?? -1, 180, accuracy: 0.01)
+        XCTAssertEqual(controller.initialHeadingDegrees, 90, accuracy: 0.01)
+
+        controller.setCustomHeadingEnabled(true)
+        XCTAssertEqual(controller.activeHeadingDegrees ?? -1, 90, accuracy: 0.01)
         controller.stopHeading()
     }
 
@@ -264,8 +358,12 @@ private final class FakePhysicalWalkSensor: PhysicalWalkSensing {
 private final class FakePhysicalWalkHeading: PhysicalWalkHeadingSensing {
     var headingAvailable = true
     var latestYawDegrees: Double?
+    var latestMapHeadingDegrees: Double?
     var onChange: (() -> Void)?
 
     func start() {}
-    func stop() { latestYawDegrees = nil }
+    func stop() {
+        latestYawDegrees = nil
+        latestMapHeadingDegrees = nil
+    }
 }

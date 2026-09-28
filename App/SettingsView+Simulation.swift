@@ -26,7 +26,7 @@ extension SettingsView {
         Section("定位模拟") {
             Toggle("真实走动", isOn: physicalWalkBinding)
                 .disabled(simulationControlsDisabled)
-            Text("也可在首页朝向条里设定初始朝向。之后手机会带动扇形转动；打开真实走动后沿当前扇形迈步。")
+            Text("默认扇形跟系统地图朝向一致。打开「初始指向」后，滑条和 ±15° 才设定自定义初始朝向；之后转动手机会带动扇形。打开真实走动后沿当前扇形迈步。")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
             if !physicalWalk.lastFailureMessage.isEmpty {

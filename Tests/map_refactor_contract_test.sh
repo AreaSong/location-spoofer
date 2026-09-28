@@ -116,8 +116,20 @@ if grep -q 'placeName' "$ROOT/App/MapHomeCoordinateLine.swift"; then
 fi
 grep -q 'quickActions' "$ROOT/App/MapHomeBottomCard.swift" \
   || fail "collapsed bottom card must keep walk shortcuts outside the expanded lists"
+grep -q 'Toggle("初始指向"' "$ROOT/App/MapHomeView+PhysicalWalk.swift" \
+  || fail "custom heading must be a dedicated toggle, defaulting off"
 grep -q 'Toggle("真实走动"' "$ROOT/App/MapHomeView+PhysicalWalk.swift" \
   || fail "physical walk toggle must sit in the heading angle row"
+grep -q 'isCustomHeadingEnabled' "$ROOT/Shared/PhysicalWalkStore.swift" \
+  || fail "custom heading on/off must persist separately from physical walking"
+grep -q 'latestMapHeadingDegrees' "$ROOT/App/PhysicalWalkSensors.swift" \
+  || fail "default heading must follow the map compass, not the custom instrument"
+grep -q 'xMagneticNorthZVertical' "$ROOT/App/PhysicalWalkSensors.swift" \
+  || fail "default heading must use a north-referenced attitude frame so the fan matches the original map"
+grep -q 'realtimeCoordinate' "$ROOT/App/MapHomeView+PhysicalWalk.swift" \
+  || fail "the heading puck must appear from launch using the realtime coordinate before spoofing"
+grep -q 'headingMode: PhysicalWalkHeadingMode = .followCompass' "$ROOT/App/PhysicalWalkController.swift" \
+  || fail "connecting or launching must not auto-enable custom heading"
 grep -q 'labeledDegrees' "$ROOT/App/MapHomeView+PhysicalWalk.swift" \
   || fail "heading angle row must show the current heading to the left of the walk toggle"
 if grep -q 'PhysicalWalkSpotControl' "$ROOT/App/MapHomeView.swift"; then

@@ -1,3 +1,4 @@
+import CoreLocation
 import XCTest
 @testable import PaopaoLocationSpoofer
 
@@ -338,11 +339,24 @@ final class PhysicalWalkDisplacementTests: XCTestCase {
     }
 
     func testWalkPuckUsesWrittenCoordinateWhenSpoofIsActive() {
+        let realtime = CLLocationCoordinate2D(latitude: 31.2, longitude: 121.5)
+        XCTAssertEqual(
+            WalkPuckMapPlacement.coordinate(
+                spoofActive: false,
+                writtenLatitude: 22.5,
+                writtenLongitude: 113.9,
+                realtimeCoordinate: realtime,
+                mapSystem: .wgs84
+            )?.latitude ?? 0,
+            31.2,
+            accuracy: 0.000_000_1
+        )
         XCTAssertNil(
             WalkPuckMapPlacement.coordinate(
                 spoofActive: false,
                 writtenLatitude: 22.5,
                 writtenLongitude: 113.9,
+                realtimeCoordinate: nil,
                 mapSystem: .wgs84
             )
         )
@@ -350,6 +364,7 @@ final class PhysicalWalkDisplacementTests: XCTestCase {
             spoofActive: true,
             writtenLatitude: 22.5,
             writtenLongitude: 113.9,
+            realtimeCoordinate: realtime,
             mapSystem: .wgs84
         )
         XCTAssertEqual(puck?.latitude ?? 0, 22.5, accuracy: 0.000_000_1)

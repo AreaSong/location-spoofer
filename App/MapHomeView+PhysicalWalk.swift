@@ -13,12 +13,13 @@ extension MapHomeView {
         )
     }
 
-    /// 当前已写入的虚拟坐标，转成地图标准后给蓝点扇形用。红钉仍表示地图中心选点。
+    /// 当前定位蓝点：定点后用已写入的虚拟坐标；未定点时用实时定位，保证进软件就有扇形。
     var walkPuckMapCoordinate: CLLocationCoordinate2D? {
         WalkPuckMapPlacement.coordinate(
             spoofActive: spoofState == .active,
             writtenLatitude: session.writtenLatitude,
             writtenLongitude: session.writtenLongitude,
+            realtimeCoordinate: mapState.realtimeCoordinate,
             mapSystem: displayedMapCoordinateSystem
         )
     }
@@ -31,6 +32,8 @@ extension MapHomeView {
         physicalWalk.onFailure = { message in
             physicalWalkStore.noteFailure(message)
         }
+        physicalWalk.applyPersistedInitial(physicalWalkStore.initialHeadingDegrees)
+        physicalWalk.setCustomHeadingEnabled(physicalWalkStore.isCustomHeadingEnabled)
     }
 
     func syncPhysicalWalk() {
@@ -38,16 +41,10 @@ extension MapHomeView {
         claimPhysicalWalkFromRoute()
         if shouldTrackPhysicalWalk {
             startPhysicalWalkIfNeeded()
-        } else {
-            if physicalWalk.isTracking {
-                physicalWalk.stop()
-            }
-            if spoofState == .active || physicalWalkStore.isEnabled {
-                physicalWalk.startHeadingPreview()
-            } else {
-                physicalWalk.stopHeading()
-            }
+        } else if physicalWalk.isTracking {
+            physicalWalk.stop()
         }
+        physicalWalk.startHeadingPreview()
     }
 
     func handlePhysicalWalkRoutePhase(_ phase: RoutePhase) {
@@ -123,11 +120,14 @@ struct PhysicalWalkHeadingControls: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
+            Toggle("初始指向", isOn: customHeadingBinding)
+                .font(.caption.weight(.semibold))
             HStack(spacing: 8) {
                 Button("−15°") {
-                    controller.rotateLockedHeading(by: -15)
+                    nudgeInitialHeading(by: -15)
                 }
                 .buttonStyle(CapsuleChipStyle())
+                .disabled(!store.isCustomHeadingEnabled)
                 .accessibilityLabel("初始朝向减少 15 度")
                 Text(PhysicalWalkHeadingLock.labeledDegrees(controller.activeHeadingDegrees ?? 0))
                     .font(.caption.monospacedDigit().weight(.semibold))
@@ -138,12 +138,14 @@ struct PhysicalWalkHeadingControls: View {
                     .font(.caption.weight(.semibold))
                     .fixedSize()
                 Button("+15°") {
-                    controller.rotateLockedHeading(by: 15)
+                    nudgeInitialHeading(by: 15)
                 }
                 .buttonStyle(CapsuleChipStyle())
+                .disabled(!store.isCustomHeadingEnabled)
                 .accessibilityLabel("初始朝向增加 15 度")
             }
             Slider(value: headingBinding, in: 0...359, step: 1)
+                .disabled(!store.isCustomHeadingEnabled)
                 .accessibilityLabel("初始朝向")
             walkHint
         }
@@ -160,6 +162,10 @@ struct PhysicalWalkHeadingControls: View {
             Text("先开启虚拟定位")
                 .font(.caption)
                 .foregroundStyle(.secondary)
+        } else if !store.isCustomHeadingEnabled {
+            Text("扇形跟系统地图朝向一致")
+                .font(.caption)
+                .foregroundStyle(.secondary)
         }
     }
 
@@ -170,10 +176,30 @@ struct PhysicalWalkHeadingControls: View {
         )
     }
 
+    private var customHeadingBinding: Binding<Bool> {
+        Binding(
+            get: { store.isCustomHeadingEnabled },
+            set: {
+                store.setCustomHeadingEnabled($0)
+                controller.setCustomHeadingEnabled($0)
+            }
+        )
+    }
+
     private var headingBinding: Binding<Double> {
         Binding(
             get: { controller.initialHeadingDegrees },
-            set: { controller.lockHeading(degrees: $0) }
+            set: { persistInitialHeading($0) }
         )
+    }
+
+    private func nudgeInitialHeading(by delta: Double) {
+        controller.rotateLockedHeading(by: delta)
+        store.setInitialHeadingDegrees(controller.initialHeadingDegrees)
+    }
+
+    private func persistInitialHeading(_ degrees: Double) {
+        controller.lockHeading(degrees: degrees)
+        store.setInitialHeadingDegrees(controller.initialHeadingDegrees)
     }
 }

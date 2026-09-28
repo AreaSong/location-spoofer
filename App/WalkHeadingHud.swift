@@ -1,7 +1,7 @@
 import MapKit
 import UIKit
 
-/// 画在当前生效的虚拟坐标上：蓝点表示人在这里，扇形表示朝向。红钉仍是地图中心选点。
+/// 画在当前定位上：蓝点表示人在这里，扇形表示朝向。红钉仍是地图中心选点。
 final class WalkHeadingHud: UIView {
     static let puckDiameter: CGFloat = 16
     static let fanRadius: CGFloat = 36

@@ -7,7 +7,8 @@ final class PhysicalWalkController: ObservableObject {
     @Published private(set) var isTracking = false
     @Published private(set) var status: PhysicalWalkStatus = .idle
     @Published private(set) var movedMeters = 0.0
-    @Published private(set) var headingMode: PhysicalWalkHeadingMode = .locked(degrees: 0)
+    @Published private(set) var headingMode: PhysicalWalkHeadingMode = .followCompass
+    @Published private(set) var usesCustomHeading = false
     @Published private(set) var initialHeadingDegrees: Double = 0
     @Published private(set) var activeHeadingDegrees: Double? = 0
 
@@ -86,17 +87,42 @@ final class PhysicalWalkController: ObservableObject {
         }
     }
 
-    func lockHeading(degrees: Double) {
-        let yaw = heading.latestYawDegrees
-        headingInstrument = PhysicalWalkHeadingInstrument.capturingInitial(
-            degrees,
-            currentYawDegrees: yaw ?? headingInstrument.referenceYawDegrees
-        )
+    func applyPersistedInitial(_ degrees: Double) {
+        headingInstrument.initialDegrees = PhysicalWalkHeadingLock.normalized(degrees)
         initialHeadingDegrees = headingInstrument.initialDegrees
-        headingMode = .locked(degrees: headingInstrument.initialDegrees)
-        didBindSensorZero = yaw != nil
+        if usesCustomHeading {
+            headingMode = .locked(degrees: headingInstrument.initialDegrees)
+        }
+        publishActiveHeading()
+    }
+
+    func setCustomHeadingEnabled(_ enabled: Bool) {
+        if usesCustomHeading == enabled {
+            headingMode = enabled ? .locked(degrees: headingInstrument.initialDegrees) : .followCompass
+            publishActiveHeading()
+            return
+        }
+        usesCustomHeading = enabled
+        if enabled {
+            recaptureInstrumentZero()
+            headingMode = .locked(degrees: headingInstrument.initialDegrees)
+        } else {
+            headingMode = .followCompass
+        }
         publishActiveHeading()
         flushHeading()
+    }
+
+    func lockHeading(degrees: Double) {
+        recaptureInstrumentZero(initialDegrees: degrees)
+        initialHeadingDegrees = headingInstrument.initialDegrees
+        if usesCustomHeading {
+            headingMode = .locked(degrees: headingInstrument.initialDegrees)
+        }
+        publishActiveHeading()
+        if usesCustomHeading {
+            flushHeading()
+        }
     }
 
     func startHeadingPreview() {
@@ -112,6 +138,7 @@ final class PhysicalWalkController: ObservableObject {
     }
 
     func rotateLockedHeading(by delta: Double) {
+        guard usesCustomHeading else { return }
         lockHeading(degrees: (activeHeadingDegrees ?? initialHeadingDegrees) + delta)
     }
 
@@ -201,15 +228,33 @@ final class PhysicalWalkController: ObservableObject {
     }
 
     private func bindSensorZeroIfNeeded() {
-        guard !didBindSensorZero, let yaw = heading.latestYawDegrees else { return }
+        guard usesCustomHeading, !didBindSensorZero, let yaw = heading.latestYawDegrees else { return }
         headingInstrument.referenceYawDegrees = yaw
         didBindSensorZero = true
     }
 
-    private func resolvedHeading() -> PhysicalWalkHeading? {
+    private func recaptureInstrumentZero(initialDegrees: Double? = nil) {
         let yaw = heading.latestYawDegrees ?? headingInstrument.referenceYawDegrees
-        let degrees = headingInstrument.liveDegrees(currentYawDegrees: yaw)
-        return PhysicalWalkHeading(degrees: degrees, accuracyDegrees: 0)
+        headingInstrument = PhysicalWalkHeadingInstrument.capturingInitial(
+            initialDegrees ?? headingInstrument.initialDegrees,
+            currentYawDegrees: yaw
+        )
+        didBindSensorZero = heading.latestYawDegrees != nil
+    }
+
+    private func resolvedHeading() -> PhysicalWalkHeading? {
+        if usesCustomHeading {
+            let yaw = heading.latestYawDegrees ?? headingInstrument.referenceYawDegrees
+            let degrees = headingInstrument.liveDegrees(currentYawDegrees: yaw)
+            return PhysicalWalkHeading(degrees: degrees, accuracyDegrees: 0)
+        }
+        if let map = heading.latestMapHeadingDegrees {
+            return PhysicalWalkHeading(degrees: map, accuracyDegrees: 0)
+        }
+        if let yaw = heading.latestYawDegrees {
+            return PhysicalWalkHeading(degrees: yaw, accuracyDegrees: 0)
+        }
+        return PhysicalWalkHeading(degrees: 0, accuracyDegrees: 0)
     }
 
     private func publishActiveHeading() {
@@ -220,7 +265,7 @@ final class PhysicalWalkController: ObservableObject {
     private func fail(_ message: String) {
         RuntimeLogger.warning("APP", "真实走动", message)
         stop()
-        stopHeading()
+        startHeadingPreview()
         onFailure?(message)
     }
 
