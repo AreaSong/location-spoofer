@@ -191,6 +191,37 @@ final class PhysicalWalkControllerTests: XCTestCase {
         controller.stop()
     }
 
+    func testRotateLockedHeadingStepsByFifteenDegrees() {
+        let heading = FakePhysicalWalkHeading()
+        let controller = PhysicalWalkController(sensor: FakePhysicalWalkSensor(), heading: heading)
+        controller.lockHeading(degrees: 270)
+        controller.rotateLockedHeading(by: -15)
+        XCTAssertEqual(controller.activeHeadingDegrees ?? -1, 255, accuracy: 0.01)
+        XCTAssertEqual(controller.headingMode, .locked(degrees: 255))
+        controller.stop()
+    }
+
+    func testFollowCompassLocksWhenMagnetometerIsMissing() {
+        let heading = FakePhysicalWalkHeading()
+        heading.headingAvailable = false
+        let controller = PhysicalWalkController(sensor: FakePhysicalWalkSensor(), heading: heading)
+        controller.lockHeading(degrees: 270)
+        controller.followCompass()
+        XCTAssertEqual(controller.headingMode, .locked(degrees: 270))
+        XCTAssertEqual(controller.activeHeadingDegrees ?? -1, 270, accuracy: 0.01)
+        controller.stop()
+    }
+
+    func testHeadingPreviewLocksNorthWhenCompassUnavailable() {
+        let heading = FakePhysicalWalkHeading()
+        heading.headingAvailable = false
+        let controller = PhysicalWalkController(sensor: FakePhysicalWalkSensor(), heading: heading)
+        controller.startHeadingPreview()
+        XCTAssertEqual(controller.headingMode, .locked(degrees: 0))
+        XCTAssertEqual(controller.activeHeadingDegrees ?? -1, 0, accuracy: 0.01)
+        controller.stop()
+    }
+
     func testStaleAuthorizationErrorAfterAllowDoesNotFail() {
         let sensor = FakePhysicalWalkSensor()
         let heading = FakePhysicalWalkHeading()

@@ -152,39 +152,62 @@ struct PhysicalWalkHeadingControls: View {
     var onChoseHeading: () -> Void = {}
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 6) {
-                Button("罗盘") {
-                    controller.followCompass()
-                }
-                .buttonStyle(CapsuleChipStyle(tint: controller.headingMode == .followCompass ? .accentColor : nil))
-                .accessibilityLabel("跟随罗盘朝向")
-                ForEach(PhysicalWalkHeadingLock.cardinals, id: \.title) { item in
-                    Button(item.title) {
-                        controller.lockHeading(degrees: item.degrees)
-                        onChoseHeading()
-                    }
-                    .buttonStyle(CapsuleChipStyle(tint: isSelectedCardinal(item.degrees) ? .accentColor : nil))
-                    .accessibilityLabel("朝\(item.title)")
-                }
-            }
-            HStack(spacing: 6) {
-                Button {
-                    controller.rotateLockedHeading(by: -15)
-                } label: {
-                    Image(systemName: "arrow.counterclockwise")
-                }
-                .buttonStyle(CapsuleChipStyle())
-                .accessibilityLabel("箭头向左偏 15 度")
-                Button {
-                    controller.rotateLockedHeading(by: 15)
-                } label: {
-                    Image(systemName: "arrow.clockwise")
-                }
-                .buttonStyle(CapsuleChipStyle())
-                .accessibilityLabel("箭头向右偏 15 度")
+        VStack(alignment: .leading, spacing: 8) {
+            cardinalRow
+            fineTuneRow
+            Slider(value: headingBinding, in: 0...359, step: 1)
+                .accessibilityLabel("朝向角度")
+            if !controller.isCompassAvailable {
+                Text("当前设备没有罗盘，可用东南西北或拖动角度")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
+    }
+
+    private var cardinalRow: some View {
+        HStack(spacing: 6) {
+            Button("罗盘") {
+                controller.followCompass()
+            }
+            .buttonStyle(CapsuleChipStyle(tint: controller.headingMode == .followCompass ? .accentColor : nil))
+            .disabled(!controller.isCompassAvailable)
+            .accessibilityLabel("跟随罗盘朝向")
+            ForEach(PhysicalWalkHeadingLock.cardinals, id: \.title) { item in
+                Button(item.title) {
+                    controller.lockHeading(degrees: item.degrees)
+                    onChoseHeading()
+                }
+                .buttonStyle(CapsuleChipStyle(tint: isSelectedCardinal(item.degrees) ? .accentColor : nil))
+                .accessibilityLabel("朝\(item.title)")
+            }
+        }
+    }
+
+    private var fineTuneRow: some View {
+        HStack(spacing: 8) {
+            Button("−15°") {
+                controller.rotateLockedHeading(by: -15)
+            }
+            .buttonStyle(CapsuleChipStyle())
+            .accessibilityLabel("朝向减少 15 度")
+            Text(PhysicalWalkHeadingLock.labeledDegrees(controller.activeHeadingDegrees ?? 0))
+                .font(.caption.monospacedDigit().weight(.semibold))
+                .frame(maxWidth: .infinity)
+            Button("+15°") {
+                controller.rotateLockedHeading(by: 15)
+            }
+            .buttonStyle(CapsuleChipStyle())
+            .accessibilityLabel("朝向增加 15 度")
+        }
+    }
+
+    private var headingBinding: Binding<Double> {
+        Binding(
+            get: { controller.activeHeadingDegrees ?? 0 },
+            set: { controller.lockHeading(degrees: $0) }
+        )
     }
 
     private func isSelectedCardinal(_ degrees: Double) -> Bool {

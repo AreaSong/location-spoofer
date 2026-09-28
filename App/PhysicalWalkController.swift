@@ -89,7 +89,13 @@ final class PhysicalWalkController: ObservableObject {
         }
     }
 
+    var isCompassAvailable: Bool { heading.headingAvailable }
+
     func followCompass() {
+        guard heading.headingAvailable else {
+            lockHeading(degrees: activeHeadingDegrees ?? 0)
+            return
+        }
         headingMode = .followCompass
         startHeadingPreview()
         publishActiveHeading()
@@ -104,6 +110,9 @@ final class PhysicalWalkController: ObservableObject {
 
     func startHeadingPreview() {
         guard !isTracking else { return }
+        if !heading.headingAvailable, !headingMode.isLocked {
+            headingMode = .locked(degrees: 0)
+        }
         heading.onChange = { [weak self] in
             self?.publishActiveHeading()
         }

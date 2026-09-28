@@ -120,10 +120,15 @@ enum PhysicalWalkHeadingLock {
     static func pickerSummary(headingDegrees: Double?, locked: Bool) -> String {
         if locked {
             guard let headingDegrees else { return "未定" }
-            return compassName(headingDegrees)
+            return labeledDegrees(headingDegrees)
         }
         guard let headingDegrees else { return "罗盘" }
-        return "罗盘 · \(compassName(headingDegrees))"
+        return "罗盘 \(Int(normalized(headingDegrees).rounded()))°"
+    }
+
+    static func labeledDegrees(_ degrees: Double) -> String {
+        let value = normalized(degrees)
+        return "\(compassName(value)) \(Int(value.rounded()))°"
     }
 }
 
@@ -135,8 +140,8 @@ enum PhysicalWalkHeadingPicker {
         hasResolvedHeading: Bool,
         followsCompass: Bool = false
     ) -> Bool {
+        _ = followsCompass
         guard isEnabled else { return false }
-        if followsCompass { return false }
         return !hasResolvedHeading
     }
 }

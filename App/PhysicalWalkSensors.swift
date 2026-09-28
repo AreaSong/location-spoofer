@@ -96,19 +96,20 @@ final class PhysicalWalkHeadingDriver: PhysicalWalkHeadingSensing {
     }
 
     var headingAvailable: Bool {
-        motion.isDeviceMotionAvailable || CLLocationManager.headingAvailable()
+        motion.isMagnetometerAvailable || CLLocationManager.headingAvailable()
     }
 
     func start() {
-        if motion.isDeviceMotionAvailable {
+        if motion.isDeviceMotionAvailable, motion.isMagnetometerAvailable {
             motion.deviceMotionUpdateInterval = 0.2
             motion.startDeviceMotionUpdates(using: .xMagneticNorthZVertical, to: .main) { [weak self] data, _ in
                 Task { @MainActor in
-                    self?.setLatest(Self.heading(from: data))
+                    guard let heading = Self.compassHeading(from: data) else { return }
+                    self?.setLatest(heading)
                 }
             }
-            return
         }
+        guard CLLocationManager.headingAvailable() else { return }
         if location.authorizationStatus == .notDetermined {
             location.requestWhenInUseAuthorization()
         }
@@ -126,15 +127,9 @@ final class PhysicalWalkHeadingDriver: PhysicalWalkHeadingSensing {
         onChange?()
     }
 
-    private static func heading(from data: CMDeviceMotion?) -> PhysicalWalkHeading? {
-        guard let data else { return nil }
-        if data.heading >= 0 {
-            return PhysicalWalkHeading(degrees: data.heading, accuracyDegrees: 0)
-        }
-        var degrees = -data.attitude.yaw * 180 / .pi
-        degrees = degrees.truncatingRemainder(dividingBy: 360)
-        if degrees < 0 { degrees += 360 }
-        return PhysicalWalkHeading(degrees: degrees, accuracyDegrees: 0)
+    static func compassHeading(from data: CMDeviceMotion?) -> PhysicalWalkHeading? {
+        guard let data, data.heading >= 0 else { return nil }
+        return PhysicalWalkHeading(degrees: data.heading, accuracyDegrees: 0)
     }
 }
 
@@ -143,6 +138,7 @@ private final class LocationHeadingRelay: NSObject, CLLocationManagerDelegate {
 
     func locationManager(_ manager: CLLocationManager, didUpdateHeading newHeading: CLHeading) {
         let degrees = newHeading.trueHeading >= 0 ? newHeading.trueHeading : newHeading.magneticHeading
+        guard degrees >= 0 else { return }
         // 虚拟定位生效时系统罗盘精度常为 -1，磁力计读数仍可用来定向。
         onHeading?(PhysicalWalkHeading(degrees: degrees, accuracyDegrees: 0))
     }
