@@ -27,12 +27,14 @@ final class RouteLocationTests: XCTestCase {
         XCTAssertTrue(RouteLocationPushFailure.tunnel.message.contains("Wi-Fi"))
         XCTAssertTrue(RouteLocationPushFailure.tunnelOnCellular.message.contains("流量"))
         XCTAssertTrue(RouteLocationPushFailure.tunnelOnCellular.message.contains("Wi-Fi"))
+        XCTAssertTrue(DeveloperTunnelHelp.connectionChecks.contains("必须点 Connect"))
         XCTAssertTrue(DeveloperTunnelHelp.connectionChecks.contains("只开流量、关掉 Wi-Fi"))
         XCTAssertTrue(DeveloperTunnelHelp.connectionChecks.contains("自己开个人热点不算"))
     }
 
     func testTunnelInterfaceDetectionAcceptsPrivateTunnelAddresses() {
         XCTAssertTrue(LocalDevVPN.hasTunnelInterface(in: ["10.7.0.1"]))
+        XCTAssertTrue(LocalDevVPN.hasTunnelInterface(in: ["10.7.1.1"]))
         XCTAssertTrue(LocalDevVPN.hasTunnelInterface(in: ["172.20.10.1"]))
         XCTAssertTrue(LocalDevVPN.hasTunnelInterface(in: ["192.168.1.5"]))
         XCTAssertTrue(LocalDevVPN.hasTunnelInterface(in: ["10.8.0.1"]))
@@ -48,7 +50,7 @@ final class RouteLocationTests: XCTestCase {
                 localAddresses: ["10.7.0.0", "192.168.1.2"],
                 peerAddresses: ["10.7.0.1"]
             ),
-            ["10.7.0.1", "192.168.1.2", "10.7.0.2", "127.0.0.1"]
+            ["10.7.0.1", "192.168.1.2", "10.7.1.1", "10.7.0.2", "127.0.0.1"]
         )
         XCTAssertEqual(
             LocalDevVPN.tunnelEndpoints(
@@ -56,7 +58,7 @@ final class RouteLocationTests: XCTestCase {
                 localAddresses: ["172.20.10.1"],
                 peerAddresses: ["172.20.10.2"]
             ),
-            ["10.7.0.1", "172.20.10.2", "172.20.10.1", "10.7.0.2", "127.0.0.1"]
+            ["10.7.0.1", "172.20.10.2", "172.20.10.1", "10.7.1.1", "10.7.0.2", "127.0.0.1"]
         )
         XCTAssertFalse(LocalDevVPN.isUsableHost("10.7.0.0"))
         XCTAssertTrue(LocalDevVPN.isUsableHost("10.7.0.1"))
@@ -307,9 +309,25 @@ final class RouteLocationTests: XCTestCase {
     }
 
     @MainActor
-    func testSetupStoreDoesNotPushBeforeReady() async throws {
+    func testSetupStoreTreatsALiveTunnelAsInstalled() async throws {
         let client = FakeIdeviceClient(results: [nil])
         let store = try readyStore(client: client, isVPNInstalled: { false })
+
+        let failure = await store.set(latitude: 22.5, longitude: 113.9)
+
+        XCTAssertNil(failure)
+        XCTAssertTrue(store.status.vpnInstalled)
+        XCTAssertEqual(client.pushes.count, 1)
+    }
+
+    @MainActor
+    func testSetupStoreDoesNotPushBeforeReady() async throws {
+        let client = FakeIdeviceClient(results: [nil])
+        let store = try readyStore(
+            client: client,
+            isVPNInstalled: { false },
+            isTunnelConnected: { false }
+        )
 
         let failure = await store.set(latitude: 22.5, longitude: 113.9)
 

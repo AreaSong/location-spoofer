@@ -7,7 +7,7 @@ enum DeveloperTunnelHelp {
     static let connectionChecksTitle = "连不上时检查这些"
 
     static let connectionChecks = """
-    1. LocalDevVPN 显示 Connected。
+    1. 只打开 LocalDevVPN 不够。必须点 Connect，等到界面显示 Connected。
     2. 这台手机已作为客户端连上 Wi-Fi。家里路由、别人的热点、书包里的发射盒都行，不需要能上公网。只开流量、关掉 Wi-Fi 通常连不上。
     3. 自己开个人热点不算。那是热点主人，系统仍当成没连 Wi-Fi。LocalDevVPN 是另一条虚线路，默认 10.7；家里普通 Wi-Fi 一般不用改 IP。只有已经连着 Wi-Fi 仍失败时，再把 Device / Tunnel IP 改到当前 Wi-Fi 网段。
     4. 仍失败：点「清理隧道会话」，重连 LocalDevVPN，或划掉本 App 再打开。
@@ -27,7 +27,7 @@ enum RouteLocationReadiness: Equatable, Sendable {
         case .needsInstall:
             return "路线要系统定位跟着走，请先安装 LocalDevVPN。"
         case .tunnelDisconnected:
-            return "请先打开 LocalDevVPN，并连上本机隧道。"
+            return "LocalDevVPN 还没连上本机隧道。请打开它并点 Connect，等到显示 Connected。"
         case .needsPairing:
             return "请导入配对文件。iOS 18 到 26 用电脑生成一次，之后播放不用连电脑。"
         }

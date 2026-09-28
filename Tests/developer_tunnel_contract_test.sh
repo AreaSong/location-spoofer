@@ -80,6 +80,12 @@ grep -q 'tunnelRetryDelaysNanoseconds' "$ROOT/App/RouteLocationSetupStore.swift"
   || fail "developer tunnel push must retry with backoff after LocalDevVPN drops"
 grep -q 'func liveTunnelEndpoints' "$ROOT/App/LocalDevVPN.swift" \
   || fail "developer tunnel push must try discovered LocalDevVPN addresses, not only 10.7.0.1"
+grep -q 'static let defaultIfaceAddress = "10.7.1.1"' "$ROOT/App/LocalDevVPN.swift" \
+  || fail "developer tunnel detection must include LocalDevVPN's default iface 10.7.1.1"
+grep -q 'canOpenTunnel(at: $0, timeoutMilliseconds: 80)' "$ROOT/App/LocalDevVPN.swift" \
+  || fail "developer tunnel detection must probe the RSD port when no utun is listed"
+grep -q '必须点 Connect' "$ROOT/Shared/RouteLocationPush.swift" \
+  || fail "tunnel help must tell the user to tap Connect, not only open LocalDevVPN"
 grep -q 'func isPrivateUnicast' "$ROOT/App/LocalDevVPN.swift" \
   || fail "developer tunnel push must accept LocalDevVPN addresses on any private subnet"
 grep -q 'tunnelOnCellular' "$ROOT/Shared/RouteLocationPush.swift" \

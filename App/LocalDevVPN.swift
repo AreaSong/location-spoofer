@@ -5,6 +5,8 @@ import UIKit
 enum LocalDevVPN {
     static let defaultAddress = "10.7.0.1"
     static let addressPrefix = "10.7.0."
+    /// LocalDevVPN 当前默认把本机虚接口设成 10.7.1.1，对端仍是 10.7.0.1。
+    static let defaultIfaceAddress = "10.7.1.1"
     static let commonPeerAddress = "10.7.0.2"
     static let loopbackAddress = "127.0.0.1"
     static let tunnelPort: UInt16 = 49152
@@ -16,9 +18,16 @@ enum LocalDevVPN {
         return UIApplication.shared.canOpenURL(detectURL)
     }
 
-    /// 只说明本机有没有隧道网卡。网卡还在但 RSD 已死时，后续推送会重连。
+    /// 网卡可见，或 49152 端口能通，都算隧道已连。只打开 LocalDevVPN 主界面不算。
     static var isConnected: Bool {
-        hasTunnelInterface(in: ipv4Addresses() + peerAddresses())
+        if hasTunnelInterface(in: ipv4Addresses() + peerAddresses()) {
+            return true
+        }
+        return wellKnownAddresses.contains { canOpenTunnel(at: $0, timeoutMilliseconds: 80) }
+    }
+
+    static var wellKnownAddresses: [String] {
+        [defaultAddress, defaultIfaceAddress, commonPeerAddress, loopbackAddress]
     }
 
     static func hasTunnelInterface(in addresses: [String]) -> Bool {
@@ -26,7 +35,7 @@ enum LocalDevVPN {
     }
 
     static func openOrInstall() {
-        let url = isInstalled ? enableURL : appStoreURL
+        let url = isInstalled || isConnected ? enableURL : appStoreURL
         UIApplication.shared.open(url)
     }
 
@@ -54,6 +63,7 @@ enum LocalDevVPN {
         add(preferred)
         peerAddresses.forEach(add)
         localAddresses.forEach(add)
+        add(defaultIfaceAddress)
         add(commonPeerAddress)
         add(loopbackAddress)
         return ordered
