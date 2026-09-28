@@ -33,6 +33,27 @@ final class RouteLocationTests: XCTestCase {
         XCTAssertFalse(LocalDevVPN.hasTunnelInterface(in: []))
     }
 
+    func testTunnelEndpointsSkipNetworkAddressAndPreferThePeer() {
+        XCTAssertEqual(
+            LocalDevVPN.tunnelEndpoints(
+                preferred: "10.7.0.1",
+                localAddresses: ["10.7.0.0", "192.168.1.2"],
+                peerAddresses: ["10.7.0.1"]
+            ),
+            ["10.7.0.1", "10.7.0.2", "127.0.0.1"]
+        )
+        XCTAssertEqual(
+            LocalDevVPN.tunnelEndpoints(
+                preferred: "10.7.0.1",
+                localAddresses: ["10.7.0.2"],
+                peerAddresses: []
+            ),
+            ["10.7.0.1", "10.7.0.2", "127.0.0.1"]
+        )
+        XCTAssertFalse(LocalDevVPN.isUsableHost("10.7.0.0"))
+        XCTAssertTrue(LocalDevVPN.isUsableHost("10.7.0.1"))
+    }
+
     @MainActor
     func testLaunchRefusesWhenDeveloperLocationIsNotReady() {
         let route = RoutePlaybackController(preferenceStore: RoutePlaybackPreferenceStore(defaults: isolatedDefaults()))
@@ -411,6 +432,28 @@ final class RouteLocationTests: XCTestCase {
         XCTAssertTrue(store.isExcludedFromBackup)
         try store.remove()
         XCTAssertFalse(store.hasPairingFile)
+    }
+
+    func testPairingHostIdentityPrefersTheFileIdentifier() throws {
+        let plist = try PropertyListSerialization.data(
+            fromPropertyList: [
+                "identifier": "585DDC72-CDC4-3CB8-BA09-0E998DE51352",
+                "name": "MacBook"
+            ],
+            format: .xml,
+            options: 0
+        )
+        XCTAssertEqual(
+            RoutePairingStore.hostIdentity(in: plist),
+            "585DDC72-CDC4-3CB8-BA09-0E998DE51352"
+        )
+        let namedOnly = try PropertyListSerialization.data(
+            fromPropertyList: ["name": "PaopaoLocation"],
+            format: .xml,
+            options: 0
+        )
+        XCTAssertEqual(RoutePairingStore.hostIdentity(in: namedOnly), "PaopaoLocation")
+        XCTAssertNil(RoutePairingStore.hostIdentity(in: Data("not plist".utf8)))
     }
 
     @MainActor

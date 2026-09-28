@@ -78,8 +78,10 @@ grep -q '再试一次' "$MAP" || fail "a failed developer tunnel push must offer
 grep -q 'recoverDeveloperTunnelIfNeeded' "$MAP" || fail "returning to the foreground must try to recover an active tunnel session"
 grep -q 'tunnelRetryDelaysNanoseconds' "$ROOT/App/RouteLocationSetupStore.swift" \
   || fail "developer tunnel push must retry with backoff after LocalDevVPN drops"
-grep -q 'func abandonSession' "$ROOT/App/IdeviceLocationClient.swift" \
-  || fail "a dead socket must abandon the stale idevice session without clearing it"
+grep -q 'func liveTunnelEndpoints' "$ROOT/App/LocalDevVPN.swift" \
+  || fail "developer tunnel push must try discovered LocalDevVPN addresses, not only 10.7.0.1"
+grep -q 'func hostIdentity' "$PAIRING" \
+  || fail "developer tunnel handshake must use the pairing-file host identity"
 grep -q 'reassertIfNeeded' "$MAP" || fail "foreground recovery must not open a second simulation while one is held"
 grep -q 'syncDeveloperLocationKeepAlive' "$MAP" || fail "an active developer-tunnel location must keep the process alive"
 ! grep -q 'abandonStaleSession' "$MAP" || fail "leaving the app must keep the live location simulation"

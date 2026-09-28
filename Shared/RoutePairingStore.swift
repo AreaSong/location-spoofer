@@ -53,6 +53,29 @@ final class RoutePairingStore {
         return text.hasPrefix("<?xml") && text.contains("<plist") && text.contains("<dict>")
     }
 
+    /// 隧道握手要用配对文件里的主机身份，不能写死成 App 名。
+    static func hostIdentity(in data: Data) -> String? {
+        guard let object = try? PropertyListSerialization.propertyList(
+            from: data,
+            options: [],
+            format: nil
+        ) as? [String: Any] else {
+            return nil
+        }
+        for key in ["identifier", "Identifier", "name", "Name"] {
+            if let value = object[key] as? String {
+                let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !trimmed.isEmpty { return trimmed }
+            }
+        }
+        return nil
+    }
+
+    static func hostIdentity(at url: URL) -> String? {
+        guard let data = try? Data(contentsOf: url) else { return nil }
+        return hostIdentity(in: data)
+    }
+
     private static func excludeFromBackup(_ url: URL) throws {
         var url = url
         var values = URLResourceValues()

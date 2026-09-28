@@ -41,7 +41,7 @@ protocol IdeviceLocationPushing: AnyObject, Sendable {
 /// 每次调用只连一次：连不上直接返回 `.tunnel`，不在串行队列里睡眠等待。
 final class IdeviceLocationClient: IdeviceLocationPushing, @unchecked Sendable {
     static let shared = IdeviceLocationClient()
-    static let tunnelPort: UInt16 = 49152
+    static let tunnelPort = LocalDevVPN.tunnelPort
     static let hostname = "PaopaoLocation"
 
     private let queue = DispatchQueue(label: "com.paopaolabs.location-spoofer.idevice")
@@ -208,13 +208,6 @@ final class IdeviceLocationClient: IdeviceLocationPushing, @unchecked Sendable {
 
     private func connectLocked(pairingPath: String, deviceAddress: String) -> RouteLocationPushFailure? {
         abandonSessionLocked()
-        var address = sockaddr_in()
-        address.sin_family = sa_family_t(AF_INET)
-        address.sin_port = Self.tunnelPort.bigEndian
-        guard deviceAddress.withCString({ inet_pton(AF_INET, $0, &address.sin_addr) }) == 1 else {
-            return .tunnel
-        }
-
         var pairing: OpaquePointer?
         let readFailed = pairingPath.withCString { rp_pairing_file_read($0, &pairing) }
         if let readFailed {
@@ -224,18 +217,81 @@ final class IdeviceLocationClient: IdeviceLocationPushing, @unchecked Sendable {
         guard let pairing else { return .pairing }
         defer { rp_pairing_file_free(pairing) }
 
+        let hostnames = hostnameCandidates(pairingPath: pairingPath)
+        let endpoints = tunnelEndpointsToTry(preferred: deviceAddress)
+        RuntimeLogger.info("APP", "隧道", "开始连接本机隧道", details: [
+            "地址": endpoints.joined(separator: ","),
+            "主机身份": hostnames.joined(separator: ",")
+        ])
+        for endpoint in endpoints {
+            for hostname in hostnames {
+                if let failure = connectOnce(
+                    deviceAddress: endpoint,
+                    hostname: hostname,
+                    pairing: pairing
+                ) {
+                    if failure != .tunnel {
+                        return failure
+                    }
+                    continue
+                }
+                RuntimeLogger.info("APP", "隧道", "本机隧道已连接", details: [
+                    "地址": endpoint,
+                    "主机身份": hostname
+                ])
+                return nil
+            }
+        }
+        return .tunnel
+    }
+
+    private func hostnameCandidates(pairingPath: String) -> [String] {
+        var names: [String] = []
+        var seen = Set<String>()
+        func add(_ name: String) {
+            let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty, seen.insert(trimmed).inserted else { return }
+            names.append(trimmed)
+        }
+        add(RoutePairingStore.hostIdentity(at: URL(fileURLWithPath: pairingPath)) ?? "")
+        add(Self.hostname)
+        return names
+    }
+
+    private func tunnelEndpointsToTry(preferred: String) -> [String] {
+        let endpoints = LocalDevVPN.liveTunnelEndpoints(preferred: preferred)
+        let reachable = endpoints.filter { LocalDevVPN.canOpenTunnel(at: $0) }
+        if !reachable.isEmpty { return reachable }
+        return endpoints
+    }
+
+    private func connectOnce(
+        deviceAddress: String,
+        hostname: String,
+        pairing: OpaquePointer
+    ) -> RouteLocationPushFailure? {
+        var address = sockaddr_in()
+        address.sin_len = UInt8(MemoryLayout<sockaddr_in>.stride)
+        address.sin_family = sa_family_t(AF_INET)
+        address.sin_port = Self.tunnelPort.bigEndian
+        guard deviceAddress.withCString({ inet_pton(AF_INET, $0, &address.sin_addr) }) == 1 else {
+            return .tunnel
+        }
+
         let tunnelFailed = withUnsafePointer(to: &address) { pointer in
-            pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) {
-                tunnel_create_rppairing(
-                    $0,
-                    socklen_t(MemoryLayout<sockaddr_in>.stride),
-                    Self.hostname,
-                    pairing,
-                    nil,
-                    nil,
-                    &adapter,
-                    &handshake
-                )
+            pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) { sockaddrPointer in
+                hostname.withCString { host in
+                    tunnel_create_rppairing(
+                        sockaddrPointer,
+                        socklen_t(MemoryLayout<sockaddr_in>.stride),
+                        host,
+                        pairing,
+                        nil,
+                        nil,
+                        &adapter,
+                        &handshake
+                    )
+                }
             }
         }
         if let tunnelFailed {
