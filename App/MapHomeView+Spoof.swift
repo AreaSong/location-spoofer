@@ -424,9 +424,7 @@ extension MapHomeView {
             "运行模式": runtimeMode.mode.displayName,
             "可显示不再提醒": String(tipPreferences.canSuppress(kind))
         ])
-        let mustExplainNetworkCache = runtimeMode.mode != .developerTunnel
-            && LocationNetworkSpoofRefresh.requiresDeviceRestart()
-        guard mustExplainNetworkCache || tipPreferences.shouldPresentAutomaticTip(kind) else { return }
+        guard tipPreferences.shouldPresentAutomaticTip(kind) else { return }
         switch kind {
         case .activation:
             showEnableTip = true

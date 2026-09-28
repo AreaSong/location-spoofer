@@ -187,9 +187,11 @@ test -s "$ROOT/docs/onboarding-screenshots/shadowrocket/shadowrocket-module-impo
 grep -q 'presentSuccessfulOperationTip(.activation)' "$MAP" || fail "third-party save must present the activation tip"
 grep -q 'presentSuccessfulOperationTip(.deactivation)' "$MAP" || fail "third-party clear must present the deactivation tip"
 grep -q 'LocationNetworkSpoofRefresh' "$ROOT/App/TipViews.swift" \
-  || fail "activation tips must explain iOS 26 locationd cache restart"
-grep -q '立刻重启手机' "$ROOT/App/TipViews.swift" \
-  || fail "iOS 26 third-party activation must tell the user to reboot"
+  || fail "activation tips must explain iOS 26 location cache"
+grep -q '关闭系统定位服务' "$ROOT/App/TipViews.swift" \
+  || fail "third-party activation must tell the user to toggle location services"
+grep -q '还不跳点再重启手机' "$ROOT/App/TipViews.swift" \
+  || fail "iOS 26 third-party activation must keep reboot as a fallback"
 grep -q 'if spoofState == .active' "$MAP" || fail "manual help must follow the shared spoof state"
 grep -q 'MARKETING_VERSION: "1.0.7"' "$ROOT/project.yml" || fail "marketing version must be 1.0.7"
 grep -q 'CURRENT_PROJECT_VERSION: "8"' "$ROOT/project.yml" || fail "build version must be 8"

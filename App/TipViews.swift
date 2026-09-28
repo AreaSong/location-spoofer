@@ -55,8 +55,8 @@ struct ActivationTipContent: View {
     var iOSMajor: Int = ProcessInfo.processInfo.operatingSystemVersion.majorVersion
     let dismiss: () -> Void
 
-    private var needsRestart: Bool {
-        LocationNetworkSpoofRefresh.requiresDeviceRestart(iOSMajor: iOSMajor)
+    private var hasStrongerCache: Bool {
+        LocationNetworkSpoofRefresh.hasStrongerLocationCache(iOSMajor: iOSMajor)
     }
 
     var body: some View {
@@ -65,18 +65,24 @@ struct ActivationTipContent: View {
                 if runtimeMode == .developerTunnel {
                     step(1, "连接 LocalDevVPN", "打开 LocalDevVPN 并连上隧道，确认已导入配对文件。")
                     step(2, "开始虚拟定位", "回到地图，点底部「开始虚拟定位」。系统会停在当前图钉，不用再开关定位服务。")
-                } else if needsRestart {
-                    restartActivationSteps
                 } else {
-                    legacyActivationSteps
+                    if runtimeMode == .thirdParty {
+                        step(0, "确认第三方代理已开启", "保持已导入的 WLOC 模块、HTTPS 解密和第三方代理/VPN 连接开启。本 App 里显示成功，只说明坐标已经写入代理。")
+                    }
+                    step(1, "开启飞行模式", "从控制中心打开飞行模式（点飞机图标），Wi‑Fi 会自动断开。这是为了清除 iOS 的定位缓存。等待 2 秒。")
+                    step(2, "关闭 Wi‑Fi", "从控制中心再点一下 Wi‑Fi 图标，确认 Wi‑Fi 已关闭。等待 2 秒。")
+                    systemStep(3, "关闭系统定位服务", "打开系统「设置 → 隐私与安全性 → 定位服务」，关闭顶部的总开关。等待 2 秒。")
+                    step(4, "打开 Wi‑Fi，启动虚拟定位", runtimeMode == .thirdParty ? "从控制中心打开 Wi‑Fi（飞行模式保持开启），确认第三方代理已连接。坐标已经同步到第三方代理。等待 2 秒。" : "从控制中心打开 Wi‑Fi（飞行模式保持开启），进入 App 点底部「开始虚拟定位」。等待 2 秒。")
+                    step(5, "关闭飞行模式", "从控制中心关闭飞行模式。等待 2 秒。")
+                    systemStep(6, "重新开启定位服务", "再次进入「设置 → 隐私与安全性 → 定位服务」，打开总开关。完成后打开地图验证定位是否已变化。")
                 }
             }.padding(.vertical, 4)
         }
 
         if runtimeMode != .developerTunnel {
             GroupBox(label: Label("还是无法生效？", systemImage: "exclamationmark.triangle")) {
-                Text(needsRestart
-                     ? "第三方代理只改网络定位，改不了 GPS。室外信号强时真实位置不会动。请到室内连上 Wi-Fi，保持小火箭开启后再重启一次。"
+                Text(hasStrongerCache
+                     ? "先做完上面的开关定位服务。还不跳点再重启手机。第三方代理只改网络定位，室外 GPS 强时真实位置可能仍不动。"
                      : "操作到第 3 步时关机重启，开机后从第 4 步继续。这样能彻底清除系统缓存的定位数据。")
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -85,30 +91,6 @@ struct ActivationTipContent: View {
                     .padding(.vertical, 4)
             }
         }
-    }
-
-    @ViewBuilder
-    private var restartActivationSteps: some View {
-        if runtimeMode == .thirdParty {
-            step(1, "确认第三方代理已开启", "保持 WLOC 模块、HTTPS 解密和小火箭连接开启。本 App 里显示成功，只说明坐标已经写入代理。")
-        } else {
-            step(1, "确认本机代理已开启", "保持 Wi-Fi 手动代理和 CA 信任开启。本 App 里显示成功，只说明坐标已经写入代理。")
-        }
-        step(2, "立刻重启手机", "iOS 26 起系统会把真实定位缓存在内存里。开关飞行模式、定位服务都清不掉，必须重启后系统才会重新去拉网络定位。")
-        step(3, "开机后先开代理再看地图", "重启后立刻打开小火箭或本机代理，再打开地图验证。不要先让系统刷新一次真实定位。")
-    }
-
-    @ViewBuilder
-    private var legacyActivationSteps: some View {
-        if runtimeMode == .thirdParty {
-            step(0, "确认第三方代理已开启", "保持已导入的 WLOC 模块、HTTPS 解密和第三方代理/VPN 连接开启。")
-        }
-        step(1, "开启飞行模式", "从控制中心打开飞行模式（点飞机图标），Wi‑Fi 会自动断开。这是为了清除 iOS 的定位缓存。等待 2 秒。")
-        step(2, "关闭 Wi‑Fi", "从控制中心再点一下 Wi‑Fi 图标，确认 Wi‑Fi 已关闭。等待 2 秒。")
-        systemStep(3, "关闭系统定位服务", "打开系统「设置 → 隐私与安全性 → 定位服务」，关闭顶部的总开关。等待 2 秒。")
-        step(4, "打开 Wi‑Fi，启动虚拟定位", runtimeMode == .thirdParty ? "从控制中心打开 Wi‑Fi（飞行模式保持开启），确认第三方代理已连接。坐标已经同步到第三方代理。等待 2 秒。" : "从控制中心打开 Wi‑Fi（飞行模式保持开启），进入 App 点底部「开始虚拟定位」。等待 2 秒。")
-        step(5, "关闭飞行模式", "从控制中心关闭飞行模式。等待 2 秒。")
-        systemStep(6, "重新开启定位服务", "再次进入「设置 → 隐私与安全性 → 定位服务」，打开总开关。完成后打开地图验证定位是否已变化。")
     }
 
     private func step(_ n: Int, _ title: String, _ detail: String) -> some View {
@@ -146,24 +128,29 @@ struct DeactivationTipContent: View {
     var iOSMajor: Int = ProcessInfo.processInfo.operatingSystemVersion.majorVersion
     let dismiss: () -> Void
 
-    private var needsRestart: Bool {
-        LocationNetworkSpoofRefresh.requiresDeviceRestart(iOSMajor: iOSMajor)
+    private var hasStrongerCache: Bool {
+        LocationNetworkSpoofRefresh.hasStrongerLocationCache(iOSMajor: iOSMajor)
     }
 
     var body: some View {
         GroupBox(label: Label("取消虚拟定位", systemImage: "arrow.uturn.backward.circle")) {
             VStack(alignment: .leading, spacing: 10) {
-                if needsRestart {
-                    restartDeactivationSteps
+                step(1, "开启飞行模式", "从控制中心打开飞行模式，Wi‑Fi 会自动断开。等待 2 秒。")
+                step(2, "关闭 Wi‑Fi", "从控制中心确认 Wi‑Fi 已关闭。等待 2 秒。")
+                systemStep(3, "关闭系统定位服务", "打开「设置 → 隐私与安全性 → 定位服务」，关闭总开关。等待 2 秒。")
+                if runtimeMode == .thirdParty {
+                    step(4, "确认坐标已清除", "App 已通知第三方代理清除虚拟坐标。保持网络可用并等待 2 秒，让系统重新获取真实定位。")
                 } else {
-                    legacyDeactivationSteps
+                    systemStep(4, "打开 Wi‑Fi，移除代理", "从控制中心打开 Wi‑Fi。然后进入「设置 → 无线局域网 → 点 WiFi 右侧 (i) → HTTP 代理」，选择「关闭」后存储。等待 2 秒。")
                 }
+                step(5, "关闭飞行模式", "从控制中心关闭飞行模式。等待 2 秒。")
+                systemStep(6, "重新开启定位服务", "再次进入「设置 → 隐私与安全性 → 定位服务」打开总开关。打开地图验证定位是否恢复。")
             }.padding(.vertical, 4)
         }
 
         GroupBox(label: Label("还是无法取消？", systemImage: "exclamationmark.triangle")) {
-            Text(needsRestart
-                 ? "坐标清除后仍停在虚拟点，同样是系统缓存。保持代理已关掉或已清除坐标，再重启一次。"
+            Text(hasStrongerCache
+                 ? "先做完上面的开关定位服务。还不回到真实位置，再重启手机。"
                  : "操作到第 3 步时关机重启，开机后从第 4 步继续。")
                 .font(.caption)
                 .foregroundStyle(.secondary)
@@ -171,31 +158,6 @@ struct DeactivationTipContent: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.vertical, 4)
         }
-    }
-
-    @ViewBuilder
-    private var restartDeactivationSteps: some View {
-        if runtimeMode == .thirdParty {
-            step(1, "确认坐标已清除", "App 已通知第三方代理清掉虚拟坐标。小火箭可以关掉模块，但不要急着看地图。")
-        } else {
-            step(1, "关掉本机代理", "先停止虚拟定位，再把当前 Wi-Fi 的手动 HTTP 代理关掉。")
-        }
-        step(2, "立刻重启手机", "iOS 26 起系统会把上一轮定位缓存在内存里。不重启的话，真实位置也不会马上回来。")
-        step(3, "开机后打开地图验证", "重启后系统会重新拉定位。确认已回到真实位置。")
-    }
-
-    @ViewBuilder
-    private var legacyDeactivationSteps: some View {
-        step(1, "开启飞行模式", "从控制中心打开飞行模式，Wi‑Fi 会自动断开。等待 2 秒。")
-        step(2, "关闭 Wi‑Fi", "从控制中心确认 Wi‑Fi 已关闭。等待 2 秒。")
-        systemStep(3, "关闭系统定位服务", "打开「设置 → 隐私与安全性 → 定位服务」，关闭总开关。等待 2 秒。")
-        if runtimeMode == .thirdParty {
-            step(4, "确认坐标已清除", "App 已通知第三方代理清除虚拟坐标。保持网络可用并等待 2 秒，让系统重新获取真实定位。")
-        } else {
-            systemStep(4, "打开 Wi‑Fi，移除代理", "从控制中心打开 Wi‑Fi。然后进入「设置 → 无线局域网 → 点 WiFi 右侧 (i) → HTTP 代理」，选择「关闭」后存储。等待 2 秒。")
-        }
-        step(5, "关闭飞行模式", "从控制中心关闭飞行模式。等待 2 秒。")
-        systemStep(6, "重新开启定位服务", "再次进入「设置 → 隐私与安全性 → 定位服务」打开总开关。打开地图验证定位是否恢复。")
     }
 
     private func step(_ n: Int, _ title: String, _ detail: String) -> some View {
