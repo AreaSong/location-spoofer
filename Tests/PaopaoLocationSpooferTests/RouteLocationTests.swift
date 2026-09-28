@@ -24,36 +24,45 @@ final class RouteLocationTests: XCTestCase {
         XCTAssertNil(RouteLocationReadiness.ready.blockingMessage)
         XCTAssertTrue(RouteLocationPushFailure.tunnel.message.contains("LocalDevVPN"))
         XCTAssertTrue(RouteLocationPushFailure.tunnel.message.contains("划掉"))
+        XCTAssertTrue(RouteLocationPushFailure.tunnel.message.contains("172.20.10"))
         XCTAssertTrue(RouteLocationPushFailure.tunnelOnCellular.message.contains("流量"))
         XCTAssertTrue(RouteLocationPushFailure.tunnelOnCellular.message.contains("Wi-Fi"))
+        XCTAssertTrue(DeveloperTunnelHelp.connectionChecks.contains("只开流量、关掉 Wi-Fi"))
+        XCTAssertTrue(DeveloperTunnelHelp.connectionChecks.contains("172.20.10.1"))
     }
 
-    func testTunnelInterfaceDetectionAcceptsTheDefaultSubnet() {
+    func testTunnelInterfaceDetectionAcceptsPrivateTunnelAddresses() {
         XCTAssertTrue(LocalDevVPN.hasTunnelInterface(in: ["10.7.0.1"]))
-        XCTAssertTrue(LocalDevVPN.hasTunnelInterface(in: ["192.168.1.2", "10.7.0.2"]))
-        XCTAssertFalse(LocalDevVPN.hasTunnelInterface(in: ["192.168.1.2", "10.8.0.1"]))
+        XCTAssertTrue(LocalDevVPN.hasTunnelInterface(in: ["172.20.10.1"]))
+        XCTAssertTrue(LocalDevVPN.hasTunnelInterface(in: ["192.168.1.5"]))
+        XCTAssertTrue(LocalDevVPN.hasTunnelInterface(in: ["10.8.0.1"]))
+        XCTAssertFalse(LocalDevVPN.hasTunnelInterface(in: ["8.8.8.8"]))
+        XCTAssertFalse(LocalDevVPN.hasTunnelInterface(in: ["10.7.0.0"]))
         XCTAssertFalse(LocalDevVPN.hasTunnelInterface(in: []))
     }
 
-    func testTunnelEndpointsSkipNetworkAddressAndPreferThePeer() {
+    func testTunnelEndpointsAcceptCustomSubnetsAndSkipNetworkAddresses() {
         XCTAssertEqual(
             LocalDevVPN.tunnelEndpoints(
                 preferred: "10.7.0.1",
                 localAddresses: ["10.7.0.0", "192.168.1.2"],
                 peerAddresses: ["10.7.0.1"]
             ),
-            ["10.7.0.1", "10.7.0.2", "127.0.0.1"]
+            ["10.7.0.1", "192.168.1.2", "10.7.0.2", "127.0.0.1"]
         )
         XCTAssertEqual(
             LocalDevVPN.tunnelEndpoints(
                 preferred: "10.7.0.1",
-                localAddresses: ["10.7.0.2"],
-                peerAddresses: []
+                localAddresses: ["172.20.10.1"],
+                peerAddresses: ["172.20.10.2"]
             ),
-            ["10.7.0.1", "10.7.0.2", "127.0.0.1"]
+            ["10.7.0.1", "172.20.10.2", "172.20.10.1", "10.7.0.2", "127.0.0.1"]
         )
         XCTAssertFalse(LocalDevVPN.isUsableHost("10.7.0.0"))
         XCTAssertTrue(LocalDevVPN.isUsableHost("10.7.0.1"))
+        XCTAssertTrue(LocalDevVPN.isUsableHost("172.20.10.1"))
+        XCTAssertTrue(LocalDevVPN.isUsableHost("192.168.1.5"))
+        XCTAssertFalse(LocalDevVPN.isUsableHost("1.1.1.1"))
     }
 
     @MainActor

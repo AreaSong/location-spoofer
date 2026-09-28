@@ -80,10 +80,18 @@ grep -q 'tunnelRetryDelaysNanoseconds' "$ROOT/App/RouteLocationSetupStore.swift"
   || fail "developer tunnel push must retry with backoff after LocalDevVPN drops"
 grep -q 'func liveTunnelEndpoints' "$ROOT/App/LocalDevVPN.swift" \
   || fail "developer tunnel push must try discovered LocalDevVPN addresses, not only 10.7.0.1"
+grep -q 'func isPrivateUnicast' "$ROOT/App/LocalDevVPN.swift" \
+  || fail "developer tunnel push must accept LocalDevVPN addresses on any private subnet"
 grep -q 'tunnelOnCellular' "$ROOT/Shared/RouteLocationPush.swift" \
   || fail "developer tunnel push must explain cellular-only handshake failure"
-grep -q '只开流量、关掉 Wi-Fi' "$CHECKLIST" \
+grep -q '只开流量、关掉 Wi-Fi' "$ROOT/Shared/RouteLocationPush.swift" \
   || fail "the checklist must warn that cellular-only networks cannot reach the tunnel"
+grep -q 'DeveloperTunnelHelp.connectionChecksTitle' "$CHECKLIST" \
+  || fail "the checklist must show tunnel troubleshooting steps"
+grep -q '连不上时检查这些' "$ROOT/Shared/RouteLocationPush.swift" \
+  || fail "tunnel help must keep a titled troubleshooting list"
+grep -q '172.20.10' "$ROOT/Shared/RouteLocationPush.swift" \
+  || fail "tunnel help must mention the personal-hotspot subnet"
 grep -q 'func hostIdentity' "$PAIRING" \
   || fail "developer tunnel handshake must use the pairing-file host identity"
 grep -q 'reassertIfNeeded' "$MAP" || fail "foreground recovery must not open a second simulation while one is held"

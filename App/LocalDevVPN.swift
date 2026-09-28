@@ -18,11 +18,11 @@ enum LocalDevVPN {
 
     /// 只说明本机有没有隧道网卡。网卡还在但 RSD 已死时，后续推送会重连。
     static var isConnected: Bool {
-        hasTunnelInterface(in: ipv4Addresses())
+        hasTunnelInterface(in: ipv4Addresses() + peerAddresses())
     }
 
     static func hasTunnelInterface(in addresses: [String]) -> Bool {
-        addresses.contains { $0 == defaultAddress || $0.hasPrefix(addressPrefix) }
+        addresses.contains { isPrivateUnicast($0) }
     }
 
     static func openOrInstall() {
@@ -30,7 +30,8 @@ enum LocalDevVPN {
         UIApplication.shared.open(url)
     }
 
-    /// 推送时按这个顺序试：首选地址、对端、本机网卡、常见对端、回环。
+    /// 推送时按这个顺序试：首选地址、隧道对端、隧道本机地址、常见对端、回环。
+    /// 网段跟着 LocalDevVPN 走，不写死 10.7.0.x。
     static func liveTunnelEndpoints(preferred: String) -> [String] {
         tunnelEndpoints(
             preferred: preferred,
@@ -59,9 +60,21 @@ enum LocalDevVPN {
     }
 
     static func isUsableHost(_ ip: String) -> Bool {
-        if ip == loopbackAddress { return true }
-        guard ip.hasPrefix(addressPrefix) else { return false }
-        return ip != "\(addressPrefix)0" && ip != "\(addressPrefix)255"
+        ip == loopbackAddress || isPrivateUnicast(ip)
+    }
+
+    /// 私网单播才当隧道地址，避免连上 Wi-Fi 网关或广播地址。
+    static func isPrivateUnicast(_ ip: String) -> Bool {
+        var address = in_addr()
+        guard ip.withCString({ inet_pton(AF_INET, $0, &address) }) == 1 else { return false }
+        let value = UInt32(bigEndian: address.s_addr)
+        let lastOctet = value & 0xff
+        guard lastOctet != 0, lastOctet != 255 else { return false }
+        let first = (value >> 24) & 0xff
+        let second = (value >> 16) & 0xff
+        if first == 10 { return true }
+        if first == 172, (16...31).contains(second) { return true }
+        return first == 192 && second == 168
     }
 
     static func canOpenTunnel(at ip: String, port: UInt16 = tunnelPort, timeoutMilliseconds: Int32 = 250) -> Bool {
@@ -94,14 +107,18 @@ enum LocalDevVPN {
     }
 
     static func ipv4Addresses() -> [String] {
-        interfaceIPv4Addresses(includeDestination: false)
+        packetTunnelIPv4Addresses(includeDestination: false)
     }
 
     static func peerAddresses() -> [String] {
-        interfaceIPv4Addresses(includeDestination: true)
+        packetTunnelIPv4Addresses(includeDestination: true)
     }
 
-    private static func interfaceIPv4Addresses(includeDestination: Bool) -> [String] {
+    private static func isPacketTunnelName(_ name: String) -> Bool {
+        name.hasPrefix("utun")
+    }
+
+    private static func packetTunnelIPv4Addresses(includeDestination: Bool) -> [String] {
         var interfaces: UnsafeMutablePointer<ifaddrs>?
         guard getifaddrs(&interfaces) == 0, let first = interfaces else { return [] }
         defer { freeifaddrs(interfaces) }
@@ -111,7 +128,8 @@ enum LocalDevVPN {
         while let current = cursor {
             let interface = current.pointee
             let flags = Int32(bitPattern: interface.ifa_flags)
-            if (flags & IFF_UP) != 0 {
+            let name = String(cString: interface.ifa_name)
+            if isPacketTunnelName(name), (flags & IFF_UP) != 0 {
                 if !includeDestination, let address = interface.ifa_addr, let ip = ipv4String(from: address) {
                     addresses.append(ip)
                 }
