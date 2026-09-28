@@ -23,7 +23,7 @@ extension FirstSetupView {
                 .font(.footnote)
                 .foregroundStyle(.secondary)
 
-            if iOSMajor >= RuntimeModeAvailability.mitmBlockedMajorVersion {
+            if LocationNetworkSpoofRefresh.setupWarning(iOSMajor: iOSMajor) != nil {
                 thirdPartyMITMWarning
             }
 

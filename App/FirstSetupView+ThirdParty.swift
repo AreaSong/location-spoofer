@@ -19,17 +19,20 @@ extension FirstSetupView {
         """
     }
 
+    @ViewBuilder
     var thirdPartyMITMWarning: some View {
-        Label {
-            Text("iOS 27 beta 6 起，系统已禁止对 gs-loc.apple.com 进行 MITM 拦截。该版本及之后的 beta 版本暂时无法使用本项目，等待后续适配方案。")
-                .font(.footnote)
-        } icon: {
-            Image(systemName: "exclamationmark.triangle.fill")
+        if let warning = LocationNetworkSpoofRefresh.setupWarning() {
+            Label {
+                Text(warning)
+                    .font(.footnote)
+            } icon: {
+                Image(systemName: "exclamationmark.triangle.fill")
+            }
+            .foregroundStyle(.orange)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(10)
+            .background(.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: AppRadius.inset))
         }
-        .foregroundStyle(.orange)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(10)
-        .background(.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: AppRadius.inset))
     }
 
     var thirdPartyClientStep: some View {
