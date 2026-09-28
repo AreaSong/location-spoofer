@@ -115,40 +115,10 @@ extension MapHomeView {
     }
 }
 
-struct PhysicalWalkSpotControl: View {
-    @ObservedObject var store: PhysicalWalkStore
-    let spoofActive: Bool
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Toggle("真实走动", isOn: enabledBinding)
-                .font(.subheadline.weight(.semibold))
-            if !store.lastFailureMessage.isEmpty {
-                Text(store.lastFailureMessage)
-                    .font(.caption)
-                    .foregroundStyle(.red)
-                    .fixedSize(horizontal: false, vertical: true)
-            } else if store.isEnabled && !spoofActive {
-                Text("先开启虚拟定位")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-        }
-        .padding(.horizontal, 2)
-        .padding(.top, 2)
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    private var enabledBinding: Binding<Bool> {
-        Binding(
-            get: { store.isEnabled },
-            set: { store.setEnabled($0) }
-        )
-    }
-}
-
 struct PhysicalWalkHeadingControls: View {
+    @ObservedObject var store: PhysicalWalkStore
     @ObservedObject var controller: PhysicalWalkController
+    let spoofActive: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -157,19 +127,44 @@ struct PhysicalWalkHeadingControls: View {
                     controller.rotateLockedHeading(by: -15)
                 }
                 .buttonStyle(CapsuleChipStyle())
+                .disabled(!store.isEnabled)
                 .accessibilityLabel("朝向减少 15 度")
-                Text(PhysicalWalkHeadingLock.labeledDegrees(controller.activeHeadingDegrees ?? 0))
-                    .font(.caption.monospacedDigit().weight(.semibold))
-                    .frame(maxWidth: .infinity)
+                Toggle("真实走动", isOn: enabledBinding)
+                    .font(.caption.weight(.semibold))
+                    .fixedSize()
                 Button("+15°") {
                     controller.rotateLockedHeading(by: 15)
                 }
                 .buttonStyle(CapsuleChipStyle())
+                .disabled(!store.isEnabled)
                 .accessibilityLabel("朝向增加 15 度")
             }
             Slider(value: headingBinding, in: 0...359, step: 1)
+                .disabled(!store.isEnabled)
                 .accessibilityLabel("朝向角度")
+            walkHint
         }
+    }
+
+    @ViewBuilder
+    private var walkHint: some View {
+        if !store.lastFailureMessage.isEmpty {
+            Text(store.lastFailureMessage)
+                .font(.caption)
+                .foregroundStyle(.red)
+                .fixedSize(horizontal: false, vertical: true)
+        } else if store.isEnabled && !spoofActive {
+            Text("先开启虚拟定位")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private var enabledBinding: Binding<Bool> {
+        Binding(
+            get: { store.isEnabled },
+            set: { store.setEnabled($0) }
+        )
     }
 
     private var headingBinding: Binding<Double> {

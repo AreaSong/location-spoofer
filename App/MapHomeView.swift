@@ -750,12 +750,13 @@ struct MapHomeView: View {
                 pair: currentSelectionPair,
                 mapSystem: displayedMapCoordinateSystem,
                 walkStore: physicalWalkStore,
-                walkController: physicalWalk
+                walkController: physicalWalk,
+                spoofActive: spoofState == .active
             )
         }
     }
 
-    // 底部：模式切换、主按钮和走动快捷控制；最近与收藏点开后出现
+    // 底部：模式切换、主按钮；最近与收藏点开后出现
     func bottomControls(expandedMaxHeight: CGFloat) -> some View {
         MapHomeBottomCard(
             displayName: mapState.displayName ?? "当前选点",
@@ -785,10 +786,6 @@ struct MapHomeView: View {
             expandedMaxHeight: expandedMaxHeight,
             playbackClock: route.clock,
             quickActions: {
-                PhysicalWalkSpotControl(
-                    store: physicalWalkStore,
-                    spoofActive: spoofState == .active
-                )
                 if routeKeepsRunningWhileSpotShown {
                     RunningRouteSpotNotice(
                         isPaused: route.phase == .paused,

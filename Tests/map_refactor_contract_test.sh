@@ -116,6 +116,11 @@ if grep -q 'placeName' "$ROOT/App/MapHomeCoordinateLine.swift"; then
 fi
 grep -q 'quickActions' "$ROOT/App/MapHomeBottomCard.swift" \
   || fail "collapsed bottom card must keep walk shortcuts outside the expanded lists"
+grep -q 'Toggle("真实走动"' "$ROOT/App/MapHomeView+PhysicalWalk.swift" \
+  || fail "physical walk toggle must sit in the heading angle row"
+if grep -q 'PhysicalWalkSpotControl' "$ROOT/App/MapHomeView.swift"; then
+  fail "bottom card must not keep a duplicate physical walk toggle"
+fi
 grep -q 'enum PhysicalWalkHeadingPicker' "$ROOT/Shared/PhysicalWalkDisplacement.swift" \
   || fail "heading chips must stay collapsed after the walk direction is chosen"
 grep -q 'Button("−15°")' "$ROOT/App/MapHomeView+PhysicalWalk.swift" \

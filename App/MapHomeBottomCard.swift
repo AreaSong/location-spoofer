@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// 底部卡片。收起时只留地名、模式切换、主按钮和走动快捷控制；最近与收藏点开后出现。
+/// 底部卡片。收起时只留地名、模式切换和主按钮；最近与收藏点开后出现。
 struct MapHomeBottomCard<QuickActions: View, SpotContent: View, RoutePanel: View, PeekCaption: View>: View {
     let displayName: String
     let spoofState: SpoofState
