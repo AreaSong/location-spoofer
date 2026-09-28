@@ -16,7 +16,6 @@ extension MapHomeView {
     /// 当前已写入的虚拟坐标，转成地图标准后给蓝点扇形用。红钉仍表示地图中心选点。
     var walkPuckMapCoordinate: CLLocationCoordinate2D? {
         WalkPuckMapPlacement.coordinate(
-            walkEnabled: physicalWalkStore.isEnabled,
             spoofActive: spoofState == .active,
             writtenLatitude: session.writtenLatitude,
             writtenLongitude: session.writtenLongitude,
@@ -39,13 +38,15 @@ extension MapHomeView {
         claimPhysicalWalkFromRoute()
         if shouldTrackPhysicalWalk {
             startPhysicalWalkIfNeeded()
-        } else if physicalWalkStore.isEnabled {
+        } else {
             if physicalWalk.isTracking {
                 physicalWalk.stop()
             }
-            physicalWalk.startHeadingPreview()
-        } else {
-            physicalWalk.stop()
+            if spoofState == .active || physicalWalkStore.isEnabled {
+                physicalWalk.startHeadingPreview()
+            } else {
+                physicalWalk.stopHeading()
+            }
         }
     }
 
@@ -127,8 +128,7 @@ struct PhysicalWalkHeadingControls: View {
                     controller.rotateLockedHeading(by: -15)
                 }
                 .buttonStyle(CapsuleChipStyle())
-                .disabled(!store.isEnabled)
-                .accessibilityLabel("朝向减少 15 度")
+                .accessibilityLabel("初始朝向减少 15 度")
                 Text(PhysicalWalkHeadingLock.labeledDegrees(controller.activeHeadingDegrees ?? 0))
                     .font(.caption.monospacedDigit().weight(.semibold))
                     .lineLimit(1)
@@ -141,12 +141,10 @@ struct PhysicalWalkHeadingControls: View {
                     controller.rotateLockedHeading(by: 15)
                 }
                 .buttonStyle(CapsuleChipStyle())
-                .disabled(!store.isEnabled)
-                .accessibilityLabel("朝向增加 15 度")
+                .accessibilityLabel("初始朝向增加 15 度")
             }
             Slider(value: headingBinding, in: 0...359, step: 1)
-                .disabled(!store.isEnabled)
-                .accessibilityLabel("朝向角度")
+                .accessibilityLabel("初始朝向")
             walkHint
         }
     }
@@ -174,7 +172,7 @@ struct PhysicalWalkHeadingControls: View {
 
     private var headingBinding: Binding<Double> {
         Binding(
-            get: { controller.activeHeadingDegrees ?? 0 },
+            get: { controller.initialHeadingDegrees },
             set: { controller.lockHeading(degrees: $0) }
         )
     }

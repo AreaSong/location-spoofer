@@ -36,7 +36,7 @@ final class PhysicalWalkControllerTests: XCTestCase {
     func testTenMeterWalkWritesTheDisplacedCoordinate() async throws {
         let sensor = FakePhysicalWalkSensor()
         let heading = FakePhysicalWalkHeading()
-        heading.latest = PhysicalWalkHeading(degrees: 0, accuracyDegrees: 5)
+        heading.latestYawDegrees = 0
         let controller = PhysicalWalkController(sensor: sensor, heading: heading)
         var written: CoordinatePair?
         controller.applyCoordinate = { pair in
@@ -72,7 +72,7 @@ final class PhysicalWalkControllerTests: XCTestCase {
     func testLockedEastHeadingMovesEastEvenWhenCompassPointsNorth() async throws {
         let sensor = FakePhysicalWalkSensor()
         let heading = FakePhysicalWalkHeading()
-        heading.latest = PhysicalWalkHeading(degrees: 0, accuracyDegrees: 5)
+        heading.latestYawDegrees = 0
         let controller = PhysicalWalkController(sensor: sensor, heading: heading)
         var written: CoordinatePair?
         controller.applyCoordinate = { pair in
@@ -118,22 +118,15 @@ final class PhysicalWalkControllerTests: XCTestCase {
     func testBufferedWalkWritesWhenHeadingBecomesReliable() async {
         let sensor = FakePhysicalWalkSensor()
         let heading = FakePhysicalWalkHeading()
-        heading.latest = PhysicalWalkHeading(degrees: 90, accuracyDegrees: -1)
+        heading.latestYawDegrees = 0
         let controller = PhysicalWalkController(sensor: sensor, heading: heading)
         var wrote = false
         controller.applyCoordinate = { _ in
             wrote = true
             return true
         }
-        controller.followCompass()
         controller.start(latitude: 22.494, longitude: 113.951)
         await controller.ingest(sample: PhysicalWalkSample(distanceMeters: 0, steps: 0))
-        await controller.ingest(sample: PhysicalWalkSample(distanceMeters: 10, steps: 12))
-
-        XCTAssertFalse(wrote)
-        XCTAssertEqual(controller.status, .waitingForHeading)
-
-        heading.latest = PhysicalWalkHeading(degrees: 0, accuracyDegrees: 5)
         await controller.ingest(sample: PhysicalWalkSample(distanceMeters: 10, steps: 12))
 
         XCTAssertTrue(wrote)
@@ -174,53 +167,48 @@ final class PhysicalWalkControllerTests: XCTestCase {
         XCTAssertFalse(BackgroundKeepAlive.shared.holds(.physicalWalk))
     }
 
-    func testHeadingPreviewPublishesCompassWithoutTracking() {
+    func testHeadingPreviewFollowsYawDeltaFromInitial() {
         let sensor = FakePhysicalWalkSensor()
         let heading = FakePhysicalWalkHeading()
-        heading.latest = PhysicalWalkHeading(degrees: 90, accuracyDegrees: 5)
+        heading.latestYawDegrees = 10
         let controller = PhysicalWalkController(sensor: sensor, heading: heading)
 
-        controller.followCompass()
+        controller.startHeadingPreview()
+        controller.lockHeading(degrees: 180)
+        XCTAssertEqual(controller.initialHeadingDegrees, 180, accuracy: 0.01)
+        XCTAssertEqual(controller.activeHeadingDegrees ?? -1, 180, accuracy: 0.01)
 
-        XCTAssertFalse(controller.isTracking)
-        XCTAssertEqual(controller.headingMode, .followCompass)
-        XCTAssertEqual(controller.activeHeadingDegrees, 90)
-
-        heading.latest = PhysicalWalkHeading(degrees: 180, accuracyDegrees: 5)
+        heading.latestYawDegrees = 190
         heading.onChange?()
-        XCTAssertEqual(controller.activeHeadingDegrees, 180)
-        controller.stop()
+        XCTAssertEqual(controller.activeHeadingDegrees ?? -1, 0, accuracy: 0.01)
+        XCTAssertEqual(controller.initialHeadingDegrees, 180, accuracy: 0.01)
+
+        heading.latestYawDegrees = 10
+        heading.onChange?()
+        XCTAssertEqual(controller.activeHeadingDegrees ?? -1, 180, accuracy: 0.01)
+        controller.stopHeading()
     }
 
     func testRotateLockedHeadingStepsByFifteenDegrees() {
         let heading = FakePhysicalWalkHeading()
+        heading.latestYawDegrees = 0
         let controller = PhysicalWalkController(sensor: FakePhysicalWalkSensor(), heading: heading)
         controller.lockHeading(degrees: 270)
         controller.rotateLockedHeading(by: -15)
         XCTAssertEqual(controller.activeHeadingDegrees ?? -1, 255, accuracy: 0.01)
+        XCTAssertEqual(controller.initialHeadingDegrees, 255, accuracy: 0.01)
         XCTAssertEqual(controller.headingMode, .locked(degrees: 255))
-        controller.stop()
+        controller.stopHeading()
     }
 
-    func testFollowCompassLocksWhenMagnetometerIsMissing() {
-        let heading = FakePhysicalWalkHeading()
-        heading.headingAvailable = false
-        let controller = PhysicalWalkController(sensor: FakePhysicalWalkSensor(), heading: heading)
-        controller.lockHeading(degrees: 270)
-        controller.followCompass()
-        XCTAssertEqual(controller.headingMode, .locked(degrees: 270))
-        XCTAssertEqual(controller.activeHeadingDegrees ?? -1, 270, accuracy: 0.01)
-        controller.stop()
-    }
-
-    func testHeadingPreviewLocksNorthWhenCompassUnavailable() {
+    func testHeadingPreviewKeepsInitialNorthWhenAttitudeIsMissing() {
         let heading = FakePhysicalWalkHeading()
         heading.headingAvailable = false
         let controller = PhysicalWalkController(sensor: FakePhysicalWalkSensor(), heading: heading)
         controller.startHeadingPreview()
         XCTAssertEqual(controller.headingMode, .locked(degrees: 0))
         XCTAssertEqual(controller.activeHeadingDegrees ?? -1, 0, accuracy: 0.01)
-        controller.stop()
+        controller.stopHeading()
     }
 
     func testStaleAuthorizationErrorAfterAllowDoesNotFail() {
@@ -275,9 +263,9 @@ private final class FakePhysicalWalkSensor: PhysicalWalkSensing {
 @MainActor
 private final class FakePhysicalWalkHeading: PhysicalWalkHeadingSensing {
     var headingAvailable = true
-    var latest: PhysicalWalkHeading?
+    var latestYawDegrees: Double?
     var onChange: (() -> Void)?
 
     func start() {}
-    func stop() { latest = nil }
+    func stop() { latestYawDegrees = nil }
 }

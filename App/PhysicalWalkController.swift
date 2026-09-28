@@ -8,6 +8,7 @@ final class PhysicalWalkController: ObservableObject {
     @Published private(set) var status: PhysicalWalkStatus = .idle
     @Published private(set) var movedMeters = 0.0
     @Published private(set) var headingMode: PhysicalWalkHeadingMode = .locked(degrees: 0)
+    @Published private(set) var initialHeadingDegrees: Double = 0
     @Published private(set) var activeHeadingDegrees: Double? = 0
 
     var ignoresWriteGate = false
@@ -21,6 +22,8 @@ final class PhysicalWalkController: ObservableObject {
     private var writeGate = RouteWriteGate()
     private var generation: UInt64 = 0
     private var writeTask: Task<Void, Never>?
+    private var headingInstrument = PhysicalWalkHeadingInstrument.north
+    private var didBindSensorZero = false
 
     init(
         sensor: PhysicalWalkSensing? = nil,
@@ -44,15 +47,10 @@ final class PhysicalWalkController: ObservableObject {
         writeGate.reset()
         movedMeters = 0
         isTracking = true
-        if !heading.headingAvailable, !headingMode.isLocked {
-            headingMode = .locked(degrees: 0)
-        }
-        status = resolvedHeading()?.isReliable == true ? .tracking : .waitingForHeading
+        status = .tracking
         publishActiveHeading()
         keepAlive.retain(.physicalWalk)
-        heading.onChange = { [weak self] in
-            self?.flushHeading()
-        }
+        attachHeadingHandler(appliesWalk: true)
         heading.start()
         sensor.requestAuthorization { [weak self] status in
             self?.continueStart(
@@ -68,15 +66,14 @@ final class PhysicalWalkController: ObservableObject {
         generation &+= 1
         writeTask?.cancel()
         writeTask = nil
-        heading.onChange = nil
-        tearDownSensors()
+        sensor.stop()
         engine = nil
         let wasTracking = isTracking
         isTracking = false
         status = .idle
-        activeHeadingDegrees = headingMode.isLocked
-            ? PhysicalWalkHeadingLock.resolve(mode: headingMode, compass: nil)?.degrees
-            : nil
+        keepAlive.release(.physicalWalk)
+        attachHeadingHandler(appliesWalk: false)
+        publishActiveHeading()
         if wasTracking {
             RuntimeLogger.info("APP", "真实走动", "停止跟踪")
         }
@@ -89,40 +86,33 @@ final class PhysicalWalkController: ObservableObject {
         }
     }
 
-    func followCompass() {
-        guard heading.headingAvailable else {
-            lockHeading(degrees: activeHeadingDegrees ?? 0)
-            return
-        }
-        headingMode = .followCompass
-        startHeadingPreview()
-        publishActiveHeading()
-        flushHeading()
-    }
-
     func lockHeading(degrees: Double) {
-        headingMode = .locked(degrees: PhysicalWalkHeadingLock.normalized(degrees))
+        let yaw = heading.latestYawDegrees
+        headingInstrument = PhysicalWalkHeadingInstrument.capturingInitial(
+            degrees,
+            currentYawDegrees: yaw ?? headingInstrument.referenceYawDegrees
+        )
+        initialHeadingDegrees = headingInstrument.initialDegrees
+        headingMode = .locked(degrees: headingInstrument.initialDegrees)
+        didBindSensorZero = yaw != nil
         publishActiveHeading()
         flushHeading()
     }
 
     func startHeadingPreview() {
-        guard !isTracking else { return }
-        if !heading.headingAvailable, !headingMode.isLocked {
-            headingMode = .locked(degrees: 0)
-        }
-        heading.onChange = { [weak self] in
-            self?.publishActiveHeading()
-        }
+        attachHeadingHandler(appliesWalk: isTracking)
         heading.start()
         publishActiveHeading()
     }
 
+    func stopHeading() {
+        heading.onChange = nil
+        heading.stop()
+        didBindSensorZero = false
+    }
+
     func rotateLockedHeading(by delta: Double) {
-        let current = activeHeadingDegrees
-            ?? heading.latest?.degrees
-            ?? 0
-        lockHeading(degrees: current + delta)
+        lockHeading(degrees: (activeHeadingDegrees ?? initialHeadingDegrees) + delta)
     }
 
     private func continueStart(
@@ -199,12 +189,39 @@ final class PhysicalWalkController: ObservableObject {
         return result
     }
 
+    private func attachHeadingHandler(appliesWalk: Bool) {
+        heading.onChange = { [weak self] in
+            self?.bindSensorZeroIfNeeded()
+            if appliesWalk {
+                self?.flushHeading()
+            } else {
+                self?.publishActiveHeading()
+            }
+        }
+    }
+
+    private func bindSensorZeroIfNeeded() {
+        guard !didBindSensorZero, let yaw = heading.latestYawDegrees else { return }
+        headingInstrument.referenceYawDegrees = yaw
+        didBindSensorZero = true
+    }
+
     private func resolvedHeading() -> PhysicalWalkHeading? {
-        PhysicalWalkHeadingLock.resolve(mode: headingMode, compass: heading.latest)
+        let yaw = heading.latestYawDegrees ?? headingInstrument.referenceYawDegrees
+        let degrees = headingInstrument.liveDegrees(currentYawDegrees: yaw)
+        return PhysicalWalkHeading(degrees: degrees, accuracyDegrees: 0)
     }
 
     private func publishActiveHeading() {
         activeHeadingDegrees = resolvedHeading()?.degrees
+        initialHeadingDegrees = headingInstrument.initialDegrees
+    }
+
+    private func fail(_ message: String) {
+        RuntimeLogger.warning("APP", "真实走动", message)
+        stop()
+        stopHeading()
+        onFailure?(message)
     }
 
     private func considerWrite(at now: Date) async {
@@ -228,18 +245,6 @@ final class PhysicalWalkController: ObservableObject {
             authorization: sensor.authorizationStatus(),
             headingAvailable: heading.headingAvailable
         )
-    }
-
-    private func fail(_ message: String) {
-        RuntimeLogger.warning("APP", "真实走动", message)
-        stop()
-        onFailure?(message)
-    }
-
-    private func tearDownSensors() {
-        sensor.stop()
-        heading.stop()
-        keepAlive.release(.physicalWalk)
     }
 
     private static func isMotionAuthorizationError(_ error: Error) -> Bool {

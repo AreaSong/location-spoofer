@@ -197,10 +197,10 @@ struct MapHomeTopInfoBar: View {
     private var headingChip: some View {
         Button(action: toggleHeading) {
             HStack(spacing: 6) {
-                Text(walkStore.isEnabled ? "朝向" : "走动")
+                Text("朝向")
                     .font(.caption2.weight(.semibold))
                     .foregroundStyle(.secondary)
-                Text(walkStore.isEnabled ? headingSummary : "关")
+                Text(headingSummary)
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.primary)
                     .lineLimit(1)
@@ -213,15 +213,12 @@ struct MapHomeTopInfoBar: View {
             .background(Color.secondary.opacity(0.12), in: Capsule())
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(walkStore.isEnabled ? "朝向 \(headingSummary)" : "真实走动已关")
+        .accessibilityLabel("朝向 \(headingSummary)")
         .accessibilityHint(showsHeading ? "收起走动与方向" : "展开走动与方向")
     }
 
     private var headingSummary: String {
-        PhysicalWalkHeadingLock.pickerSummary(
-            headingDegrees: walkController.activeHeadingDegrees,
-            locked: walkController.headingMode.isLocked
-        )
+        PhysicalWalkHeadingLock.labeledDegrees(walkController.activeHeadingDegrees ?? 0)
     }
 
     private func toggleCoordinates() {

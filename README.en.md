@@ -71,7 +71,7 @@ collection services.
   - App Mode and Third-party Proxy Mode can configure a random perturbation radius and reported accuracy so a test
     point is not always identical;
   - Motion simulation is available only in App Mode;
-  - Optional physical walking: toggle it in the heading strip under the search bar; the map stays north-up with the red pin as the coordinate you are setting and a blue-dot heading puck on the currently active virtual location; set heading with ±15° or the angle slider; after virtual location is active, steps move along that heading; it is off by default and mutually exclusive with automatic route playback;
+  - Optional physical walking: off by default and toggled in the heading strip; after spot spoofing is active, a blue-dot puck shows the current virtual location and heading; the slider and ±15° set the initial heading and zero the phone attitude, then rotating the phone turns the fan; with walking on, steps move along the live fan; it is mutually exclusive with automatic route playback;
   - Does not require changes to the target app.
 
 - **Route playback**

@@ -1,4 +1,3 @@
-import CoreLocation
 import CoreMotion
 import Foundation
 
@@ -14,7 +13,7 @@ protocol PhysicalWalkSensing: AnyObject {
 @MainActor
 protocol PhysicalWalkHeadingSensing: AnyObject {
     var headingAvailable: Bool { get }
-    var latest: PhysicalWalkHeading? { get }
+    var latestYawDegrees: Double? { get }
     var onChange: (() -> Void)? { get set }
     func start()
     func stop()
@@ -80,66 +79,37 @@ final class CoreMotionPedometerDriver: PhysicalWalkSensing {
 @MainActor
 final class PhysicalWalkHeadingDriver: PhysicalWalkHeadingSensing {
     private let motion = CMMotionManager()
-    private let location = CLLocationManager()
-    private let locationRelay = LocationHeadingRelay()
-    private(set) var latest: PhysicalWalkHeading?
+    private(set) var latestYawDegrees: Double?
     var onChange: (() -> Void)?
-
-    init() {
-        location.headingFilter = 5
-        locationRelay.onHeading = { [weak self] heading in
-            Task { @MainActor in
-                self?.setLatest(heading)
-            }
-        }
-        location.delegate = locationRelay
-    }
+    private var isRunning = false
 
     var headingAvailable: Bool {
-        motion.isMagnetometerAvailable || CLLocationManager.headingAvailable()
+        motion.isDeviceMotionAvailable
     }
 
     func start() {
-        if motion.isDeviceMotionAvailable, motion.isMagnetometerAvailable {
-            motion.deviceMotionUpdateInterval = 0.2
-            motion.startDeviceMotionUpdates(using: .xMagneticNorthZVertical, to: .main) { [weak self] data, _ in
-                Task { @MainActor in
-                    guard let heading = Self.compassHeading(from: data) else { return }
-                    self?.setLatest(heading)
-                }
+        guard !isRunning else { return }
+        guard motion.isDeviceMotionAvailable else { return }
+        isRunning = true
+        motion.deviceMotionUpdateInterval = 0.1
+        // 任意参考系即可：我们只跟相对转动，模拟器没有磁力计也能用。
+        motion.startDeviceMotionUpdates(using: .xArbitraryZVertical, to: .main) { [weak self] data, _ in
+            Task { @MainActor in
+                guard let yaw = Self.yawDegrees(from: data?.attitude) else { return }
+                self?.latestYawDegrees = yaw
+                self?.onChange?()
             }
         }
-        guard CLLocationManager.headingAvailable() else { return }
-        if location.authorizationStatus == .notDetermined {
-            location.requestWhenInUseAuthorization()
-        }
-        location.startUpdatingHeading()
     }
 
     func stop() {
+        isRunning = false
         motion.stopDeviceMotionUpdates()
-        location.stopUpdatingHeading()
-        latest = nil
+        latestYawDegrees = nil
     }
 
-    private func setLatest(_ heading: PhysicalWalkHeading?) {
-        latest = heading
-        onChange?()
-    }
-
-    static func compassHeading(from data: CMDeviceMotion?) -> PhysicalWalkHeading? {
-        guard let data, data.heading >= 0 else { return nil }
-        return PhysicalWalkHeading(degrees: data.heading, accuracyDegrees: 0)
-    }
-}
-
-private final class LocationHeadingRelay: NSObject, CLLocationManagerDelegate {
-    var onHeading: ((PhysicalWalkHeading) -> Void)?
-
-    func locationManager(_ manager: CLLocationManager, didUpdateHeading newHeading: CLHeading) {
-        let degrees = newHeading.trueHeading >= 0 ? newHeading.trueHeading : newHeading.magneticHeading
-        guard degrees >= 0 else { return }
-        // 虚拟定位生效时系统罗盘精度常为 -1，磁力计读数仍可用来定向。
-        onHeading?(PhysicalWalkHeading(degrees: degrees, accuracyDegrees: 0))
+    static func yawDegrees(from attitude: CMAttitude?) -> Double? {
+        guard let attitude else { return nil }
+        return PhysicalWalkHeadingLock.normalized(-attitude.yaw * 180 / .pi)
     }
 }

@@ -337,27 +337,16 @@ final class PhysicalWalkDisplacementTests: XCTestCase {
         )
     }
 
-    func testWalkPuckUsesWrittenCoordinateOnlyWhenSpoofIsActive() {
+    func testWalkPuckUsesWrittenCoordinateWhenSpoofIsActive() {
         XCTAssertNil(
             WalkPuckMapPlacement.coordinate(
-                walkEnabled: true,
                 spoofActive: false,
                 writtenLatitude: 22.5,
                 writtenLongitude: 113.9,
                 mapSystem: .wgs84
             )
         )
-        XCTAssertNil(
-            WalkPuckMapPlacement.coordinate(
-                walkEnabled: false,
-                spoofActive: true,
-                writtenLatitude: 22.5,
-                writtenLongitude: 113.9,
-                mapSystem: .wgs84
-            )
-        )
         let puck = WalkPuckMapPlacement.coordinate(
-            walkEnabled: true,
             spoofActive: true,
             writtenLatitude: 22.5,
             writtenLongitude: 113.9,
@@ -365,6 +354,13 @@ final class PhysicalWalkDisplacementTests: XCTestCase {
         )
         XCTAssertEqual(puck?.latitude ?? 0, 22.5, accuracy: 0.000_000_1)
         XCTAssertEqual(puck?.longitude ?? 0, 113.9, accuracy: 0.000_000_1)
+    }
+
+    func testHeadingInstrumentAddsYawDeltaToInitialAndReturnsWhenYawReturns() {
+        let instrument = PhysicalWalkHeadingInstrument(initialDegrees: 180, referenceYawDegrees: 10)
+        XCTAssertEqual(instrument.liveDegrees(currentYawDegrees: 10), 180, accuracy: 0.01)
+        XCTAssertEqual(instrument.liveDegrees(currentYawDegrees: 190), 0, accuracy: 0.01)
+        XCTAssertEqual(instrument.liveDegrees(currentYawDegrees: 10), 180, accuracy: 0.01)
     }
 }
 

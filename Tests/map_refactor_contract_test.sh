@@ -143,6 +143,15 @@ grep -q 'walkPuckMapCoordinate' "$ROOT/App/MapHomeView+PhysicalWalk.swift" \
   || fail "home must convert the written WGS-84 coordinate onto the map for the walk puck"
 grep -q 'enum WalkPuckMapPlacement' "$ROOT/Shared/PhysicalWalkDisplacement.swift" \
   || fail "walk puck placement must stay on the written spoof coordinate"
+if grep -q 'walkEnabled' "$ROOT/Shared/PhysicalWalkDisplacement.swift"; then
+  fail "spoofed puck must appear even when physical walking is off"
+fi
+grep -q 'struct PhysicalWalkHeadingInstrument' "$ROOT/Shared/PhysicalWalkDisplacement.swift" \
+  || fail "heading slider must set the instrument initial, not freeze the output"
+grep -q 'xArbitraryZVertical' "$ROOT/App/PhysicalWalkSensors.swift" \
+  || fail "heading must track relative phone attitude so the simulator can turn the fan"
+grep -q 'initialHeadingDegrees' "$ROOT/App/MapHomeView+PhysicalWalk.swift" \
+  || fail "heading slider must bind to the initial heading, not the live fan"
 grep -q 'func startWalkPuckTracking' "$ROOT/App/WalkHeadingHud.swift" \
   || fail "walk puck must keep tracking the spoofed coordinate while the map moves"
 grep -q 'static let puckDiameter: CGFloat = 16' "$ROOT/App/WalkHeadingHud.swift" \

@@ -80,6 +80,25 @@ enum PhysicalWalkHeadingMode: Equatable {
     }
 }
 
+/// 滑条设定初始朝向，并把当前手机姿态记成零点；之后扇形 = 初始 + 相对转动。
+struct PhysicalWalkHeadingInstrument: Equatable {
+    var initialDegrees: Double
+    var referenceYawDegrees: Double
+
+    static let north = PhysicalWalkHeadingInstrument(initialDegrees: 0, referenceYawDegrees: 0)
+
+    func liveDegrees(currentYawDegrees: Double) -> Double {
+        PhysicalWalkHeadingLock.normalized(initialDegrees + currentYawDegrees - referenceYawDegrees)
+    }
+
+    static func capturingInitial(_ degrees: Double, currentYawDegrees: Double) -> PhysicalWalkHeadingInstrument {
+        PhysicalWalkHeadingInstrument(
+            initialDegrees: PhysicalWalkHeadingLock.normalized(degrees),
+            referenceYawDegrees: currentYawDegrees
+        )
+    }
+}
+
 enum PhysicalWalkHeadingLock {
     static let cardinals: [(title: String, degrees: Double)] = [
         ("北", 0), ("东", 90), ("南", 180), ("西", 270)
@@ -262,13 +281,12 @@ enum PhysicalWalkSession {
 
 enum WalkPuckMapPlacement {
     static func coordinate(
-        walkEnabled: Bool,
         spoofActive: Bool,
         writtenLatitude: Double?,
         writtenLongitude: Double?,
         mapSystem: CoordinateConverter.MapCoordinateSystem
     ) -> CLLocationCoordinate2D? {
-        guard walkEnabled, spoofActive else { return nil }
+        guard spoofActive else { return nil }
         guard let latitude = writtenLatitude, let longitude = writtenLongitude else {
             return nil
         }
