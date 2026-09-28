@@ -8,6 +8,7 @@ extension MapHomeView {
             TimelineView(.periodic(from: .now, by: 60)) { context in
                 signingExpiryNotice(expiration: expiration, now: context.date)
             }
+            .padding(.leading, AppLayout.mapZoomControlClearance)
         }
     }
 

@@ -12,6 +12,10 @@ enum AppRadius {
 /// 首页底部卡展开区相对屏幕高度的上限，避免挡住大半地图。
 enum AppLayout {
     static let bottomCardExpandedHeightFraction: CGFloat = 0.28
+    /// 地图左侧缩放按钮边长，与 `MapViewRepresentable` 的缩放条对齐。
+    static let mapZoomControlSize: CGFloat = 52
+    /// 签名倒计时相对缩放条再右移的距离：控件宽 + 8pt 触控间距。
+    static let mapZoomControlClearance: CGFloat = mapZoomControlSize + 8
 }
 
 /// 地图页顶部圆形图标按钮。直接打开目标页，避免 SwiftUI Menu 叠在 MKMapView 上时第二次点击被地图手势吃掉。

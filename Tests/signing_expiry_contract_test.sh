@@ -32,6 +32,8 @@ grep -q 'signingExpiryStatus.settingsMessage' "$SETTINGS" \
   || fail "Settings must surface the free-signing reminder"
 grep -q '今天不再提示' "$MAP" \
   || fail "the map banner must be dismissible for the current day"
+grep -q 'mapZoomControlClearance' "$MAP" \
+  || fail "the signing countdown must clear the map zoom controls"
 grep -q 'resignInstructions' "$EXPIRY" \
   || fail "expiry must include resign instructions"
 grep -q 'SigningResignGuideView' "$MAP" "$SETTINGS" \

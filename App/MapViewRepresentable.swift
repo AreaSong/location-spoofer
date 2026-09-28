@@ -82,8 +82,8 @@ struct MapViewRepresentable: UIViewRepresentable {
         let zoomInBtn = UIButton(type: .system)
         zoomInBtn.setImage(UIImage(systemName: "plus", withConfiguration: UIImage.SymbolConfiguration(pointSize: 22, weight: .bold)), for: .normal)
         zoomInBtn.addTarget(context.coordinator, action: #selector(Coordinator.zoomInTapped), for: .touchUpInside)
-        zoomInBtn.heightAnchor.constraint(equalToConstant: 52).isActive = true
-        zoomInBtn.widthAnchor.constraint(equalToConstant: 52).isActive = true
+        zoomInBtn.heightAnchor.constraint(equalToConstant: AppLayout.mapZoomControlSize).isActive = true
+        zoomInBtn.widthAnchor.constraint(equalToConstant: AppLayout.mapZoomControlSize).isActive = true
 
         let zoomLabel = UILabel()
         let roundedDesc = UIFont.systemFont(ofSize: 9, weight: .semibold).fontDescriptor.withDesign(.rounded)
@@ -99,8 +99,8 @@ struct MapViewRepresentable: UIViewRepresentable {
         let zoomOutBtn = UIButton(type: .system)
         zoomOutBtn.setImage(UIImage(systemName: "minus", withConfiguration: UIImage.SymbolConfiguration(pointSize: 22, weight: .bold)), for: .normal)
         zoomOutBtn.addTarget(context.coordinator, action: #selector(Coordinator.zoomOutTapped), for: .touchUpInside)
-        zoomOutBtn.heightAnchor.constraint(equalToConstant: 52).isActive = true
-        zoomOutBtn.widthAnchor.constraint(equalToConstant: 52).isActive = true
+        zoomOutBtn.heightAnchor.constraint(equalToConstant: AppLayout.mapZoomControlSize).isActive = true
+        zoomOutBtn.widthAnchor.constraint(equalToConstant: AppLayout.mapZoomControlSize).isActive = true
 
         let sep1 = UIView(); sep1.translatesAutoresizingMaskIntoConstraints = false
         sep1.heightAnchor.constraint(equalToConstant: 0.5).isActive = true
