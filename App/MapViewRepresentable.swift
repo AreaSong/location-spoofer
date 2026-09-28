@@ -25,6 +25,7 @@ struct MapViewRepresentable: UIViewRepresentable {
     var walkHeadingDegrees: Double? = nil
     var walkPuckCoordinate: CLLocationCoordinate2D? = nil
     var showsWalkHeading: Bool = false
+    var mapDisplayStyle: MapDisplayStyle = .standard
 
     func makeCoordinator() -> Coordinator { Coordinator(parent: self) }
 
@@ -144,6 +145,9 @@ struct MapViewRepresentable: UIViewRepresentable {
             visible: showsWalkHeading,
             on: map
         )
+        if map.mapType != mapDisplayStyle.mapKitType {
+            map.mapType = mapDisplayStyle.mapKitType
+        }
     }
 
     final class Coordinator: NSObject, MKMapViewDelegate, UIGestureRecognizerDelegate {
@@ -524,6 +528,16 @@ struct MapViewRepresentable: UIViewRepresentable {
             let southLocation = CLLocation(latitude: south.latitude, longitude: south.longitude)
             let measured = northLocation.distance(from: southLocation)
             return measured.isFinite && measured > 0 ? measured : 1_000
+        }
+    }
+}
+
+private extension MapDisplayStyle {
+    var mapKitType: MKMapType {
+        switch self {
+        case .standard: return .standard
+        case .satellite: return .satellite
+        case .hybrid: return .hybrid
         }
     }
 }

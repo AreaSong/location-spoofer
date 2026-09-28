@@ -633,6 +633,35 @@ final class RoutePlaybackControllerTests: XCTestCase {
         XCTAssertEqual(route.vias[0].wgs84.latitude, nearby.wgs84.latitude, accuracy: 0.000_000_1)
     }
 
+    func testAddViaStopsAtTen() {
+        let route = makeRoute()
+        let start = CoordinateConverter.coordinatePair(
+            lat: 22.494,
+            lon: 113.951,
+            mapCoordinateSystem: .wgs84
+        )
+        route.enter(start: start)
+        for index in 0..<RoutePlaybackController.maxViaCount {
+            let pair = CoordinateConverter.coordinatePair(
+                lat: 22.494 + Double(index + 1) * 0.001,
+                lon: 113.951,
+                mapCoordinateSystem: .wgs84
+            )
+            route.addVia(pair)
+        }
+        XCTAssertEqual(route.vias.count, RoutePlaybackController.maxViaCount)
+        XCTAssertEqual(RoutePlaybackController.maxViaCount, 10)
+
+        let extra = CoordinateConverter.coordinatePair(
+            lat: 22.51,
+            lon: 113.951,
+            mapCoordinateSystem: .wgs84
+        )
+        route.addVia(extra)
+        XCTAssertEqual(route.vias.count, RoutePlaybackController.maxViaCount)
+        XCTAssertEqual(route.statusMessage, "途经点已满，点橙色数字删除后再加。")
+    }
+
     func testAddViaAndReverseSwapsStops() {
         let route = makeRoute()
         let saved = sampleSavedRoute(repeatMode: .once)

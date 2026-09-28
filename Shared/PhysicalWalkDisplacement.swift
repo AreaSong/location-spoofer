@@ -246,7 +246,13 @@ enum PhysicalWalkStatusCopy {
 enum PhysicalWalkDisplacement {
     static let earthRadiusMeters = LocationCoordinateOffset.earthRadiusMeters
     static let defaultStrideMeters = 0.74
+    static let minimumStrideMeters = 0.50
+    static let maximumStrideMeters = 1.00
     static let minimumDeltaMeters = 0.05
+
+    static func clampedStride(_ meters: Double) -> Double {
+        min(maximumStrideMeters, max(minimumStrideMeters, meters))
+    }
 
     /// Compass heading: 0 is north, 90 is east, clockwise.
     static func offsetWGS84(
@@ -324,12 +330,14 @@ struct PhysicalWalkEngine: Equatable {
 
     mutating func apply(
         sample: PhysicalWalkSample,
-        heading: PhysicalWalkHeading?
+        heading: PhysicalWalkHeading?,
+        strideMeters: Double = PhysicalWalkDisplacement.defaultStrideMeters
     ) -> PhysicalWalkApplyResult {
         let delta = Self.deltaMeters(
             sample: sample,
             lastDistance: lastDistanceMeters,
-            lastSteps: lastSteps
+            lastSteps: lastSteps,
+            strideMeters: strideMeters
         )
         remember(sample)
         if delta >= PhysicalWalkDisplacement.minimumDeltaMeters {
@@ -367,7 +375,8 @@ struct PhysicalWalkEngine: Equatable {
     private static func deltaMeters(
         sample: PhysicalWalkSample,
         lastDistance: Double?,
-        lastSteps: Int?
+        lastSteps: Int?,
+        strideMeters: Double
     ) -> Double {
         let fromDistance: Double? = {
             guard let current = sample.distanceMeters, let lastDistance else { return nil }
@@ -375,7 +384,7 @@ struct PhysicalWalkEngine: Equatable {
         }()
         let fromSteps: Double? = {
             guard let steps = sample.steps, let lastSteps else { return nil }
-            return Double(max(0, steps - lastSteps)) * PhysicalWalkDisplacement.defaultStrideMeters
+            return Double(max(0, steps - lastSteps)) * max(0, strideMeters)
         }()
         // 定点后系统 GPS 不再动，CMPedometer.distance 会冻住；步数仍来自加速度计。
         return max(fromDistance ?? 0, fromSteps ?? 0)

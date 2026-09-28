@@ -194,10 +194,19 @@ struct SavedRouteListView: View {
         if RouteGPX.looksLikeGPX(data) {
             return try RouteGPX.decode(data, fallbackName: fallbackName)
         }
+        if RouteKML.looksLikeKMZ(data) {
+            throw RouteKML.ParseError.unsupportedArchive
+        }
+        if RouteKML.looksLikeKML(data) {
+            return try RouteKML.decode(data, fallbackName: fallbackName)
+        }
         do {
             return try RouteTransfer.decode(data)
         } catch {
             if let routes = try? RouteGPX.decode(data, fallbackName: fallbackName) {
+                return routes
+            }
+            if let routes = try? RouteKML.decode(data, fallbackName: fallbackName) {
                 return routes
             }
             throw error
@@ -206,8 +215,10 @@ struct SavedRouteListView: View {
 
     private static var importTypes: [UTType] {
         var types: [UTType] = [.json, .xml]
-        if let gpx = UTType(filenameExtension: "gpx") {
-            types.append(gpx)
+        for ext in ["gpx", "kml", "kmz"] {
+            if let type = UTType(filenameExtension: ext) {
+                types.append(type)
+            }
         }
         return types
     }
@@ -232,7 +243,7 @@ struct SavedRouteListView: View {
 
     private var emptyText: String {
         query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            ? "还没有保存的路线。设好起点和终点后点「保存」，或从文件导入 GPX。"
+            ? "还没有保存的路线。设好起点和终点后点「保存」，或从文件导入 GPX / KML。"
             : "没有匹配的路线"
     }
 }

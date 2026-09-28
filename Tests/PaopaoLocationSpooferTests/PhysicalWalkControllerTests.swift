@@ -14,14 +14,22 @@ final class PhysicalWalkStoreTests: XCTestCase {
         XCTAssertFalse(store.isCustomHeadingEnabled)
         XCTAssertEqual(store.initialHeadingDegrees, 0, accuracy: 0.01)
         XCTAssertEqual(store.lastFailureMessage, "")
+        XCTAssertEqual(store.strideMeters, PhysicalWalkDisplacement.defaultStrideMeters, accuracy: 0.000_1)
 
         store.setEnabled(true)
         store.setCustomHeadingEnabled(true)
         store.setInitialHeadingDegrees(92)
+        store.setStrideMeters(0.9)
         let restored = PhysicalWalkStore(defaults: defaults)
         XCTAssertTrue(restored.isEnabled)
         XCTAssertTrue(restored.isCustomHeadingEnabled)
         XCTAssertEqual(restored.initialHeadingDegrees, 92, accuracy: 0.01)
+        XCTAssertEqual(restored.strideMeters, 0.9, accuracy: 0.000_1)
+
+        store.setStrideMeters(0.2)
+        XCTAssertEqual(store.strideMeters, PhysicalWalkDisplacement.minimumStrideMeters, accuracy: 0.000_1)
+        store.setStrideMeters(2)
+        XCTAssertEqual(store.strideMeters, PhysicalWalkDisplacement.maximumStrideMeters, accuracy: 0.000_1)
 
         store.noteFailure("需要运动与健身权限才能真实走动。")
         XCTAssertFalse(store.isEnabled)

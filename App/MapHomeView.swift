@@ -60,6 +60,7 @@ struct MapHomeView: View {
     @ObservedObject var keepAlive = BackgroundKeepAlive.shared
     @StateObject var physicalWalk = PhysicalWalkController()
     @ObservedObject var physicalWalkStore = PhysicalWalkStore.shared
+    @ObservedObject var mapStyle = MapStyleStore.shared
     @ObservedObject var recentSelections = RecentSelectionStore.shared
     @ObservedObject var runtimeMode = ProxyRuntimeModeStore.shared
     @ObservedObject var thirdPartyProxy = ThirdPartyProxyManager.shared
@@ -272,7 +273,8 @@ struct MapHomeView: View {
                 playbackClock: route.clock,
                 walkHeadingDegrees: physicalWalk.activeHeadingDegrees,
                 walkPuckCoordinate: walkPuckMapCoordinate,
-                showsWalkHeading: walkPuckMapCoordinate != nil
+                showsWalkHeading: walkPuckMapCoordinate != nil,
+                mapDisplayStyle: mapStyle.style
             )
             .ignoresSafeArea(.container)
 
@@ -292,6 +294,18 @@ struct MapHomeView: View {
                     HStack {
                         Spacer()
                         VStack(spacing: 12) {
+                            Button {
+                                mapStyle.cycle()
+                            } label: {
+                                Image(systemName: mapStyle.style.symbolName)
+                                    .font(.system(size: 18, weight: .semibold))
+                                    .frame(width: 44, height: 44)
+                                    .background(.regularMaterial, in: Circle())
+                                    .shadow(color: .black.opacity(0.2), radius: 6, y: 3)
+                            }
+                            .accessibilityLabel("地图图层")
+                            .accessibilityValue(mapStyle.style.title)
+                            .accessibilityHint("切换标准、卫星或混合图")
                             Button {
                                 if let url = URL(string: "maps://app") {
                                     UIApplication.shared.open(url)
@@ -684,7 +698,7 @@ struct MapHomeView: View {
             Button("取消", role: .cancel) {}
         } message: {
             if let name = route.editingSavedRoute?.name {
-                Text("覆盖会更新「\(name)」，另存为会再占一条。最多保存 20 条。")
+                Text("覆盖会更新「\(name)」，另存为会再占一条。最多保存 \(SavedRouteStore.limit) 条。")
             } else {
                 Text("保存起点、终点和途经点。沿路折线会压缩后单独存放，下次可以直接走。")
             }

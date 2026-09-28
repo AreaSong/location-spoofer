@@ -98,7 +98,7 @@ struct SavedRoute: Codable, Identifiable, Equatable {
 }
 
 final class SavedRouteStore: ObservableObject {
-    static let limit = 20
+    static let limit = 50
 
     private enum Keys {
         static let routes = "saved_routes_v1"

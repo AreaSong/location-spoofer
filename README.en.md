@@ -59,8 +59,9 @@ collection services.
 - **Native map interaction**
   - Uses MapKit for the map and system blue dot;
   - Supports place search, pasted map links, typed latitude/longitude, map taps, center-point dragging, and zooming;
+  - The lower-right control cycles Standard, Satellite, and Hybrid map layers;
   - A collapsible strip under the search bar with coordinates on the left and walk heading on the right; expand it to switch domestic and international coordinates
-    and copy each one separately, or to change walking direction;
+    and copy each one separately, or to change walking direction and the step-fallback stride;
   - Keeps the latest 10 discrete selections (tap, search, favorite, or realtime fix). Panning the map updates the current
     center only and does not write history;
   - Favorites support a searchable list, sort by time or name, and clipboard/file backup. Matching WGS-84 coordinates
@@ -69,17 +70,17 @@ collection services.
 - **Location-service response simulation**
   - Processes only the Apple location-service requests defined by the project;
   - Returns the selected coordinates in a controlled test environment;
-  - App Mode and Third-party Proxy Mode can configure a random perturbation radius and reported accuracy so a test
-    point is not always identical;
+  - App Mode, Third-party Proxy Mode, and Developer Tunnel Mode can offset a spot before writing so a test point is not
+    always identical. Reported accuracy applies to App Mode and Third-party Proxy Mode only;
   - Motion simulation is available only in App Mode;
-  - Optional physical walking: off by default and toggled in the heading strip; from launch or after spot spoofing, a blue-dot puck shows the current location and heading and follows the system map by default. Custom heading (“初始指向”) is off by default; turn it on to set the initial heading with the slider and ±15° and zero the phone attitude, then rotating the phone turns the fan. Last custom values persist but are not applied on a successful connect. With walking on, steps move along the live fan; it is mutually exclusive with automatic route playback;
+  - Optional physical walking: off by default and toggled in the heading strip; from launch or after spot spoofing, a blue-dot puck shows the current location and heading and follows the system map by default. Custom heading (“初始指向”) is off by default; turn it on to set the initial heading with the slider and ±15° and zero the phone attitude, then rotating the phone turns the fan. The step-fallback stride is adjustable. Last custom values persist but are not applied on a successful connect. With walking on, steps move along the live fan; it is mutually exclusive with automatic route playback;
   - Does not require changes to the target app.
 
 - **Route playback**
-  - Drop a start pin, up to five via pins, and an end pin; the path follows roads for walking, cycling, or driving;
+  - Drop a start pin, up to ten via pins, and an end pin; the path follows roads for walking, cycling, or driving;
   - Configure speed, offset distance, and once / round-trip / loop repeat;
-  - Routes can be saved, overwritten, and reversed, up to 20 entries. GPX tracks can be imported and played back along
-    the recorded path without re-routing;
+  - Routes can be saved, overwritten, and reversed, up to 50 entries. GPX / KML tracks can be imported and played back
+    along the recorded path without re-routing. Unzip KMZ to KML first;
   - Playback writes coordinates through the current runtime mode: App Mode and Third-party Proxy Mode write through
     the proxy with an 8 m / 5 s write gate; Developer Tunnel Mode pushes every second directly into system location.
 
@@ -257,7 +258,7 @@ In this mode:
 - Both single points and route playback use this channel; playback pushes one sample per second;
 - Leaving a route or finishing playback keeps the last simulated point as a single-point spoof; stopping the test
   location clears the simulation immediately, so the real location returns without toggling Location Services;
-- Random perturbation and accuracy settings do not apply in this mode; route offset still applies;
+- Random perturbation offsets a spot before it is pushed; accuracy cannot be written to the system location simulation. Route offset still applies;
 - If the tunnel drops, the app asks you to reconnect and pauses any playing route.
 
 LocalDevVPN provides the tunnel and iOS performs the simulation. The app only pairs, connects, and pushes coordinates.

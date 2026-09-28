@@ -94,7 +94,10 @@ grep -q '自己开个人热点不算' "$ROOT/Shared/RouteLocationPush.swift" \
   || fail "tunnel help must warn that hosting a personal hotspot is not a Wi-Fi client"
 grep -q 'func hostIdentity' "$PAIRING" \
   || fail "developer tunnel handshake must use the pairing-file host identity"
-grep -q 'reassertIfNeeded' "$MAP" || fail "foreground recovery must not open a second simulation while one is held"
+grep -q 'developerSpotWGS84' "$ROOT/App/SpoofSession.swift" \
+  || fail "developer-tunnel spots must be offset before they are pushed"
+grep -q '定点推送前会偏移' "$SETTINGS" \
+  || fail "developer-tunnel settings must explain spot offset before push"
 grep -q 'syncDeveloperLocationKeepAlive' "$MAP" || fail "an active developer-tunnel location must keep the process alive"
 ! grep -q 'abandonStaleSession' "$MAP" || fail "leaving the app must keep the live location simulation"
 

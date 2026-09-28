@@ -11,7 +11,7 @@ enum RoutePhase: Equatable {
 
 @MainActor
 final class RoutePlaybackController: ObservableObject {
-    static let maxViaCount = 5
+    static let maxViaCount = 10
 
     let clock = RoutePlaybackClock()
 

@@ -37,6 +37,7 @@ extension MapHomeView {
 
     func bindPhysicalWalk() {
         physicalWalk.ignoresWriteGate = runtimeMode.mode == .developerTunnel
+        physicalWalk.strideMeters = { physicalWalkStore.strideMeters }
         physicalWalk.applyCoordinate = { pair in
             await applyPhysicalWalkCoordinate(pair)
         }
@@ -158,6 +159,19 @@ struct PhysicalWalkHeadingControls: View {
             Slider(value: headingBinding, in: 0...359, step: 1)
                 .disabled(!store.isCustomHeadingEnabled)
                 .accessibilityLabel("初始朝向")
+            VStack(alignment: .leading, spacing: 4) {
+                Text(String(format: "计步兜底步长 %.2f 米", store.strideMeters))
+                    .font(.caption.weight(.semibold))
+                Slider(
+                    value: strideBinding,
+                    in: PhysicalWalkDisplacement.minimumStrideMeters...PhysicalWalkDisplacement.maximumStrideMeters,
+                    step: 0.02
+                )
+                .accessibilityLabel("计步兜底步长")
+                Text("计步器没有距离时，按这个步长把步数换成米。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
             walkHint
         }
     }
@@ -205,6 +219,13 @@ struct PhysicalWalkHeadingControls: View {
         Binding(
             get: { controller.initialHeadingDegrees },
             set: { persistInitialHeading($0) }
+        )
+    }
+
+    private var strideBinding: Binding<Double> {
+        Binding(
+            get: { store.strideMeters },
+            set: { store.setStrideMeters($0) }
         )
     }
 

@@ -404,6 +404,13 @@ extension MapHomeView {
             clearThirdPartyFailure: { failure.clearThirdParty() },
             recordThirdPartyFailure: { failure.recordThirdParty(error: $0) },
             recordThirdPartyMessage: { failure.recordThirdParty(message: $0) },
+            developerSpotWGS84: { latitude, longitude in
+                LocationCoordinateOffset.offsetWGS84(
+                    latitude: latitude,
+                    longitude: longitude,
+                    radiusMeters: RandomRadiusStore.shared.effectiveRadiusMeters
+                )
+            },
             pushDeveloper: { favorite in
                 await RouteLocationSetupStore.shared.set(
                     latitude: favorite.latitude,

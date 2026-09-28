@@ -36,8 +36,8 @@ extension SettingsView {
             }
 
             if runtimeMode.mode == .developerTunnel {
-                // 隧道直接推送精确坐标，这些改写参数不参与。
-                Text("开发者隧道模式不使用随机扰动和精度设置；路线偏移在走路面板里调。")
+                randomPerturbationControls
+                Text("开启后，定点推送前会偏移坐标。路线仍用走路面板的偏移。精度无法写入系统定位模拟。")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             } else {
@@ -49,19 +49,7 @@ extension SettingsView {
                         .foregroundStyle(.secondary)
                 }
 
-                Toggle("随机扰动", isOn: randomRadiusBinding)
-                    .disabled(simulationControlsDisabled)
-                if randomRadius.isEnabled {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("扰动半径 \(Int(randomRadius.radius.rounded())) 米")
-                        Slider(
-                            value: randomRadiusMetersBinding,
-                            in: RandomRadiusStore.minimumMeters...RandomRadiusStore.maximumMeters,
-                            step: 10
-                        )
-                        .disabled(simulationControlsDisabled)
-                    }
-                }
+                randomPerturbationControls
                 Text(randomRadiusHint)
                     .font(.footnote)
                     .foregroundStyle(.secondary)
@@ -86,6 +74,23 @@ extension SettingsView {
         runtimeMode.mode == .thirdParty
             ? "开启后，下次同步坐标时会给目标点添加随机偏移，避免位置固定在同一点。"
             : "开启后，下次开启虚拟定位时会给目标点添加随机偏移，避免位置固定在同一点。"
+    }
+
+    @ViewBuilder
+    var randomPerturbationControls: some View {
+        Toggle("随机扰动", isOn: randomRadiusBinding)
+            .disabled(simulationControlsDisabled)
+        if randomRadius.isEnabled {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("扰动半径 \(Int(randomRadius.radius.rounded())) 米")
+                Slider(
+                    value: randomRadiusMetersBinding,
+                    in: RandomRadiusStore.minimumMeters...RandomRadiusStore.maximumMeters,
+                    step: 10
+                )
+                .disabled(simulationControlsDisabled)
+            }
+        }
     }
 
     var randomRadiusBinding: Binding<Bool> {

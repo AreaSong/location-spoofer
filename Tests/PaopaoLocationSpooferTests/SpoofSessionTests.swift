@@ -109,6 +109,26 @@ final class SpoofSessionTests: XCTestCase {
         XCTAssertNil(session.writtenLatitude)
     }
 
+    func testDeveloperTunnelSpotOffsetMovesWrittenPointAndKeepsSwitchOnOriginal() async {
+        let probe = SpoofServiceProbe()
+        probe.mode = .developerTunnel
+        probe.developerSpotWGS84 = { latitude, longitude in
+            (latitude + 0.01, longitude - 0.02)
+        }
+        let session = makeSession(probe)
+        let target = sampleFavorite()
+
+        session.begin(target: target)
+        await waitUntil(session, leaves: .verifying)
+
+        XCTAssertEqual(session.state, .active)
+        XCTAssertEqual(probe.lastUpdateLatitude ?? 0, target.latitude + 0.01, accuracy: 0.000_000_1)
+        XCTAssertEqual(probe.lastUpdateLongitude ?? 0, target.longitude - 0.02, accuracy: 0.000_000_1)
+        XCTAssertEqual(session.writtenLatitude ?? 0, target.latitude + 0.01, accuracy: 0.000_000_1)
+        XCTAssertEqual(session.switchLatitude ?? 0, target.latitude, accuracy: 0.000_000_1)
+        XCTAssertEqual(session.switchLongitude ?? 0, target.longitude, accuracy: 0.000_000_1)
+    }
+
     func testDeveloperTunnelClearFailureStaysActive() async {
         let probe = SpoofServiceProbe()
         probe.mode = .developerTunnel
@@ -308,6 +328,7 @@ private final class SpoofServiceProbe {
     var pauseRouteCount = 0
     var developerFailure: RouteLocationPushFailure?
     var developerClearFailure: RouteLocationPushFailure?
+    var developerSpotWGS84: (Double, Double) -> (latitude: Double, longitude: Double) = { ($0, $1) }
 
     func services() -> SpoofSession.Services {
         SpoofSession.Services(
@@ -354,6 +375,9 @@ private final class SpoofServiceProbe {
             clearThirdPartyFailure: {},
             recordThirdPartyFailure: { _ in },
             recordThirdPartyMessage: { _ in },
+            developerSpotWGS84: { latitude, longitude in
+                self.developerSpotWGS84(latitude, longitude)
+            },
             pushDeveloper: { favorite in
                 self.developerPushes += 1
                 self.lastUpdateLatitude = favorite.latitude

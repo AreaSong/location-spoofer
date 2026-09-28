@@ -15,6 +15,7 @@ final class PhysicalWalkController: ObservableObject {
     @Published private(set) var activeHeadingDegrees: Double? = 0
 
     var ignoresWriteGate = false
+    var strideMeters: () -> Double = { PhysicalWalkDisplacement.defaultStrideMeters }
     var applyCoordinate: ((CoordinatePair) async -> Bool)?
     var onFailure: ((String) -> Void)?
 
@@ -207,7 +208,11 @@ final class PhysicalWalkController: ObservableObject {
     @discardableResult
     private func apply(sample: PhysicalWalkSample) -> PhysicalWalkApplyResult {
         guard var engine else { return .unchanged }
-        let result = engine.apply(sample: sample, heading: resolvedHeading())
+        let result = engine.apply(
+            sample: sample,
+            heading: resolvedHeading(),
+            strideMeters: strideMeters()
+        )
         self.engine = engine
         movedMeters = engine.movedMeters
         currentLatitude = engine.latitude

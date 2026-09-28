@@ -347,8 +347,13 @@ test -f "$ROOT/App/RoutePlaybackPanel.swift" || fail "route playback panel is mi
 test -f "$ROOT/Shared/SavedRouteStore.swift" || fail "saved routes must have a dedicated store"
 test -f "$ROOT/App/SavedRouteListView.swift" || fail "saved routes must have a list sheet"
 test -f "$ROOT/Shared/RouteGPX.swift" || fail "saved routes must import GPX tracks"
+test -f "$ROOT/Shared/RouteKML.swift" || fail "saved routes must import KML tracks"
 grep -q 'RouteGPX.decode' "$ROOT/App/SavedRouteListView.swift" \
   || fail "the saved route list must decode GPX files"
+grep -q 'RouteKML.decode' "$ROOT/App/SavedRouteListView.swift" \
+  || fail "the saved route list must decode KML files"
+grep -q 'filenameExtension: ext' "$ROOT/App/SavedRouteListView.swift" \
+  || fail "the saved route list must accept GPX and KML file types"
 grep -q 'enum RouteRepeatMode' "$ROOT/Shared/RoutePlayback.swift" \
   || fail "route playback must expose once, round-trip, and loop modes"
 grep -q 'case roundTrip' "$ROOT/Shared/RoutePlayback.swift" || fail "route playback must support round-trip"
@@ -369,8 +374,19 @@ grep -q 'playbackOrigin = Date()' "$ROOT/Shared/RoutePlaybackController.swift" \
   || fail "reversing a route leg must reset the playback clock"
 grep -q 'headingForward' "$ROOT/Shared/RoutePlaybackController.swift" \
   || fail "round-trip and loop playback must track heading"
-grep -q 'vias.isEmpty ? "途经"' "$ROOT/App/RoutePlaybackPanel.swift" \
-  || fail "route panel must let the user add via points"
+grep -q 'static let maxViaCount = 10' "$ROOT/Shared/RoutePlaybackController.swift" \
+  || fail "routes must allow ten via points"
+grep -q 'static let limit = 50' "$ROOT/Shared/SavedRouteStore.swift" \
+  || fail "saved routes must keep fifty entries"
+test -f "$ROOT/Shared/MapDisplayStyle.swift" || fail "map layers must have a persisted display style"
+grep -q 'mapDisplayStyle' "$MAP_BRIDGE" || fail "the map bridge must apply the selected map layer"
+grep -q 'accessibilityLabel("地图图层")' "$MAP_HOME" || fail "map layers must be switchable from the home map"
+grep -q 'developerSpotWGS84' "$ROOT/App/SpoofSession.swift" \
+  || fail "developer-tunnel spots must be offset before push"
+grep -q 'strideMeters' "$ROOT/Shared/PhysicalWalkStore.swift" \
+  || fail "physical walking must persist a step-fallback stride"
+grep -q '定点推送前会偏移' "$SETTINGS_VIEW" \
+  || fail "developer-tunnel settings must explain spot offset before push"
 grep -q 'Button("倒着走")' "$ROOT/App/RoutePlaybackPanel.swift" || fail "route panel must let the user reverse a saved path"
 grep -q 'chevron.down' "$ROOT/App/RoutePlaybackPanel.swift" || fail "speed and offset must stay collapsed by default"
 grep -q 'formattedRemaining' "$ROOT/Shared/RoutePlayback.swift" || fail "playback must format remaining distance and time"

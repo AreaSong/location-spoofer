@@ -34,6 +34,7 @@ final class SpoofSession: ObservableObject {
         var clearThirdPartyFailure: () -> Void
         var recordThirdPartyFailure: (Error) -> Void
         var recordThirdPartyMessage: (String) -> Void
+        var developerSpotWGS84: (Double, Double) -> (latitude: Double, longitude: Double)
         var pushDeveloper: (FavoriteLocation) async -> RouteLocationPushFailure?
         var clearDeveloper: () async -> RouteLocationPushFailure?
     }
@@ -214,7 +215,18 @@ final class SpoofSession: ObservableObject {
         wasActive: Bool
     ) async {
         guard let services else { return }
-        let failure = await services.pushDeveloper(target)
+        let original = target.coordinatePair.wgs84
+        let shifted = services.developerSpotWGS84(original.latitude, original.longitude)
+        let pushed = FavoriteLocation(
+            name: target.name,
+            coordinatePair: CoordinateConverter.coordinatePair(
+                lat: shifted.latitude,
+                lon: shifted.longitude,
+                mapCoordinateSystem: .wgs84
+            ),
+            accuracy: target.accuracy
+        )
+        let failure = await services.pushDeveloper(pushed)
         guard accept(operationID), services.mode() == .developerTunnel else { return }
         if failure == .superseded {
             finish(operationID)
@@ -226,10 +238,10 @@ final class SpoofSession: ObservableObject {
         } else {
             state = .active
             remember(
-                writtenLatitude: target.latitude,
-                writtenLongitude: target.longitude,
-                switchLatitude: target.latitude,
-                switchLongitude: target.longitude
+                writtenLatitude: shifted.latitude,
+                writtenLongitude: shifted.longitude,
+                switchLatitude: original.latitude,
+                switchLongitude: original.longitude
             )
             enqueue(.activationSucceeded)
         }

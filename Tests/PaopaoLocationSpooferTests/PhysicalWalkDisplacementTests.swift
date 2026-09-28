@@ -143,6 +143,29 @@ final class PhysicalWalkDisplacementTests: XCTestCase {
         XCTAssertEqual(distance, 7.4, accuracy: 0.5)
     }
 
+    func testStepFallbackUsesCustomStride() {
+        var engine = PhysicalWalkEngine(latitude: originLatitude, longitude: originLongitude)
+        let heading = PhysicalWalkHeading(degrees: 0, accuracyDegrees: 5)
+        _ = engine.apply(sample: PhysicalWalkSample(steps: 0), heading: heading, strideMeters: 1.0)
+
+        let moved = engine.apply(
+            sample: PhysicalWalkSample(steps: 10),
+            heading: heading,
+            strideMeters: 1.0
+        )
+        XCTAssertEqual(moved, .moved(deltaMeters: 10), accuracy: 0.000_1)
+        XCTAssertEqual(
+            PhysicalWalkDisplacement.clampedStride(0.2),
+            PhysicalWalkDisplacement.minimumStrideMeters,
+            accuracy: 0.000_1
+        )
+        XCTAssertEqual(
+            PhysicalWalkDisplacement.clampedStride(2),
+            PhysicalWalkDisplacement.maximumStrideMeters,
+            accuracy: 0.000_1
+        )
+    }
+
     func testFrozenPedometerDistanceStillMovesUsingSteps() {
         var engine = PhysicalWalkEngine(latitude: originLatitude, longitude: originLongitude)
         let heading = PhysicalWalkHeading(degrees: 0, accuracyDegrees: 5)
