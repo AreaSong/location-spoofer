@@ -118,9 +118,13 @@ grep -q 'quickActions' "$ROOT/App/MapHomeBottomCard.swift" \
   || fail "collapsed bottom card must keep walk shortcuts outside the expanded lists"
 grep -q 'Toggle("真实走动"' "$ROOT/App/MapHomeView+PhysicalWalk.swift" \
   || fail "physical walk toggle must sit in the heading angle row"
+grep -q 'labeledDegrees' "$ROOT/App/MapHomeView+PhysicalWalk.swift" \
+  || fail "heading angle row must show the current heading to the left of the walk toggle"
 if grep -q 'PhysicalWalkSpotControl' "$ROOT/App/MapHomeView.swift"; then
   fail "bottom card must not keep a duplicate physical walk toggle"
 fi
+grep -Fq 'paletteColors: [.systemRed, .white]' "$ROOT/App/MapViewRepresentable.swift" \
+  || fail "map-center selection pin must render as a red pin, not a white pin"
 grep -q 'enum PhysicalWalkHeadingPicker' "$ROOT/Shared/PhysicalWalkDisplacement.swift" \
   || fail "heading chips must stay collapsed after the walk direction is chosen"
 grep -q 'Button("−15°")' "$ROOT/App/MapHomeView+PhysicalWalk.swift" \

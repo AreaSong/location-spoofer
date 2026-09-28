@@ -48,9 +48,10 @@ struct MapViewRepresentable: UIViewRepresentable {
         // Center pin — positioned relative to geographic center, not Auto Layout
         let pinSize: CGFloat = 38
         let sizeCfg = UIImage.SymbolConfiguration(pointSize: pinSize, weight: .semibold)
-        let paletteCfg = UIImage.SymbolConfiguration(paletteColors: [.white, .red])
+        let paletteCfg = UIImage.SymbolConfiguration(paletteColors: [.systemRed, .white])
         let pinImage = UIImage(systemName: "mappin",
-                               withConfiguration: sizeCfg.applying(paletteCfg))
+                               withConfiguration: sizeCfg.applying(paletteCfg))?
+            .withRenderingMode(.alwaysOriginal)
         let pin = UIImageView(image: pinImage)
         pin.frame = CGRect(x: 0, y: 0, width: pinSize, height: pinSize)
         pin.isUserInteractionEnabled = false
