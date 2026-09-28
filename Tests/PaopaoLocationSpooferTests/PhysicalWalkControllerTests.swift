@@ -125,6 +125,7 @@ final class PhysicalWalkControllerTests: XCTestCase {
             wrote = true
             return true
         }
+        controller.followCompass()
         controller.start(latitude: 22.494, longitude: 113.951)
         await controller.ingest(sample: PhysicalWalkSample(distanceMeters: 0, steps: 0))
         await controller.ingest(sample: PhysicalWalkSample(distanceMeters: 10, steps: 12))
@@ -179,7 +180,7 @@ final class PhysicalWalkControllerTests: XCTestCase {
         heading.latest = PhysicalWalkHeading(degrees: 90, accuracyDegrees: 5)
         let controller = PhysicalWalkController(sensor: sensor, heading: heading)
 
-        controller.startHeadingPreview()
+        controller.followCompass()
 
         XCTAssertFalse(controller.isTracking)
         XCTAssertEqual(controller.headingMode, .followCompass)

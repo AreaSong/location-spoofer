@@ -160,7 +160,7 @@ enum PhysicalWalkStatusCopy {
         guard isTracking else { return "真实走动已开" }
         switch status {
         case .waitingForHeading:
-            return "点东南西北锁定方向，或把手机朝前"
+            return "请展开朝向并拖动角度"
         case .tracking:
             let meters = Int(movedMeters.rounded())
             let prefix = meters > 0 ? "真实走动中 · \(meters)米" : "真实走动中，走起来才会移动"
@@ -181,7 +181,7 @@ enum PhysicalWalkStatusCopy {
     ) -> String {
         if !failureMessage.isEmpty { return failureMessage }
         if !isEnabled {
-            return "打开后，你走动时虚拟点沿箭头方向移动。地图北朝上，可点东南西北锁定方向。"
+            return "打开后，你走动时虚拟点沿扇形方向移动。地图北朝上，可在朝向里拖动角度。"
         }
         if !spoofActive {
             return "先开启虚拟定位，再走动。"
@@ -189,7 +189,7 @@ enum PhysicalWalkStatusCopy {
         let headingNote = headingNote(degrees: headingDegrees, locked: headingLocked)
         switch status {
         case .waitingForHeading:
-            return "还没有朝向。点北/东/南/西锁定地图方向，或把手机朝前跟随罗盘。"
+            return "还没有朝向。请展开朝向并拖动角度。"
         case .tracking:
             let meters = Int(movedMeters.rounded())
             let movement = meters > 0 ? "已移动 \(meters) 米" : "已开启，走起来虚拟点才会移动"
@@ -213,7 +213,7 @@ enum PhysicalWalkStatusCopy {
     private static func headingNote(degrees: Double?, locked: Bool) -> String? {
         guard let degrees else { return nil }
         let name = PhysicalWalkHeadingLock.compassName(degrees)
-        return locked ? "朝向\(name)（已锁定）" : "朝向\(name)（跟随罗盘）"
+        return locked ? "朝向\(name)（已锁定）" : "朝向\(name)"
     }
 }
 

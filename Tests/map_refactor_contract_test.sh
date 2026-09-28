@@ -120,10 +120,12 @@ grep -q 'enum PhysicalWalkHeadingPicker' "$ROOT/Shared/PhysicalWalkDisplacement.
   || fail "heading chips must stay collapsed after the walk direction is chosen"
 grep -q 'Button("−15°")' "$ROOT/App/MapHomeView+PhysicalWalk.swift" \
   || fail "heading controls must expose a labeled 15-degree nudge"
-grep -q '当前设备没有罗盘' "$ROOT/App/MapHomeView+PhysicalWalk.swift" \
-  || fail "heading controls must explain when the compass hardware is missing"
-grep -q 'isMagnetometerAvailable' "$ROOT/App/PhysicalWalkSensors.swift" \
-  || fail "walk compass must require a magnetometer instead of device-motion yaw"
+if grep -q 'Button("罗盘")' "$ROOT/App/MapHomeView+PhysicalWalk.swift"; then
+  fail "heading controls must not keep a compass chip after manual angle adjustment"
+fi
+if grep -q 'PhysicalWalkHeadingLock.cardinals' "$ROOT/App/MapHomeView+PhysicalWalk.swift"; then
+  fail "heading controls must not keep N/E/S/W chips after manual angle adjustment"
+fi
 grep -q 'applyNativeUserLocationVisibility' "$ROOT/App/WalkHeadingHud.swift" \
   || fail "walk heading must hide the native user-location dot while the spoofed puck is shown"
 grep -q 'walkPuckCoordinate' "$ROOT/App/MapViewRepresentable.swift" \

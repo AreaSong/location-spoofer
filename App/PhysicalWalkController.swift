@@ -7,8 +7,8 @@ final class PhysicalWalkController: ObservableObject {
     @Published private(set) var isTracking = false
     @Published private(set) var status: PhysicalWalkStatus = .idle
     @Published private(set) var movedMeters = 0.0
-    @Published private(set) var headingMode: PhysicalWalkHeadingMode = .followCompass
-    @Published private(set) var activeHeadingDegrees: Double?
+    @Published private(set) var headingMode: PhysicalWalkHeadingMode = .locked(degrees: 0)
+    @Published private(set) var activeHeadingDegrees: Double? = 0
 
     var ignoresWriteGate = false
     var applyCoordinate: ((CoordinatePair) async -> Bool)?
@@ -88,8 +88,6 @@ final class PhysicalWalkController: ObservableObject {
             await considerWrite(at: now)
         }
     }
-
-    var isCompassAvailable: Bool { heading.headingAvailable }
 
     func followCompass() {
         guard heading.headingAvailable else {

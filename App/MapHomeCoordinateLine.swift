@@ -140,11 +140,9 @@ struct MapHomeTopInfoBar: View {
                     .padding(.bottom, 8)
             }
             if showsHeading {
-                PhysicalWalkHeadingControls(controller: walkController) {
-                    showsHeading = false
-                }
-                .padding(.horizontal, 10)
-                .padding(.bottom, 8)
+                PhysicalWalkHeadingControls(controller: walkController)
+                    .padding(.horizontal, 10)
+                    .padding(.bottom, 8)
             }
         }
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
