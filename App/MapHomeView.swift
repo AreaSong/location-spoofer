@@ -265,7 +265,8 @@ struct MapHomeView: View {
                 routePins: route.overlayPins,
                 playbackClock: route.clock,
                 walkHeadingDegrees: physicalWalk.activeHeadingDegrees,
-                showsWalkHeading: physicalWalkStore.isEnabled
+                walkPuckCoordinate: walkPuckMapCoordinate,
+                showsWalkHeading: walkPuckMapCoordinate != nil
             )
             .ignoresSafeArea(.container)
 

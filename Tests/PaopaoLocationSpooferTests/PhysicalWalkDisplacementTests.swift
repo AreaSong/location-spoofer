@@ -335,6 +335,36 @@ final class PhysicalWalkDisplacementTests: XCTestCase {
             )
         )
     }
+
+    func testWalkPuckUsesWrittenCoordinateOnlyWhenSpoofIsActive() {
+        XCTAssertNil(
+            WalkPuckMapPlacement.coordinate(
+                walkEnabled: true,
+                spoofActive: false,
+                writtenLatitude: 22.5,
+                writtenLongitude: 113.9,
+                mapSystem: .wgs84
+            )
+        )
+        XCTAssertNil(
+            WalkPuckMapPlacement.coordinate(
+                walkEnabled: false,
+                spoofActive: true,
+                writtenLatitude: 22.5,
+                writtenLongitude: 113.9,
+                mapSystem: .wgs84
+            )
+        )
+        let puck = WalkPuckMapPlacement.coordinate(
+            walkEnabled: true,
+            spoofActive: true,
+            writtenLatitude: 22.5,
+            writtenLongitude: 113.9,
+            mapSystem: .wgs84
+        )
+        XCTAssertEqual(puck?.latitude ?? 0, 22.5, accuracy: 0.000_000_1)
+        XCTAssertEqual(puck?.longitude ?? 0, 113.9, accuracy: 0.000_000_1)
+    }
 }
 
 private func XCTAssertEqual(

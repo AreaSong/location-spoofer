@@ -1,7 +1,7 @@
 import MapKit
 import UIKit
 
-/// 画在当前选点坐标上：蓝点表示位置，扇形表示朝向。
+/// 画在当前生效的虚拟坐标上：蓝点表示人在这里，扇形表示朝向。红钉仍是地图中心选点。
 final class WalkHeadingHud: UIView {
     static let puckDiameter: CGFloat = 16
     static let fanRadius: CGFloat = 36
@@ -86,6 +86,14 @@ final class WalkHeadingHud: UIView {
     }
 }
 
+final class WalkPuckDisplayLinkProxy: NSObject {
+    weak var owner: MapViewRepresentable.Coordinator?
+
+    @objc func tick() {
+        owner?.tickWalkPuckPosition()
+    }
+}
+
 extension MapViewRepresentable.Coordinator {
     func installWalkHeadingHud(on map: MKMapView) {
         let size = WalkHeadingHud.hudSize
@@ -95,24 +103,54 @@ extension MapViewRepresentable.Coordinator {
         walkHeadingHud = hud
     }
 
+    func startWalkPuckTracking() {
+        guard walkPuckDisplayLink == nil else { return }
+        let proxy = WalkPuckDisplayLinkProxy()
+        proxy.owner = self
+        walkPuckDisplayLinkProxy = proxy
+        let link = CADisplayLink(target: proxy, selector: #selector(WalkPuckDisplayLinkProxy.tick))
+        link.add(to: .main, forMode: .common)
+        walkPuckDisplayLink = link
+    }
+
+    func stopWalkPuckTracking() {
+        walkPuckDisplayLink?.invalidate()
+        walkPuckDisplayLink = nil
+        walkPuckDisplayLinkProxy = nil
+    }
+
+    @objc func tickWalkPuckPosition() {
+        guard let map else {
+            stopWalkPuckTracking()
+            return
+        }
+        positionWalkHeadingHud(on: map)
+    }
+
     func updateWalkHeadingHud(degrees: Double?, visible: Bool, on map: MKMapView) {
         guard let hud = walkHeadingHud else { return }
         hud.isHidden = !visible
         applyNativeUserLocationVisibility(hidden: visible, on: map)
         if visible {
-            centerPin?.isHidden = true
             if let degrees {
                 hud.headingDegrees = degrees
             }
+            startWalkPuckTracking()
             positionWalkHeadingHud(on: map)
         } else {
-            centerPin?.isHidden = parent.playbackClock?.markerCoordinate != nil
+            stopWalkPuckTracking()
         }
     }
 
     func positionWalkHeadingHud(on map: MKMapView) {
         guard let hud = walkHeadingHud, !hud.isHidden else { return }
-        hud.center = map.convert(map.centerCoordinate, toPointTo: map)
+        guard let coordinate = parent.walkPuckCoordinate else {
+            hud.isHidden = true
+            applyNativeUserLocationVisibility(hidden: false, on: map)
+            stopWalkPuckTracking()
+            return
+        }
+        hud.center = map.convert(coordinate, toPointTo: map)
     }
 
     func applyNativeUserLocationVisibility(hidden: Bool, on map: MKMapView) {

@@ -1,4 +1,5 @@
 import Foundation
+import CoreLocation
 
 enum PhysicalWalkAuthorization: Equatable {
     case notDetermined
@@ -251,6 +252,25 @@ enum PhysicalWalkSession {
 
     static func shouldDisableForRoutePlayback(routePlaying: Bool, routeWaiting: Bool) -> Bool {
         routePlaying || routeWaiting
+    }
+}
+
+enum WalkPuckMapPlacement {
+    static func coordinate(
+        walkEnabled: Bool,
+        spoofActive: Bool,
+        writtenLatitude: Double?,
+        writtenLongitude: Double?,
+        mapSystem: CoordinateConverter.MapCoordinateSystem
+    ) -> CLLocationCoordinate2D? {
+        guard walkEnabled, spoofActive else { return nil }
+        guard let latitude = writtenLatitude, let longitude = writtenLongitude else {
+            return nil
+        }
+        return CoordinatePair(
+            mapCoordinate: CLLocationCoordinate2D(latitude: latitude, longitude: longitude),
+            mapCoordinateSystem: .wgs84
+        ).coordinate(for: mapSystem)
     }
 }
 

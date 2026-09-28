@@ -119,11 +119,22 @@ grep -q 'quickActions' "$ROOT/App/MapHomeBottomCard.swift" \
 grep -q 'enum PhysicalWalkHeadingPicker' "$ROOT/Shared/PhysicalWalkDisplacement.swift" \
   || fail "heading chips must stay collapsed after the walk direction is chosen"
 grep -q 'applyNativeUserLocationVisibility' "$ROOT/App/WalkHeadingHud.swift" \
-  || fail "walk heading must sit on the selected coordinate instead of a second location mark"
+  || fail "walk heading must hide the native user-location dot while the spoofed puck is shown"
+grep -q 'walkPuckCoordinate' "$ROOT/App/MapViewRepresentable.swift" \
+  || fail "walk heading puck must follow the active spoofed coordinate, not the map-center pin"
+grep -q 'walkPuckMapCoordinate' "$ROOT/App/MapHomeView+PhysicalWalk.swift" \
+  || fail "home must convert the written WGS-84 coordinate onto the map for the walk puck"
+grep -q 'enum WalkPuckMapPlacement' "$ROOT/Shared/PhysicalWalkDisplacement.swift" \
+  || fail "walk puck placement must stay on the written spoof coordinate"
+grep -q 'func startWalkPuckTracking' "$ROOT/App/WalkHeadingHud.swift" \
+  || fail "walk puck must keep tracking the spoofed coordinate while the map moves"
 grep -q 'static let puckDiameter: CGFloat = 16' "$ROOT/App/WalkHeadingHud.swift" \
-  || fail "walk heading must draw a blue-dot puck on the selected coordinate"
+  || fail "walk heading must draw a blue-dot puck on the active virtual coordinate"
 grep -q 'static func fanPath' "$ROOT/App/WalkHeadingHud.swift" \
-  || fail "walk heading must attach a heading wedge to the selected-coordinate puck"
+  || fail "walk heading must attach a heading wedge to the active virtual coordinate"
+if grep -A6 'if visible {' "$ROOT/App/WalkHeadingHud.swift" | grep -q 'centerPin'; then
+  fail "walk heading must not hide the map-center selection pin"
+fi
 if grep -q 'location.north.fill' "$ROOT/App/WalkHeadingHud.swift"; then
   fail "walk heading must not use a floating location.north.fill arrow"
 fi

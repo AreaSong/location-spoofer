@@ -21,6 +21,7 @@ struct MapViewRepresentable: UIViewRepresentable {
     var routePins: [RouteMapPin] = []
     var playbackClock: RoutePlaybackClock?
     var walkHeadingDegrees: Double? = nil
+    var walkPuckCoordinate: CLLocationCoordinate2D? = nil
     var showsWalkHeading: Bool = false
 
     func makeCoordinator() -> Coordinator { Coordinator(parent: self) }
@@ -153,6 +154,8 @@ struct MapViewRepresentable: UIViewRepresentable {
         weak var zoomLabel: UILabel?
         weak var centerPin: UIImageView?
         weak var walkHeadingHud: WalkHeadingHud?
+        var walkPuckDisplayLink: CADisplayLink?
+        var walkPuckDisplayLinkProxy: WalkPuckDisplayLinkProxy?
         private let pinSize: CGFloat = 38
         // 蓝点实际大小从 MKUserLocationView 取，默认 20pt
         private var userDotDiameter: CGFloat = 20
@@ -166,6 +169,8 @@ struct MapViewRepresentable: UIViewRepresentable {
         private var pinAnnotations: [RoutePinAnnotation] = []
 
         deinit {
+            walkPuckDisplayLink?.invalidate()
+            walkPuckDisplayLinkProxy = nil
             keyboardObserverTokens.forEach(NotificationCenter.default.removeObserver)
         }
 

@@ -13,6 +13,17 @@ extension MapHomeView {
         )
     }
 
+    /// 当前已写入的虚拟坐标，转成地图标准后给蓝点扇形用。红钉仍表示地图中心选点。
+    var walkPuckMapCoordinate: CLLocationCoordinate2D? {
+        WalkPuckMapPlacement.coordinate(
+            walkEnabled: physicalWalkStore.isEnabled,
+            spoofActive: spoofState == .active,
+            writtenLatitude: session.writtenLatitude,
+            writtenLongitude: session.writtenLongitude,
+            mapSystem: displayedMapCoordinateSystem
+        )
+    }
+
     func bindPhysicalWalk() {
         physicalWalk.ignoresWriteGate = runtimeMode.mode == .developerTunnel
         physicalWalk.applyCoordinate = { pair in
