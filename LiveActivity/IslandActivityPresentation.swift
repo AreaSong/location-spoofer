@@ -116,6 +116,7 @@ enum IslandAccessibility {
         case "resume": return "继续路线行走"
         case "stopRoute": return "停止路线，不关闭当前虚拟定位"
         case "stopSpoof": return "结束当前虚拟定位"
+        case "stopWalk": return "停止真实走动，不关闭当前虚拟定位"
         case "switchHere": return "把虚拟定位切换到当前选点"
         case "cycleSpeed": return "切换到下一档行走速度"
         case "retry": return "再试一次刚才的操作"

@@ -255,6 +255,7 @@ struct MapHomeView: View {
                     scheduleGeocode(pair: pair, revision: revision)
                 },
                 onRoutePinTap: handleRoutePinTap,
+                onFavoritePinTap: handleFavoritePinTap,
                 onUserZoomChanged: { distance in
                     ViewportStore.save(distance)
                     LastCoordinateStore.updateZoom(distance)
@@ -263,6 +264,11 @@ struct MapHomeView: View {
                 onZoomOut: { mapState.zoom(by: 2) },
                 routeCoordinates: route.overlayCoordinates,
                 routePins: route.overlayPins,
+                favoritePins: FavoriteMapPin.pins(
+                    from: favorites.displayedFavorites,
+                    selectedID: favorites.selectedFavoriteID,
+                    mapSystem: displayedMapCoordinateSystem
+                ),
                 playbackClock: route.clock,
                 walkHeadingDegrees: physicalWalk.activeHeadingDegrees,
                 walkPuckCoordinate: walkPuckMapCoordinate,
@@ -554,6 +560,10 @@ struct MapHomeView: View {
         }
         .onChange(of: physicalWalkStore.isEnabled) { _ in
             syncPhysicalWalk()
+            syncRouteActivity()
+        }
+        .onChange(of: physicalWalkIslandSignature) { _ in
+            syncRouteActivity()
         }
         .onChange(of: route.phase) { phase in
             handlePhysicalWalkRoutePhase(phase)

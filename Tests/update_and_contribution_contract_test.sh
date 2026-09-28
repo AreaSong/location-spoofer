@@ -22,7 +22,7 @@ for extra in "$ROOT"/App/SettingsView+*.swift; do
 done
 BUG_REPORT="$ROOT/App/BugReportView.swift"
 GITHUB_SUBMISSION="$ROOT/Shared/GitHubSubmission.swift"
-DISCUSSION_FORM="$ROOT/.github/DISCUSSION_TEMPLATE/第三方配置分享.yml"
+DISCUSSION_FORM="$ROOT/.github/DISCUSSION_TEMPLATE/show-and-tell.yml"
 ISSUE_FORM="$ROOT/.github/ISSUE_TEMPLATE/bug-report.yml"
 ISSUE_CONFIG="$ROOT/.github/ISSUE_TEMPLATE/config.yml"
 
@@ -38,7 +38,7 @@ import sys
 with open(sys.argv[1], encoding="utf-8") as handle:
     config = json.load(handle)
 
-assert config["latestVersion"] == "1.0.8"
+assert config["latestVersion"] == "1.0.9"
 assert config["minimumSupportedVersion"] == "1.0.0"
 assert "shadowrocket" not in config["communityPromptClients"]
 assert set(config["communityPromptClients"]) == {
@@ -85,7 +85,7 @@ grep -q 'Button("不再提示", role: .cancel)' "$MAP" \
   || fail "the third community prompt must allow permanent suppression"
 grep -q '匿名收录，不在 README 展示投稿账号' "$GITHUB_SUBMISSION" \
   || fail "the contribution template must offer anonymous README attribution"
-grep -Fq 'https://github.com/AreaSong/location-spoofer/discussions/new?category=%E7%AC%AC%E4%B8%89%E6%96%B9%E9%85%8D%E7%BD%AE%E5%88%86%E4%BA%AB' "$GITHUB_SUBMISSION" \
+grep -Fq 'https://github.com/AreaSong/location-spoofer/discussions/new?category=show-and-tell' "$GITHUB_SUBMISSION" \
   || fail "community submission must use one fixed Discussions address"
 grep -q 'UIPasteboard.general.string = GitHubSubmission.communityContributionTemplate' "$MAP" \
   || fail "the explicit copy action must copy the contribution template"

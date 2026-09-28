@@ -14,11 +14,13 @@ struct MapViewRepresentable: UIViewRepresentable {
     let onViewportChanged: (CLLocationDistance) -> Void
     let onMapTap: (CLLocationCoordinate2D) -> Void
     var onRoutePinTap: ((RouteMapPin) -> Void)?
+    var onFavoritePinTap: ((FavoriteMapPin) -> Void)?
     let onUserZoomChanged: ((CLLocationDistance) -> Void)?
     var onZoomIn: (() -> Void)?
     var onZoomOut: (() -> Void)?
     var routeCoordinates: [CLLocationCoordinate2D] = []
     var routePins: [RouteMapPin] = []
+    var favoritePins: [FavoriteMapPin] = []
     var playbackClock: RoutePlaybackClock?
     var walkHeadingDegrees: Double? = nil
     var walkPuckCoordinate: CLLocationCoordinate2D? = nil
@@ -133,6 +135,7 @@ struct MapViewRepresentable: UIViewRepresentable {
         context.coordinator.consume(cameraCommand, on: map)
         context.coordinator.updateRouteOverlay(routeCoordinates, on: map)
         context.coordinator.updateRoutePins(routePins, on: map)
+        context.coordinator.updateFavoritePins(favoritePins, on: map)
         if let playbackClock {
             context.coordinator.bindPlaybackClock(playbackClock, on: map)
         }
@@ -164,10 +167,12 @@ struct MapViewRepresentable: UIViewRepresentable {
         private var lastForwardedRealtimeTimestamp: Date?
         private var lastRouteCoordinates: [CLLocationCoordinate2D] = []
         private var lastRoutePins: [RouteMapPin] = []
+        private var lastFavoritePins: [FavoriteMapPin] = []
         private var progressAnnotation: RouteProgressAnnotation?
         private var boundPlaybackClock: RoutePlaybackClock?
         private var markerCancellable: AnyCancellable?
         private var pinAnnotations: [RoutePinAnnotation] = []
+        private var favoriteAnnotations: [FavoritePinAnnotation] = []
 
         deinit {
             walkPuckDisplayLink?.invalidate()
@@ -243,6 +248,22 @@ struct MapViewRepresentable: UIViewRepresentable {
             return view
         }
 
+        private func favoritePinView(for pin: FavoritePinAnnotation, on map: MKMapView) -> MKAnnotationView {
+            let identifier = pin.pin.isSelected ? "favorite-pin-selected" : "favorite-pin"
+            let view = map.dequeueReusableAnnotationView(withIdentifier: identifier)
+                ?? MKMarkerAnnotationView(annotation: pin, reuseIdentifier: identifier)
+            view.annotation = pin
+            view.canShowCallout = false
+            view.displayPriority = pin.pin.isSelected ? .required : .defaultLow
+            view.accessibilityLabel = pin.pin.name
+            if let marker = view as? MKMarkerAnnotationView {
+                marker.markerTintColor = pin.pin.isSelected ? .systemPink : .systemYellow
+                marker.glyphImage = UIImage(systemName: "star.fill")
+                marker.titleVisibility = .hidden
+            }
+            return view
+        }
+
         func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
             var view = touch.view
             while let current = view {
@@ -254,6 +275,10 @@ struct MapViewRepresentable: UIViewRepresentable {
 
         func mapView(_ mapView: MKMapView, didSelect view: MKAnnotationView) {
             mapView.deselectAnnotation(view.annotation, animated: false)
+            if let favorite = view.annotation as? FavoritePinAnnotation {
+                parent.onFavoritePinTap?(favorite.pin)
+                return
+            }
             guard let pin = view.annotation as? RoutePinAnnotation else { return }
             parent.onRoutePinTap?(RouteMapPin(coordinate: pin.coordinate, role: pin.role))
         }
@@ -288,6 +313,18 @@ struct MapViewRepresentable: UIViewRepresentable {
             pinAnnotations = pins.map { RoutePinAnnotation(pin: $0) }
             if !pinAnnotations.isEmpty {
                 map.addAnnotations(pinAnnotations)
+            }
+        }
+
+        func updateFavoritePins(_ pins: [FavoriteMapPin], on map: MKMapView) {
+            if pins == lastFavoritePins { return }
+            lastFavoritePins = pins
+            if !favoriteAnnotations.isEmpty {
+                map.removeAnnotations(favoriteAnnotations)
+            }
+            favoriteAnnotations = pins.map(FavoritePinAnnotation.init)
+            if !favoriteAnnotations.isEmpty {
+                map.addAnnotations(favoriteAnnotations)
             }
         }
 
@@ -331,6 +368,9 @@ struct MapViewRepresentable: UIViewRepresentable {
             if annotation is MKUserLocation { return nil }
             if let pin = annotation as? RoutePinAnnotation {
                 return routePinView(for: pin, on: mapView)
+            }
+            if let favorite = annotation as? FavoritePinAnnotation {
+                return favoritePinView(for: favorite, on: mapView)
             }
             guard annotation is RouteProgressAnnotation else { return nil }
             let identifier = "route-progress"

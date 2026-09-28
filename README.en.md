@@ -16,7 +16,7 @@ responses in a controlled test environment.
 [![iOS 15+](https://img.shields.io/badge/iOS-15%2B-111111?logo=apple)](project.yml)
 [![Swift 5.9](https://img.shields.io/badge/Swift-5.9-F05138)](project.yml)
 [![Go 1.23+](https://img.shields.io/badge/Go-1.23%2B-00ADD8?logo=go)](Core/go.mod)
-[![Version](https://img.shields.io/badge/version-v1.0.8-2563EB)](docs/CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-v1.0.9-2563EB)](docs/CHANGELOG.md)
 
 [Features](#feature-overview) ·
 [How It Works](#how-it-works) ·
@@ -64,7 +64,7 @@ collection services.
   - Keeps the latest 10 discrete selections (tap, search, favorite, or realtime fix). Panning the map updates the current
     center only and does not write history;
   - Favorites support a searchable list, sort by time or name, and clipboard/file backup. Matching WGS-84 coordinates
-    update the name; new places are appended.
+    update the name; new places are appended. Saved places also appear as star pins on the map and can be selected there.
 
 - **Location-service response simulation**
   - Processes only the Apple location-service requests defined by the project;
@@ -84,8 +84,9 @@ collection services.
     the proxy with an 8 m / 5 s write gate; Developer Tunnel Mode pushes every second directly into system location.
 
 - **Live Activity / Dynamic Island**
-  - Spot spoofing and route walking show status on the Dynamic Island and Lock Screen. The island can switch to a
-    favorite or the current pin, and cycle the current travel-mode speed during route playback.
+  - Spot spoofing, route walking, and physical walking show status on the Dynamic Island and Lock Screen. The island can
+    switch to a favorite or the current pin, cycle the current travel-mode speed during route playback, and stop
+    physical walking while keeping the current virtual point.
 
 - **Three runtime modes**
   - App Mode: runs the Go proxy on-device and covers only the current Wi-Fi network. After a test location is enabled,
@@ -497,9 +498,9 @@ public issues.
 Contributions are welcome for:
 
 - [Bug reports](https://github.com/AreaSong/location-spoofer/issues/new?template=bug-report.yml);
-- [Feature requests](https://github.com/AreaSong/location-spoofer/discussions/categories/%E5%8A%9F%E8%83%BD%E5%BB%BA%E8%AE%AE);
-- [Usage help and compatibility results](https://github.com/AreaSong/location-spoofer/discussions/categories/%E4%BD%BF%E7%94%A8%E5%B8%AE%E5%8A%A9);
-- [Third-party client configurations and sanitized screenshots](https://github.com/AreaSong/location-spoofer/discussions/categories/%E7%AC%AC%E4%B8%89%E6%96%B9%E9%85%8D%E7%BD%AE%E5%88%86%E4%BA%AB);
+- [Feature requests](https://github.com/AreaSong/location-spoofer/discussions/categories/ideas);
+- [Usage help and compatibility results](https://github.com/AreaSong/location-spoofer/discussions/categories/q-a);
+- [Third-party client configurations and sanitized screenshots](https://github.com/AreaSong/location-spoofer/discussions/categories/show-and-tell);
 - Performance improvements;
 - Documentation improvements;
 - Additional tests.

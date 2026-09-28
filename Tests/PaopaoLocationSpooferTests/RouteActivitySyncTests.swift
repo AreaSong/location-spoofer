@@ -1230,6 +1230,7 @@ final class RouteActivitySyncTests: XCTestCase {
             "当前选点，待切换，WGS-84 · 精度 25 米"
         )
         XCTAssertEqual(IslandAccessibility.buttonHint(action: "stopSpoof"), "结束当前虚拟定位")
+        XCTAssertEqual(IslandAccessibility.buttonHint(action: "stopWalk"), "停止真实走动，不关闭当前虚拟定位")
         XCTAssertEqual(IslandAccessibility.buttonHint(action: "stopRoute"), "停止路线，不关闭当前虚拟定位")
         XCTAssertEqual(IslandAccessibility.buttonHint(action: "switchHere"), "把虚拟定位切换到当前选点")
         XCTAssertEqual(IslandAccessibility.buttonHint(action: "cycleSpeed"), "切换到下一档行走速度")

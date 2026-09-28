@@ -146,7 +146,7 @@ enum RouteActivityCommandStore {
     static var now: () -> Date = Date.init
 
     static let allowedActions: Set<String> = [
-        "switchHere", "stopSpoof", "retry", "openApp", "pause", "resume", "stopRoute", "play", "begin", "cycleSpeed"
+        "switchHere", "stopSpoof", "stopWalk", "retry", "openApp", "pause", "resume", "stopRoute", "play", "begin", "cycleSpeed"
     ]
 
     static func allows(_ action: String) -> Bool {

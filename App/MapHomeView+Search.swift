@@ -441,6 +441,11 @@ extension MapHomeView {
         searchResults.removeAll { $0.id == result.id }
     }
 
+    func handleFavoritePinTap(_ pin: FavoriteMapPin) {
+        guard let favorite = favorites.favorites.first(where: { $0.id == pin.id }) else { return }
+        select(favorite)
+    }
+
     func select(_ favorite: FavoriteLocation) {
         geocodeDebounceTask?.cancel()
         reverseGeocodeTask?.cancel()

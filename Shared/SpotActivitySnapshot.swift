@@ -29,7 +29,9 @@ struct SpotActivitySnapshot: Equatable {
 }
 
 enum SpotActivitySync {
-    static let spotActions: Set<String> = ["switchHere", "stopSpoof", "retry", "openApp", "switchFavorite"]
+    static let spotActions: Set<String> = [
+        "switchHere", "stopSpoof", "stopWalk", "retry", "openApp", "switchFavorite"
+    ]
     static let fallbackPlaceName = "当前选点"
     static let locatingStaleInterval: TimeInterval = 120
     static let busyStaleInterval: TimeInterval = 45
@@ -68,7 +70,10 @@ enum SpotActivitySync {
         actionFailed: Bool = false,
         errorText: String = "",
         retryCommand: String = "",
-        shortcuts: [(action: String, title: String)] = []
+        shortcuts: [(action: String, title: String)] = [],
+        isPhysicalWalk: Bool = false,
+        walkMovedMeters: Double = 0,
+        walkHeadingDegrees: Double? = nil
     ) -> SpotActivitySnapshot? {
         let placeName = islandPlaceName(placeName)
         let caption = standardCaption(coordinateStandard, accuracyMeters: accuracyMeters)
@@ -133,22 +138,40 @@ enum SpotActivitySync {
             return spot(
                 .needsSwitch,
                 placeName: placeName,
-                statusText: "待切换",
-                symbolName: "arrow.triangle.swap",
+                statusText: isPhysicalWalk ? "真实走动" : "待切换",
+                symbolName: isPhysicalWalk ? "figure.walk" : "arrow.triangle.swap",
                 isWarning: false,
-                caption: caption,
-                buttons: liveButtons(switchHere: true, shortcuts: shortcuts)
+                caption: walkOrStandardCaption(
+                    isPhysicalWalk: isPhysicalWalk,
+                    movedMeters: walkMovedMeters,
+                    headingDegrees: walkHeadingDegrees,
+                    standard: caption
+                ),
+                buttons: liveButtons(
+                    switchHere: true,
+                    shortcuts: shortcuts,
+                    isPhysicalWalk: isPhysicalWalk
+                )
             )
         }
         if isActive {
             return spot(
                 .locating,
                 placeName: placeName,
-                statusText: "定位中",
-                symbolName: "location.fill",
+                statusText: isPhysicalWalk ? "真实走动" : "定位中",
+                symbolName: isPhysicalWalk ? "figure.walk" : "location.fill",
                 isWarning: false,
-                caption: caption,
-                buttons: liveButtons(switchHere: false, shortcuts: shortcuts)
+                caption: walkOrStandardCaption(
+                    isPhysicalWalk: isPhysicalWalk,
+                    movedMeters: walkMovedMeters,
+                    headingDegrees: walkHeadingDegrees,
+                    standard: caption
+                ),
+                buttons: liveButtons(
+                    switchHere: false,
+                    shortcuts: shortcuts,
+                    isPhysicalWalk: isPhysicalWalk
+                )
             )
         }
         if failed {
@@ -174,15 +197,33 @@ enum SpotActivitySync {
 
     static func liveButtons(
         switchHere: Bool,
-        shortcuts: [(action: String, title: String)]
+        shortcuts: [(action: String, title: String)],
+        isPhysicalWalk: Bool = false
     ) -> IslandButtonTriple {
         var items: [(action: String, title: String)] = []
         if switchHere {
             items.append(("switchHere", "切换到此处"))
         }
-        items.append(contentsOf: shortcuts.prefix(switchHere ? 1 : 2))
+        if isPhysicalWalk {
+            items.append(("stopWalk", "停止走动"))
+        } else {
+            items.append(contentsOf: shortcuts.prefix(switchHere ? 1 : 2))
+        }
         items.append(("stopSpoof", "停止虚拟定位"))
         return IslandButtonTriple(items: Array(items.prefix(3)))
+    }
+
+    private static func walkOrStandardCaption(
+        isPhysicalWalk: Bool,
+        movedMeters: Double,
+        headingDegrees: Double?,
+        standard: String
+    ) -> String {
+        guard isPhysicalWalk else { return standard }
+        return PhysicalWalkStatusCopy.islandCaption(
+            movedMeters: movedMeters,
+            headingDegrees: headingDegrees
+        )
     }
 
     /// 定点快照只能带定点动作。路线的暂停、继续、停止路线会被清掉。

@@ -66,6 +66,42 @@ final class IslandFavoriteAndSpeedTests: XCTestCase {
         XCTAssertNotEqual(switching.secondaryAction, favB)
     }
 
+    func testPhysicalWalkButtonsReplaceFavoritesAndShowMeters() {
+        let favA = IslandFavoriteCommand.action(for: UUID())
+        let buttons = SpotActivitySync.liveButtons(
+            switchHere: false,
+            shortcuts: [(favA, "甲")],
+            isPhysicalWalk: true
+        )
+        XCTAssertEqual(buttons.primaryAction, "stopWalk")
+        XCTAssertEqual(buttons.secondaryAction, "stopSpoof")
+        XCTAssertNotEqual(buttons.primaryAction, favA)
+
+        let snapshot = SpotActivitySync.snapshot(
+            isVerifying: false,
+            isActive: true,
+            needsSwitch: false,
+            failed: false,
+            placeName: "深圳湾",
+            coordinateStandard: "GCJ-02",
+            accuracyMeters: 15,
+            shortcuts: [(favA, "甲")],
+            isPhysicalWalk: true,
+            walkMovedMeters: 128,
+            walkHeadingDegrees: 90
+        )
+        XCTAssertEqual(snapshot?.statusText, "真实走动")
+        XCTAssertEqual(snapshot?.symbolName, "figure.walk")
+        XCTAssertEqual(snapshot?.caption, "已走 128 米 · 东")
+        XCTAssertEqual(snapshot?.primaryAction, "stopWalk")
+        XCTAssertEqual(SpotActivitySync.normalized(snapshot!).primaryAction, "stopWalk")
+        XCTAssertEqual(IslandCommandRouter.decide("stopWalk", context: islandContext()), .alreadySatisfied)
+        XCTAssertEqual(
+            IslandCommandRouter.decide("stopWalk", context: islandContext(physicalWalkTracking: true)),
+            .run
+        )
+    }
+
     func testSpotSnapshotLocatingKeepsFavoriteShortcuts() {
         let favA = IslandFavoriteCommand.action(for: UUID())
         let snapshot = SpotActivitySync.snapshot(
@@ -237,7 +273,8 @@ final class IslandFavoriteAndSpeedTests: XCTestCase {
         routePhase: RoutePhase = .inactive,
         interruption: RouteInterruption = .playing,
         spoofState: SpoofState = .idle,
-        retryCommand: String = ""
+        retryCommand: String = "",
+        physicalWalkTracking: Bool = false
     ) -> IslandCommandContext {
         IslandCommandContext(
             routePhase: routePhase,
@@ -248,7 +285,8 @@ final class IslandFavoriteAndSpeedTests: XCTestCase {
             needsSwitch: false,
             spotStopPending: false,
             spotSwitchPending: false,
-            retryCommand: retryCommand
+            retryCommand: retryCommand,
+            physicalWalkTracking: physicalWalkTracking
         )
     }
 }

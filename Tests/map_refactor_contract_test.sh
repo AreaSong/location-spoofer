@@ -256,8 +256,14 @@ grep -q 'bottomCardExpandedHeightFraction' "$ROOT/App/AppStyle.swift" \
   || fail "expanded bottom card must cap height against the screen"
 grep -q 'questionmark.circle' "$MAP_HOME" || fail "spot help must live in the expanded header instead of a chip row"
 test -f "$ROOT/App/FavoriteListView.swift" || fail "favorites must have a searchable list sheet"
+test -f "$ROOT/Shared/FavoriteMapPin.swift" || fail "favorites must project map pins from the shared store"
+grep -q 'FavoritePinAnnotation' "$MAP_BRIDGE" || fail "the map must render favorite pins"
+grep -q 'onFavoritePinTap' "$MAP_HOME" || fail "tapping a favorite pin must reach the map home"
+grep -q 'stopWalk' "$ROOT/Shared/SpotActivitySnapshot.swift" \
+  || fail "physical walking must expose a Live Activity stop action"
 grep -q 'case .favorites' "$MAP_HOME" || fail "map home must present the favorite list sheet"
-test -f "$ROOT/Shared/MapLinkParser.swift" || fail "search must parse Apple, Google, and Amap links"
+test -f "$ROOT/docs/onboarding-screenshots/README.md" \
+  || fail "community tutorial originals must have a documented screenshot directory"
 grep -q 'uri.amap.com' "$ROOT/Shared/MapLinkParser.swift" || fail "Amap marker links must be recognized"
 grep -q 'map.baidu.com' "$ROOT/Shared/MapLinkParser.swift" || fail "Baidu map links must be recognized"
 grep -q 'map.qq.com' "$ROOT/Shared/MapLinkParser.swift" || fail "Tencent map links must be recognized"

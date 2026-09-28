@@ -57,6 +57,8 @@ extension MapHomeView {
         switch action {
         case "stopSpoof", "switchHere", "begin":
             return route.phase != .playing && route.phase != .paused && !route.waitingForActivation
+        case "stopWalk":
+            return true
         default:
             return true
         }
@@ -76,7 +78,8 @@ extension MapHomeView {
             spotSwitchPending: spotSwitchPending,
             retryCommand: retryCommand,
             locationBlocked: block != nil,
-            locationBlockMessage: block?.message ?? ""
+            locationBlockMessage: block?.message ?? "",
+            physicalWalkTracking: physicalWalk.isTracking
         )
     }
 
@@ -109,6 +112,10 @@ extension MapHomeView {
             syncRouteActivity()
         case "stopSpoof":
             stopSpoofing()
+        case "stopWalk":
+            physicalWalkStore.setEnabled(false)
+            physicalWalk.stop()
+            syncRouteActivity()
         case "cycleSpeed":
             route.setSpeedKilometersPerHour(
                 RouteSpeedPreset.nextKilometersPerHour(
@@ -156,6 +163,8 @@ extension MapHomeView {
             guard updated != routeCommand else { return }
             routeCommand = updated
         case "stopSpoof", "switchHere", "begin":
+            noteSpotActionFailure(message: message, command: action)
+        case "stopWalk":
             noteSpotActionFailure(message: message, command: action)
         default:
             if IslandFavoriteCommand.favoriteID(from: action) != nil {
@@ -251,7 +260,10 @@ extension MapHomeView {
             actionFailed: spotActionFailed,
             errorText: spotFailureMessage,
             retryCommand: spotRetryCommand,
-            shortcuts: shortcutItems
+            shortcuts: shortcutItems,
+            isPhysicalWalk: physicalWalk.isTracking,
+            walkMovedMeters: physicalWalk.movedMeters,
+            walkHeadingDegrees: physicalWalk.activeHeadingDegrees
         ) : nil
         Task {
             let keepForRecovery = route.phase == .inactive && route.sessionStore.load() != nil

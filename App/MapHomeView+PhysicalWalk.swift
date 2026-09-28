@@ -13,6 +13,15 @@ extension MapHomeView {
         )
     }
 
+    var physicalWalkIslandSignature: String {
+        guard physicalWalk.isTracking else { return "off" }
+        let meters = Int(physicalWalk.movedMeters.rounded())
+        let heading = physicalWalk.activeHeadingDegrees.map {
+            PhysicalWalkHeadingLock.compassName($0)
+        } ?? ""
+        return "\(meters)|\(heading)"
+    }
+
     /// 当前定位蓝点：定点后用已写入的虚拟坐标；未定点时用实时定位，保证进软件就有扇形。
     var walkPuckMapCoordinate: CLLocationCoordinate2D? {
         WalkPuckMapPlacement.coordinate(

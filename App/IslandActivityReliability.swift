@@ -19,6 +19,7 @@ struct IslandCommandContext: Equatable {
     var retryCommand: String
     var locationBlocked = false
     var locationBlockMessage = ""
+    var physicalWalkTracking = false
 }
 
 enum IslandCommandRouter {
@@ -59,6 +60,8 @@ enum IslandCommandRouter {
             return beginDecision(context)
         case "cycleSpeed":
             return cycleSpeedDecision(context)
+        case "stopWalk":
+            return stopWalkDecision(context)
         case "openApp":
             return .alreadySatisfied
         case "retry":
@@ -138,6 +141,11 @@ enum IslandCommandRouter {
         if context.routePhase == .playing { return .run }
         if context.routePhase == .paused, context.interruption == .userPaused { return .run }
         return .unavailable("现在不能调整速度。")
+    }
+
+    private static func stopWalkDecision(_ context: IslandCommandContext) -> IslandCommandDecision {
+        if context.physicalWalkTracking { return .run }
+        return .alreadySatisfied
     }
 
     private static func unavailableBecauseLocationBlocked(

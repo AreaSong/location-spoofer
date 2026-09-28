@@ -14,7 +14,7 @@
 [![iOS 15+](https://img.shields.io/badge/iOS-15%2B-111111?logo=apple)](project.yml)
 [![Swift 5.9](https://img.shields.io/badge/Swift-5.9-F05138)](project.yml)
 [![Go 1.23+](https://img.shields.io/badge/Go-1.23%2B-00ADD8?logo=go)](Core/go.mod)
-[![Version](https://img.shields.io/badge/version-v1.0.8-2563EB)](docs/CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-v1.0.9-2563EB)](docs/CHANGELOG.md)
 
 [功能概览](#功能概览) ·
 [工作原理](#工作原理) ·
@@ -57,7 +57,7 @@ Location Spoofer 是一个面向 iOS 定位服务行为研究和开发测试的�
     - 支持搜索地点、粘贴地图链接、手动输入经纬度，以及点击选点、拖动地图中心和缩放；
     - 搜索栏下方显示可收起的信息条，左边坐标、右边朝向；展开后可切换国内坐标和国际坐标并分别复制，也可改走动方向；
     - 记录最近 10 个离散选点（点击、搜索、收藏、实时定位）。拖动地图只更新当前中心，不写入历史；
-    - 收藏支持搜索列表、按时间或名称排序，以及剪贴板/文件备份导入导出。相同国际坐标会更新名称，新地点会追加。
+    - 收藏支持搜索列表、按时间或名称排序，以及剪贴板/文件备份导入导出。相同国际坐标会更新名称，新地点会追加。地图上用星标画出收藏点，点选即可回显。
 
 - **定位服务响应模拟**
     - 通过代理层处理指定的 Apple 定位服务请求；
@@ -74,7 +74,7 @@ Location Spoofer 是一个面向 iOS 定位服务行为研究和开发测试的�
     - 播放时坐标按当前运行模式写入：APP 模式和第三方代理模式经代理写入并沿用 8 米 / 5 秒的写入节流，开发者隧道模式每秒直接推进系统定位。
 
 - **灵动岛 / 锁屏**
-    - 定点定位和路线行走可在灵动岛与锁屏查看状态；定点可从岛上切换到收藏点或当前选点，路线播放中可循环调速。
+    - 定点定位、路线行走和真实走动可在灵动岛与锁屏查看状态；定点可从岛上切换到收藏点或当前选点，路线播放中可循环调速，真实走动中可看累计位移并从岛上停止走动。
 
 - **三种运行模式**
     - APP 模式：在设备内运行 Go 代理，仅支持当前 Wi-Fi 网络；启用测试位置后会维持后台保活，避免本机代理在约两分钟后停止处理请求；
@@ -458,9 +458,9 @@ dist/PaopaoLocationSpoofer-unsigned.ipa
 欢迎提交：
 
 - [Bug Report](https://github.com/AreaSong/location-spoofer/issues/new?template=bug-report.yml)；
-- [功能建议](https://github.com/AreaSong/location-spoofer/discussions/categories/%E5%8A%9F%E8%83%BD%E5%BB%BA%E8%AE%AE)；
-- [使用帮助与兼容性测试](https://github.com/AreaSong/location-spoofer/discussions/categories/%E4%BD%BF%E7%94%A8%E5%B8%AE%E5%8A%A9)；
-- [第三方客户端配置和脱敏原始截图](https://github.com/AreaSong/location-spoofer/discussions/categories/%E7%AC%AC%E4%B8%89%E6%96%B9%E9%85%8D%E7%BD%AE%E5%88%86%E4%BA%AB)；
+- [功能建议](https://github.com/AreaSong/location-spoofer/discussions/categories/ideas)；
+- [使用帮助与兼容性测试](https://github.com/AreaSong/location-spoofer/discussions/categories/q-a)；
+- [第三方客户端配置和脱敏原始截图](https://github.com/AreaSong/location-spoofer/discussions/categories/show-and-tell)；
 - 性能改进；
 - 文档改进；
 - 测试补充。

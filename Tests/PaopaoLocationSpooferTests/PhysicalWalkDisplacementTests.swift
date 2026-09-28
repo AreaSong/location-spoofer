@@ -410,6 +410,17 @@ final class PhysicalWalkDisplacementTests: XCTestCase {
         XCTAssertEqual(instrument.liveDegrees(currentYawDegrees: 190), 0, accuracy: 0.01)
         XCTAssertEqual(instrument.liveDegrees(currentYawDegrees: 10), 180, accuracy: 0.01)
     }
+
+    func testIslandCaptionUsesWholeMetersAndCompassName() {
+        XCTAssertEqual(
+            PhysicalWalkStatusCopy.islandCaption(movedMeters: 0, headingDegrees: nil),
+            "走起来才会移动"
+        )
+        XCTAssertEqual(
+            PhysicalWalkStatusCopy.islandCaption(movedMeters: 12.4, headingDegrees: 90),
+            "已走 12 米 · 东"
+        )
+    }
 }
 
 private func XCTAssertEqual(

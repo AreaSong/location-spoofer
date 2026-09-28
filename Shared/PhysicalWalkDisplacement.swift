@@ -224,6 +224,13 @@ enum PhysicalWalkStatusCopy {
         return isTracking ? "走动中" : "已开"
     }
 
+    /// 灵动岛用整数米和罗盘方位，避免每一步都刷新系统活动。
+    static func islandCaption(movedMeters: Double, headingDegrees: Double?) -> String {
+        let meters = Int(movedMeters.rounded())
+        let movement = meters > 0 ? "已走 \(meters) 米" : "走起来才会移动"
+        return appendedHeading(movement, headingDegrees)
+    }
+
     private static func appendedHeading(_ prefix: String, _ headingDegrees: Double?) -> String {
         guard let headingDegrees else { return prefix }
         return "\(prefix) · \(PhysicalWalkHeadingLock.compassName(headingDegrees))"

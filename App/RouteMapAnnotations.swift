@@ -82,3 +82,13 @@ final class RoutePinAnnotation: NSObject, MKAnnotation {
         }
     }
 }
+
+final class FavoritePinAnnotation: NSObject, MKAnnotation {
+    let pin: FavoriteMapPin
+    var coordinate: CLLocationCoordinate2D { pin.coordinate }
+    var title: String? { pin.name }
+
+    init(pin: FavoriteMapPin) {
+        self.pin = pin
+    }
+}
