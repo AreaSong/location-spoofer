@@ -1,15 +1,19 @@
 import MapKit
 import UIKit
 
-/// 画在当前选点坐标上的定位箭头，样式接近系统蓝点带朝向，而不是第二套定位标。
+/// 画在当前选点坐标上：蓝点表示位置，扇形表示朝向。
 final class WalkHeadingHud: UIView {
-    static let puckSize: CGFloat = 28
+    static let puckDiameter: CGFloat = 16
+    static let fanRadius: CGFloat = 36
+    static let fanDegrees: CGFloat = 70
+    static var hudSize: CGFloat { fanRadius * 2 }
 
     var headingDegrees: Double = 0 {
-        didSet { applyArrowTransform() }
+        didSet { layoutFan() }
     }
 
-    private let arrow = UIImageView()
+    private let fanLayer = CAShapeLayer()
+    private let puckView = UIView()
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -19,16 +23,19 @@ final class WalkHeadingHud: UIView {
         backgroundColor = .clear
         clipsToBounds = false
 
-        let config = UIImage.SymbolConfiguration(pointSize: 22, weight: .bold)
-        arrow.image = UIImage(systemName: "location.north.fill", withConfiguration: config)?
-            .withTintColor(.systemBlue, renderingMode: .alwaysOriginal)
-        arrow.contentMode = .center
-        arrow.layer.shadowColor = UIColor.black.cgColor
-        arrow.layer.shadowOpacity = 0.28
-        arrow.layer.shadowRadius = 3
-        arrow.layer.shadowOffset = CGSize(width: 0, height: 1)
-        addSubview(arrow)
-        applyArrowTransform()
+        fanLayer.fillColor = UIColor.systemBlue.withAlphaComponent(0.32).cgColor
+        fanLayer.strokeColor = nil
+        layer.addSublayer(fanLayer)
+
+        puckView.backgroundColor = .systemBlue
+        puckView.layer.borderColor = UIColor.white.cgColor
+        puckView.layer.borderWidth = 2
+        puckView.layer.shadowColor = UIColor.black.cgColor
+        puckView.layer.shadowOpacity = 0.28
+        puckView.layer.shadowRadius = 2
+        puckView.layer.shadowOffset = CGSize(width: 0, height: 1)
+        addSubview(puckView)
+        layoutFan()
     }
 
     @available(*, unavailable)
@@ -38,20 +45,51 @@ final class WalkHeadingHud: UIView {
 
     override func layoutSubviews() {
         super.layoutSubviews()
-        arrow.frame = bounds
+        let puck = Self.puckDiameter
+        puckView.bounds = CGRect(x: 0, y: 0, width: puck, height: puck)
+        puckView.center = CGPoint(x: bounds.midX, y: bounds.midY)
+        puckView.layer.cornerRadius = puck / 2
+        fanLayer.frame = bounds
+        layoutFan()
     }
 
-    private func applyArrowTransform() {
-        arrow.transform = CGAffineTransform(rotationAngle: headingDegrees * .pi / 180)
+    private func layoutFan() {
+        fanLayer.path = Self.fanPath(
+            in: bounds,
+            headingDegrees: headingDegrees,
+            radius: Self.fanRadius,
+            spreadDegrees: Self.fanDegrees
+        )
         accessibilityValue = PhysicalWalkHeadingLock.compassName(headingDegrees)
+    }
+
+    static func fanPath(
+        in bounds: CGRect,
+        headingDegrees: Double,
+        radius: CGFloat,
+        spreadDegrees: CGFloat
+    ) -> CGPath {
+        let center = CGPoint(x: bounds.midX, y: bounds.midY)
+        let heading = CGFloat(headingDegrees)
+        // 0° 朝北（屏幕上方），顺时针增大，和罗盘一致。
+        let start = (heading - spreadDegrees / 2 - 90) * .pi / 180
+        let end = (heading + spreadDegrees / 2 - 90) * .pi / 180
+        let path = UIBezierPath()
+        path.move(to: center)
+        path.addLine(to: CGPoint(
+            x: center.x + cos(start) * radius,
+            y: center.y + sin(start) * radius
+        ))
+        path.addArc(withCenter: center, radius: radius, startAngle: start, endAngle: end, clockwise: true)
+        path.close()
+        return path.cgPath
     }
 }
 
 extension MapViewRepresentable.Coordinator {
     func installWalkHeadingHud(on map: MKMapView) {
-        let hud = WalkHeadingHud(
-            frame: CGRect(x: 0, y: 0, width: WalkHeadingHud.puckSize, height: WalkHeadingHud.puckSize)
-        )
+        let size = WalkHeadingHud.hudSize
+        let hud = WalkHeadingHud(frame: CGRect(x: 0, y: 0, width: size, height: size))
         hud.isHidden = true
         map.addSubview(hud)
         walkHeadingHud = hud

@@ -120,8 +120,13 @@ grep -q 'enum PhysicalWalkHeadingPicker' "$ROOT/Shared/PhysicalWalkDisplacement.
   || fail "heading chips must stay collapsed after the walk direction is chosen"
 grep -q 'applyNativeUserLocationVisibility' "$ROOT/App/WalkHeadingHud.swift" \
   || fail "walk heading must sit on the selected coordinate instead of a second location mark"
-grep -q 'static let puckSize: CGFloat = 28' "$ROOT/App/WalkHeadingHud.swift" \
-  || fail "walk heading must use a location-puck arrow on the selected coordinate"
+grep -q 'static let puckDiameter: CGFloat = 16' "$ROOT/App/WalkHeadingHud.swift" \
+  || fail "walk heading must draw a blue-dot puck on the selected coordinate"
+grep -q 'static func fanPath' "$ROOT/App/WalkHeadingHud.swift" \
+  || fail "walk heading must attach a heading wedge to the selected-coordinate puck"
+if grep -q 'location.north.fill' "$ROOT/App/WalkHeadingHud.swift"; then
+  fail "walk heading must not use a floating location.north.fill arrow"
+fi
 if grep -q 'compassSize' "$ROOT/App/WalkHeadingHud.swift"; then
   fail "walk heading must not draw a separate compass ring on the map"
 fi

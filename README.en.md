@@ -71,7 +71,7 @@ collection services.
   - App Mode and Third-party Proxy Mode can configure a random perturbation radius and reported accuracy so a test
     point is not always identical;
   - Motion simulation is available only in App Mode;
-  - Optional physical walking: toggle it on the home Spot card; the map stays north-up with a heading arrow on the selected coordinate, like a real location puck; lock N/E/S/W once at the start, then collapse the picker; after virtual location is active, steps move along that arrow; it is off by default and mutually exclusive with automatic route playback;
+  - Optional physical walking: toggle it on the home Spot card; the map stays north-up with a blue-dot location puck and heading wedge on the selected coordinate; lock N/E/S/W once at the start, then collapse the picker; after virtual location is active, steps move along that heading; it is off by default and mutually exclusive with automatic route playback;
   - Does not require changes to the target app.
 
 - **Route playback**

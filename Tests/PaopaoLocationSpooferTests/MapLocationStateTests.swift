@@ -307,6 +307,25 @@ final class MapLocationStateTests: XCTestCase {
         XCTAssertFalse(reloaded.favorites.contains(where: \.isLegacyCoordinateRecord))
         XCTAssertEqual(reloaded.favorites[1].coordinatePair.wgs84.latitude, reloaded.favorites[1].coordinatePair.gcj02.latitude, accuracy: 0.000_000_1)
     }
+
+    func testWalkHeadingFanPathIsNonEmptyAndChangesWithHeading() {
+        let bounds = CGRect(x: 0, y: 0, width: 72, height: 72)
+        let north = WalkHeadingHud.fanPath(
+            in: bounds,
+            headingDegrees: 0,
+            radius: 36,
+            spreadDegrees: 70
+        )
+        let east = WalkHeadingHud.fanPath(
+            in: bounds,
+            headingDegrees: 90,
+            radius: 36,
+            spreadDegrees: 70
+        )
+        XCTAssertFalse(north.boundingBoxOfPath.isNull)
+        XCTAssertGreaterThan(north.boundingBoxOfPath.width, 1)
+        XCTAssertNotEqual(north.boundingBoxOfPath, east.boundingBoxOfPath)
+    }
 }
 
 private struct CoordinateMigrationLegacyFavorite: Encodable {
