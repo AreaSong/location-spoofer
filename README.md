@@ -9,12 +9,12 @@
 项目通过本机代理或第三方代理客户端，对 Apple 定位服务的指定响应进行测试环境模拟，帮助开发者验证应用在
 不同地理位置和定位场景下的行为。
 
-> ⚠️ **iOS 27 beta 6 起，系统已禁止对 `gs-loc.apple.com` 进行 MITM 拦截。** 目前该版本及之后的 beta 版本暂时无法使用本项目，等待后续适配方案。
+> ⚠️ **iOS 27 beta 6 起，系统已禁止对 `gs-loc.apple.com` 进行 MITM 拦截。** APP 模式和第三方代理模式在这些版本上不可用。请改用开发者隧道模式（iOS 18+，需要 LocalDevVPN 和一次电脑配对）。
 
 [![iOS 15+](https://img.shields.io/badge/iOS-15%2B-111111?logo=apple)](project.yml)
 [![Swift 5.9](https://img.shields.io/badge/Swift-5.9-F05138)](project.yml)
 [![Go 1.23+](https://img.shields.io/badge/Go-1.23%2B-00ADD8?logo=go)](Core/go.mod)
-[![Version](https://img.shields.io/badge/version-v1.0.7-2563EB)](docs/CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-v1.0.8-2563EB)](docs/CHANGELOG.md)
 
 [功能概览](#功能概览) ·
 [工作原理](#工作原理) ·

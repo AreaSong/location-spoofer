@@ -15,8 +15,9 @@ final class LocationNetworkSpoofRefreshTests: XCTestCase {
             LocationNetworkSpoofRefresh.cacheRefreshMessage
         )
         XCTAssertTrue(LocationNetworkSpoofRefresh.cacheRefreshMessage.contains("定位服务"))
-        XCTAssertTrue(
-            LocationNetworkSpoofRefresh.setupWarning(iOSMajor: 27)?.contains("MITM") == true
-        )
+        let ios27 = LocationNetworkSpoofRefresh.setupWarning(iOSMajor: 27)
+        XCTAssertTrue(ios27?.contains("MITM") == true)
+        XCTAssertTrue(ios27?.contains("开发者隧道") == true)
+        XCTAssertFalse(ios27?.contains("等待后续适配") == true)
     }
 }

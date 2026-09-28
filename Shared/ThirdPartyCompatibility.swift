@@ -15,7 +15,7 @@ struct ThirdPartyCompatibility: Identifiable, Equatable {
 
     static let verifiedStatus = "已在真机验证"
     static let unverifiedStatus = "尚未真机验证"
-    static let ios27MITMNote = "iOS 27 beta 6 起，系统禁止对 gs-loc.apple.com 做 MITM，以上客户端都暂时不可用。"
+    static let ios27MITMNote = "iOS 27 beta 6 起，系统禁止对 gs-loc.apple.com 做 MITM，以上客户端都暂时不可用。请改用开发者隧道模式。"
 }
 
 enum ThirdPartyCompatibilityMatrix {

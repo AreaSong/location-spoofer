@@ -18,7 +18,7 @@ enum LocationNetworkSpoofRefresh {
         iOSMajor: Int = ProcessInfo.processInfo.operatingSystemVersion.majorVersion
     ) -> String? {
         if iOSMajor >= mitmBlockedMajorVersion {
-            return "iOS 27 beta 6 起，系统已禁止对 gs-loc.apple.com 进行 MITM 拦截。该版本及之后的 beta 版本暂时无法使用本项目，等待后续适配方案。"
+            return "iOS 27 beta 6 起，系统已禁止对 gs-loc.apple.com 进行 MITM 拦截。APP 模式和第三方代理模式在该版本及之后不可用。请改用开发者隧道模式。"
         }
         if iOSMajor >= memoryCacheMajorVersion {
             return cacheRefreshMessage
