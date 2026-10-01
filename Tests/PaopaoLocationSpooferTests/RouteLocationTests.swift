@@ -140,23 +140,26 @@ final class RouteLocationTests: XCTestCase {
         XCTAssertTrue(store.isSimulating)
         XCTAssertFalse(store.activity.simulationMayStillBeActive)
         XCTAssertEqual(store.readiness, .ready)
-        let reasserted = await store.reassertIfNeeded(latitude: 22.6, longitude: 114.0)
+        let reasserted = await store.reassertIfNeeded()
         XCTAssertNil(reasserted)
-        XCTAssertEqual(client.pushes.count, 1)
+        XCTAssertEqual(client.pushes.count, 2)
+        XCTAssertEqual(client.pushes.last?.latitude, 22.5)
+        XCTAssertEqual(client.abandons, 0)
     }
 
     @MainActor
-    func testReassertReconnectsOnlyAfterTheHandleIsGone() async throws {
-        let client = FakeIdeviceClient(results: [.rejected, nil])
+    func testReassertRecoversTheLastSuccessfulPointAfterTheHandleIsGone() async throws {
+        let client = FakeIdeviceClient(results: [nil, .rejected, nil])
         let store = try readyStore(client: client)
 
-        let failure = await store.set(latitude: 22.5, longitude: 113.9)
+        _ = await store.set(latitude: 22.5, longitude: 113.9)
+        let failure = await store.reassertIfNeeded()
         XCTAssertEqual(failure, .rejected)
         XCTAssertFalse(client.retainsSimulation)
 
-        let reasserted = await store.reassertIfNeeded(latitude: 22.5, longitude: 113.9)
+        let reasserted = await store.reassertIfNeeded()
         XCTAssertNil(reasserted)
-        XCTAssertEqual(client.pushes.count, 2)
+        XCTAssertEqual(client.pushes.count, 3)
         XCTAssertTrue(client.retainsSimulation)
         XCTAssertTrue(store.isSimulating)
     }
@@ -658,7 +661,7 @@ final class RouteLocationTests: XCTestCase {
     }
 }
 
-private final class FakeIdeviceClient: IdeviceLocationPushing, @unchecked Sendable {
+final class FakeIdeviceClient: IdeviceLocationPushing, @unchecked Sendable {
     private let lock = NSLock()
     private var clearResults: [RouteLocationPushFailure?]
     private var mutation: UInt64 = 0
@@ -669,6 +672,7 @@ private final class FakeIdeviceClient: IdeviceLocationPushing, @unchecked Sendab
     private(set) var invalidations = 0
     private(set) var abandons = 0
     var retainsSimulation = false
+    private(set) var deviceSimulationActive = false
     var beforeSet: (@Sendable () -> Void)?
     var afterSet: (@Sendable () -> Void)?
 
@@ -693,6 +697,12 @@ private final class FakeIdeviceClient: IdeviceLocationPushing, @unchecked Sendab
         return mutation
     }
 
+    func expireDeviceSimulation() {
+        lock.lock()
+        defer { lock.unlock() }
+        deviceSimulationActive = false
+    }
+
     func set(
         latitude: Double,
         longitude: Double,
@@ -708,10 +718,14 @@ private final class FakeIdeviceClient: IdeviceLocationPushing, @unchecked Sendab
         afterSet?()
         guard !results.isEmpty else {
             retainsSimulation = true
+            deviceSimulationActive = true
             return .finished(nil)
         }
         let failure = results.removeFirst()
-        if failure == nil { retainsSimulation = true }
+        if failure == nil {
+            retainsSimulation = true
+            deviceSimulationActive = true
+        }
         return .finished(failure)
     }
 
@@ -757,10 +771,14 @@ private final class FakeIdeviceClient: IdeviceLocationPushing, @unchecked Sendab
     private func finishClear() -> IdeviceCommandOutcome {
         guard !clearResults.isEmpty else {
             retainsSimulation = false
+            deviceSimulationActive = false
             return .finished(nil)
         }
         let failure = clearResults.removeFirst()
-        if failure == nil { retainsSimulation = false }
+        if failure == nil {
+            retainsSimulation = false
+            deviceSimulationActive = false
+        }
         return .finished(failure)
     }
 }

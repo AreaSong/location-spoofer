@@ -256,6 +256,9 @@ In this mode:
 - The pairing file lives in the app sandbox, is readable only after first unlock, and is excluded from iCloud and
   computer backups;
 - Both single points and route playback use this channel; playback pushes one sample per second;
+- While simulation is active, audio keeps the app running and a check every 10 seconds reasserts the last successfully
+  written point when needed. Recent route or physical-walk writes skip that extra push. Returning to the foreground
+  also attempts session recovery; stopping the simulation cancels automatic reassertion;
 - Leaving a route or finishing playback keeps the last simulated point as a single-point spoof; stopping the test
   location clears the simulation immediately, so the real location returns without toggling Location Services;
 - Random perturbation offsets a spot before it is pushed; accuracy cannot be written to the system location simulation. Route offset still applies;

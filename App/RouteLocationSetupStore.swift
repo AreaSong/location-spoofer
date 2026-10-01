@@ -2,6 +2,8 @@ import Foundation
 
 /// 隧道环境探测和重试节奏。真机用 LocalDevVPN，测试时可整体替换。
 struct RouteLocationEnvironment {
+    static let maintenanceIntervalNanoseconds: UInt64 = 10_000_000_000
+
     var isVPNInstalled: @MainActor () -> Bool
     var isTunnelConnected: @MainActor () -> Bool
     var deviceAddress: String
@@ -9,6 +11,11 @@ struct RouteLocationEnvironment {
     var tunnelRetryDelaysNanoseconds: [UInt64]
     /// 只有蜂窝、没有 Wi-Fi 时，系统通常拒绝开发者隧道握手。
     var isCellularWithoutWiFi: @MainActor () -> Bool
+    /// 单调时钟不受系统校时影响；等待可在测试里替换，不依赖真实后台调度。
+    var monotonicTime: @MainActor () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }
+    var waitForMaintenance: @Sendable () async throws -> Void = {
+        try await Task.sleep(nanoseconds: maintenanceIntervalNanoseconds)
+    }
 
     static let live = RouteLocationEnvironment(
         isVPNInstalled: { LocalDevVPN.isInstalled },
@@ -42,7 +49,11 @@ final class RouteLocationSetupStore: ObservableObject, DeveloperLocationPushing 
     private let environment: RouteLocationEnvironment
     /// 持有正在进行的设备调用，clear 或新的 set 可以取消它，避免脱离任务树的旧写入。
     private var deviceTask: Task<IdeviceCommandOutcome, Error>?
+    private var deviceTaskID: UUID?
     private var monitorTask: Task<Void, Never>?
+    private var maintenanceTask: Task<Void, Never>?
+    private var maintainedCoordinate: (latitude: Double, longitude: Double)?
+    private var lastMaintenanceAttemptAt: TimeInterval?
 
     init(
         pairingStore: RoutePairingStore = RoutePairingStore(),
@@ -53,6 +64,12 @@ final class RouteLocationSetupStore: ObservableObject, DeveloperLocationPushing 
         self.client = client
         self.environment = environment
         refresh()
+    }
+
+    deinit {
+        monitorTask?.cancel()
+        maintenanceTask?.cancel()
+        deviceTask?.cancel()
     }
 
     func refresh() {
@@ -85,6 +102,7 @@ final class RouteLocationSetupStore: ObservableObject, DeveloperLocationPushing 
 
     /// 丢掉卡住的隧道句柄。隧道仍可用时会先尝试恢复真实定位。不删除配对文件。
     func resetTunnelCache() async -> String {
+        stopLocationMaintenance()
         refresh()
         var warning: String?
         if isSimulating || activity.simulationMayStillBeActive || client.retainsSimulation {
@@ -126,6 +144,7 @@ final class RouteLocationSetupStore: ObservableObject, DeveloperLocationPushing 
     }
 
     func invalidateActiveSession() async -> RouteLocationPushFailure? {
+        stopLocationMaintenance()
         let mutation = client.beginMutation()
         let client = client
         let outcome = await performDevice {
@@ -135,6 +154,7 @@ final class RouteLocationSetupStore: ObservableObject, DeveloperLocationPushing 
     }
 
     func set(latitude: Double, longitude: Double) async -> RouteLocationPushFailure? {
+        guard !Task.isCancelled else { return .superseded }
         refresh()
         let current = readiness
         if current != .ready {
@@ -157,16 +177,57 @@ final class RouteLocationSetupStore: ObservableObject, DeveloperLocationPushing 
                 )
             }
         }
-        return applySetResult(outcome, mutation: mutation, cellularWithoutWiFi: cellularWithoutWiFi)
+        let failure = applySetResult(outcome, mutation: mutation, cellularWithoutWiFi: cellularWithoutWiFi)
+        if failure == nil {
+            maintainedCoordinate = (latitude, longitude)
+            lastMaintenanceAttemptAt = environment.monotonicTime()
+            startLocationMaintenance()
+        }
+        return failure
     }
 
-    /// 连接还在时不要再推。恢复拿到的是上次坐标，和正在写入的点叠在一起就会来回跳。
-    func reassertIfNeeded(latitude: Double, longitude: Double) async -> RouteLocationPushFailure? {
-        guard !client.retainsSimulation else { return nil }
-        return await set(latitude: latitude, longitude: longitude)
+    /// 句柄非空不代表设备端仍在模拟。只重推服务最后成功写入的点，并让正在进行的 set/clear 优先。
+    func reassertIfNeeded(force: Bool = true) async -> RouteLocationPushFailure? {
+        guard !Task.isCancelled, deviceTask == nil, !isClearing,
+              let coordinate = maintainedCoordinate else { return nil }
+        let now = environment.monotonicTime()
+        let elapsed = now - (lastMaintenanceAttemptAt ?? now)
+        let interval = Double(RouteLocationEnvironment.maintenanceIntervalNanoseconds) / 1_000_000_000
+        guard force || elapsed >= interval else { return nil }
+        lastMaintenanceAttemptAt = now
+        let failure = await set(latitude: coordinate.latitude, longitude: coordinate.longitude)
+        guard failure != .superseded else { return failure }
+        let details = ["触发": force ? "前台或隧道恢复" : "定期维持", "距上次写入或尝试秒": String(Int(elapsed))]
+        if let failure {
+            RuntimeLogger.warning("APP", "隧道", "定位会话补写失败：\(failure.message)", details: details)
+        } else {
+            RuntimeLogger.info("APP", "隧道", "定位会话已补写", details: details)
+        }
+        return failure
+    }
+
+    private func startLocationMaintenance() {
+        guard maintenanceTask == nil else { return }
+        let wait = environment.waitForMaintenance
+        maintenanceTask = Task { @MainActor [weak self] in
+            while !Task.isCancelled {
+                do { try await wait() } catch { return }
+                guard !Task.isCancelled, let self else { return }
+                _ = await self.reassertIfNeeded(force: false)
+            }
+        }
+    }
+
+    private func stopLocationMaintenance() {
+        maintainedCoordinate = nil
+        lastMaintenanceAttemptAt = nil
+        maintenanceTask?.cancel()
+        maintenanceTask = nil
     }
 
     func clear() async -> RouteLocationPushFailure? {
+        // 停止意图立即撤销自动补写；即使 clear 失败，也不能再把定位重新开启。
+        stopLocationMaintenance()
         isClearing = true
         defer { isClearing = false }
         let mutation = client.beginMutation()
@@ -294,8 +355,16 @@ final class RouteLocationSetupStore: ObservableObject, DeveloperLocationPushing 
         _ operation: @escaping @Sendable () async throws -> IdeviceCommandOutcome
     ) async -> IdeviceCommandOutcome {
         deviceTask?.cancel()
+        let id = UUID()
+        deviceTaskID = id
         let task = Task.detached(operation: operation)
         deviceTask = task
+        defer {
+            if deviceTaskID == id {
+                deviceTask = nil
+                deviceTaskID = nil
+            }
+        }
         return await withTaskCancellationHandler {
             do {
                 return try await task.value
@@ -313,6 +382,7 @@ final class RouteLocationSetupStore: ObservableObject, DeveloperLocationPushing 
         delays: [UInt64],
         operation: () -> IdeviceCommandOutcome
     ) async throws -> IdeviceCommandOutcome {
+        try Task.checkCancellation()
         var remaining = delays
         var outcome = operation()
         while case .finished(.tunnel) = outcome, let delay = remaining.first {

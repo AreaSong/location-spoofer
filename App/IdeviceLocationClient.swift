@@ -154,9 +154,8 @@ final class IdeviceLocationClient: IdeviceLocationPushing, @unchecked Sendable {
         return .rejected
         #else
         if simulation != nil {
-            if location_simulation_set(simulation, latitude, longitude) == nil {
-                return nil
-            }
+            guard let error = location_simulation_set(simulation, latitude, longitude) else { return nil }
+            idevice_error_free(error)
             // 旧套接字已死。再 clear 会堵在串行队列上，重启 LocalDevVPN 也解不开。
             abandonSessionLocked()
         }

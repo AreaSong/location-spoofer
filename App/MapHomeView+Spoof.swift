@@ -142,16 +142,12 @@ extension MapHomeView {
         if route.phase == .playing { return }
         // 正在写入新坐标时不要用旧坐标再推一次，否则两条写入会交替生效。
         if spoofState == .verifying { return }
-        guard let coordinate = developerTunnelRecoveryCoordinate() else { return }
         if let last = lastDeveloperTunnelRecoveryAt, Date().timeIntervalSince(last) < 2 {
             return
         }
         lastDeveloperTunnelRecoveryAt = Date()
         Task { @MainActor in
-            if let failure = await routeLocation.reassertIfNeeded(
-                latitude: coordinate.latitude,
-                longitude: coordinate.longitude
-            ), failure != .superseded {
+            if let failure = await routeLocation.reassertIfNeeded(), failure != .superseded {
                 developerLocationError = failure.message
             }
         }
@@ -169,19 +165,6 @@ extension MapHomeView {
         } else {
             BackgroundKeepAlive.shared.release(.developerLocation)
         }
-    }
-
-    private func developerTunnelRecoveryCoordinate() -> (latitude: Double, longitude: Double)? {
-        if let pair = lastRouteWrittenPair, route.phase == .paused || route.phase == .finished {
-            let wgs = pair.wgs84
-            return (wgs.latitude, wgs.longitude)
-        }
-        guard spoofState == .active,
-              let latitude = session.writtenLatitude,
-              let longitude = session.writtenLongitude else {
-            return nil
-        }
-        return (latitude, longitude)
     }
 
     var locationUseBlock: LocationUseBlock? {
