@@ -12,6 +12,15 @@ final class WalkHeadingHud: UIView {
         didSet { layoutFan() }
     }
 
+    func update(geographicDegrees: Double?, screenDegrees: Double?) {
+        fanLayer.isHidden = geographicDegrees == nil
+        if let screenDegrees {
+            headingDegrees = screenDegrees
+        }
+        // VoiceOver 仍描述地理方向，不能把屏幕相对角度读成方位。
+        accessibilityValue = PhysicalWalkHeadingLock.labeledDegrees(geographicDegrees)
+    }
+
     private let fanLayer = CAShapeLayer()
     private let puckView = UIView()
 
@@ -60,7 +69,6 @@ final class WalkHeadingHud: UIView {
             radius: Self.fanRadius,
             spreadDegrees: Self.fanDegrees
         )
-        accessibilityValue = PhysicalWalkHeadingLock.compassName(headingDegrees)
     }
 
     static func fanPath(
@@ -132,9 +140,7 @@ extension MapViewRepresentable.Coordinator {
         hud.isHidden = !visible
         applyNativeUserLocationVisibility(hidden: visible, on: map)
         if visible {
-            if let degrees {
-                hud.headingDegrees = degrees
-            }
+            parent.walkHeadingDegrees = degrees
             startWalkPuckTracking()
             positionWalkHeadingHud(on: map)
         } else {
@@ -151,6 +157,22 @@ extension MapViewRepresentable.Coordinator {
             return
         }
         hud.center = map.convert(coordinate, toPointTo: map)
+        let degrees = parent.walkHeadingDegrees
+        hud.update(geographicDegrees: degrees, screenDegrees: degrees.map {
+            screenHeading($0, at: coordinate, on: map)
+        })
+    }
+
+    private func screenHeading(_ degrees: Double, at coordinate: CLLocationCoordinate2D, on map: MKMapView) -> Double {
+        // 地图可旋转、倾斜；把地图平面的北/东向量投影到屏幕，不能直接画地理角。
+        // 平面地图等价于 heading - camera.heading。这里只做显示投影，不改 WGS-84 位移。
+        let origin = MKMapPoint(coordinate)
+        let radians = degrees * .pi / 180
+        let length = 10 / MKMetersPerMapPointAtLatitude(coordinate.latitude)
+        let target = MKMapPoint(x: origin.x + sin(radians) * length, y: origin.y - cos(radians) * length)
+        let start = map.convert(coordinate, toPointTo: map)
+        let end = map.convert(target.coordinate, toPointTo: map)
+        return PhysicalWalkHeadingLock.normalized(atan2(end.x - start.x, start.y - end.y) * 180 / .pi)
     }
 
     func applyNativeUserLocationVisibility(hidden: Bool, on map: MKMapView) {

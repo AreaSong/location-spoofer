@@ -133,7 +133,7 @@ struct PhysicalWalkHeadingControls: View {
                 .buttonStyle(CapsuleChipStyle())
                 .disabled(!store.isCustomHeadingEnabled)
                 .accessibilityLabel("初始朝向减少 15 度")
-                Text(PhysicalWalkHeadingLock.labeledDegrees(controller.activeHeadingDegrees ?? 0))
+                Text(PhysicalWalkHeadingLock.labeledDegrees(controller.activeHeadingDegrees))
                     .font(.caption.monospacedDigit().weight(.semibold))
                     .lineLimit(1)
                     .minimumScaleFactor(0.8)
@@ -183,6 +183,14 @@ struct PhysicalWalkHeadingControls: View {
             Text("打开真实走动后，走路才会移动坐标")
                 .font(.caption)
                 .foregroundStyle(.secondary)
+        } else if controller.activeHeadingDegrees == nil {
+            Text(PhysicalWalkStatusCopy.detail(
+                isEnabled: true, spoofActive: spoofActive, status: .waitingForHeading,
+                movedMeters: controller.movedMeters, failureMessage: ""
+            ))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
         } else if !store.isCustomHeadingEnabled {
             Text("扇形跟系统地图朝向一致")
                 .font(.caption)

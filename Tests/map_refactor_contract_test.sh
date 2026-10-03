@@ -133,8 +133,8 @@ grep -q 'isCustomHeadingEnabled' "$ROOT/Shared/PhysicalWalkStore.swift" \
   || fail "custom heading on/off must persist separately from physical walking"
 grep -q 'latestMapHeadingDegrees' "$ROOT/App/PhysicalWalkSensors.swift" \
   || fail "default heading must follow the map compass, not the custom instrument"
-grep -q 'xMagneticNorthZVertical' "$ROOT/App/PhysicalWalkSensors.swift" \
-  || fail "default heading must use a north-referenced attitude frame so the fan matches the original map"
+grep -q 'referenceFrame == .xTrueNorthZVertical' "$ROOT/App/PhysicalWalkSensors.swift" \
+  || fail "default heading must accept only true-north readings, matching geographic displacement"
 grep -q 'realtimeCoordinate' "$ROOT/App/MapHomeView+PhysicalWalk.swift" \
   || fail "the heading puck must appear from launch using the realtime coordinate before spoofing"
 grep -q 'headingMode: PhysicalWalkHeadingMode = .followCompass' "$ROOT/App/PhysicalWalkController.swift" \

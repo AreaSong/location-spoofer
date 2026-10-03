@@ -51,10 +51,11 @@ struct PhysicalWalkSample: Equatable {
 
 struct PhysicalWalkHeading: Equatable {
     var degrees: Double
-    var accuracyDegrees: Double
+    // Core Motion 只提供校准等级；nil 表示适配器已校验，不能伪造 0° 测量精度。
+    var accuracyDegrees: Double? = nil
 
     var isReliable: Bool {
-        accuracyDegrees >= 0
+        degrees.isFinite && (accuracyDegrees.map { $0.isFinite && $0 >= 0 } ?? true)
     }
 }
 
@@ -145,7 +146,8 @@ enum PhysicalWalkHeadingLock {
         return "罗盘 \(Int(normalized(headingDegrees).rounded()))°"
     }
 
-    static func labeledDegrees(_ degrees: Double) -> String {
+    static func labeledDegrees(_ degrees: Double?) -> String {
+        guard let degrees, degrees.isFinite else { return "等待朝向" }
         let value = normalized(degrees)
         return "\(compassName(value)) \(Int(value.rounded()))°"
     }
@@ -179,7 +181,7 @@ enum PhysicalWalkStatusCopy {
         guard isTracking else { return "真实走动已开" }
         switch status {
         case .waitingForHeading:
-            return "请展开朝向并拖动角度"
+            return "等待有效朝向，暂不移动"
         case .tracking:
             let meters = Int(movedMeters.rounded())
             let prefix = meters > 0 ? "真实走动中 · \(meters)米" : "真实走动中，走起来才会移动"
@@ -200,7 +202,7 @@ enum PhysicalWalkStatusCopy {
     ) -> String {
         if !failureMessage.isEmpty { return failureMessage }
         if !isEnabled {
-            return "打开后，你走动时虚拟点沿扇形方向移动。地图北朝上，可在朝向里拖动角度。"
+            return "打开后，你走动时虚拟点沿扇形方向移动。初始指向可自定义方向。"
         }
         if !spoofActive {
             return "先开启虚拟定位，再走动。"
@@ -208,7 +210,7 @@ enum PhysicalWalkStatusCopy {
         let headingNote = headingNote(degrees: headingDegrees, locked: headingLocked)
         switch status {
         case .waitingForHeading:
-            return "还没有朝向。请展开朝向并拖动角度。"
+            return "朝向暂不可用，暂不移动。请缓慢转动手机，朝向恢复后再走动。"
         case .tracking:
             let meters = Int(movedMeters.rounded())
             let movement = meters > 0 ? "已移动 \(meters) 米" : "已开启，走起来虚拟点才会移动"
@@ -340,14 +342,16 @@ struct PhysicalWalkEngine: Equatable {
             strideMeters: strideMeters
         )
         remember(sample)
+        // 没有方向的步伐不能事后套用新朝向，否则恢复时会产生另一方向的位移。
+        guard let heading, heading.isReliable else {
+            pendingMeters = 0
+            return .waitingForHeading
+        }
         if delta >= PhysicalWalkDisplacement.minimumDeltaMeters {
             pendingMeters += delta
         }
         guard pendingMeters >= PhysicalWalkDisplacement.minimumDeltaMeters else {
             return .unchanged
-        }
-        guard let heading, heading.isReliable else {
-            return .waitingForHeading
         }
         let applied = pendingMeters
         let next = PhysicalWalkDisplacement.offsetWGS84(

@@ -221,7 +221,7 @@ final class PhysicalWalkControllerTests: XCTestCase {
         XCTAssertFalse(BackgroundKeepAlive.shared.holds(.physicalWalk))
     }
 
-    func testBufferedWalkWritesWhenHeadingBecomesReliable() async {
+    func testAvailableAbsoluteHeadingWritesImmediately() async {
         let sensor = FakePhysicalWalkSensor()
         let heading = FakePhysicalWalkHeading()
         heading.latestYawDegrees = 0
@@ -309,14 +309,15 @@ final class PhysicalWalkControllerTests: XCTestCase {
         controller.stopHeading()
     }
 
-    func testHeadingPreviewKeepsInitialNorthWhenAttitudeIsMissing() {
+    func testHeadingPreviewWaitsWhenAbsoluteHeadingIsMissing() {
         let heading = FakePhysicalWalkHeading()
         heading.headingAvailable = false
+        heading.latestMapHeadingDegrees = nil
         let controller = PhysicalWalkController(sensor: FakePhysicalWalkSensor(), heading: heading)
         controller.startHeadingPreview()
         XCTAssertEqual(controller.headingMode, .followCompass)
         XCTAssertFalse(controller.usesCustomHeading)
-        XCTAssertEqual(controller.activeHeadingDegrees ?? -1, 0, accuracy: 0.01)
+        XCTAssertNil(controller.activeHeadingDegrees)
         controller.stopHeading()
     }
 
@@ -343,13 +344,14 @@ final class PhysicalWalkControllerTests: XCTestCase {
         controller.stopHeading()
     }
 
-    func testYawFallbackWhenMapHeadingIsMissing() {
+    func testYawCannotReplaceMissingAbsoluteHeading() {
         let heading = FakePhysicalWalkHeading()
         heading.latestYawDegrees = 45
+        heading.latestMapHeadingDegrees = nil
         let controller = PhysicalWalkController(sensor: FakePhysicalWalkSensor(), heading: heading)
         controller.startHeadingPreview()
         XCTAssertEqual(controller.headingMode, .followCompass)
-        XCTAssertEqual(controller.activeHeadingDegrees ?? -1, 45, accuracy: 0.01)
+        XCTAssertNil(controller.activeHeadingDegrees)
         controller.stopHeading()
     }
 
@@ -456,7 +458,7 @@ private final class FakePhysicalWalkSensor: PhysicalWalkSensing {
 private final class FakePhysicalWalkHeading: PhysicalWalkHeadingSensing {
     var headingAvailable = true
     var latestYawDegrees: Double?
-    var latestMapHeadingDegrees: Double?
+    var latestMapHeadingDegrees: Double? = 0
     var onChange: (() -> Void)?
 
     func start() {}

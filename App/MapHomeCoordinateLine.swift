@@ -218,7 +218,7 @@ struct MapHomeTopInfoBar: View {
     }
 
     private var headingSummary: String {
-        PhysicalWalkHeadingLock.labeledDegrees(walkController.activeHeadingDegrees ?? 0)
+        PhysicalWalkHeadingLock.labeledDegrees(walkController.activeHeadingDegrees)
     }
 
     private func toggleCoordinates() {
