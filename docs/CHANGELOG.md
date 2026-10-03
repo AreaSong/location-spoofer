@@ -4,6 +4,7 @@
 
 ## 已发布
 
+- [v1.1.0.1](https://github.com/AreaSong/location-spoofer/releases/tag/v1.1.0.1) — 2026-10-03
 - [v1.1.0.0](https://github.com/AreaSong/location-spoofer/releases/tag/v1.1.0.0) — 2026-09-28
 - [v1.0.9](https://github.com/AreaSong/location-spoofer/releases/tag/v1.0.9) — 2026-09-28
 - [v1.0.8](https://github.com/AreaSong/location-spoofer/releases/tag/v1.0.8) — 2026-09-28
