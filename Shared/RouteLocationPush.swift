@@ -2,14 +2,14 @@ import Foundation
 
 enum DeveloperTunnelHelp {
     static let overview =
-        "定点和路线通过本机隧道写入系统定位。请先连上 LocalDevVPN，并导入配对文件。这台手机必须作为客户端连着 Wi-Fi（无公网也可以，流量可同时开）；只开流量或自己开热点不行。iOS 18 到 26 用电脑生成一次即可。"
+        "定点和路线通过本机隧道写入系统定位。请先连上 LocalDevVPN，并导入配对文件。请让这台手机作为客户端连着 Wi-Fi（无公网也可以，流量可同时开）；仅蜂窝或本机热点可能无法建立设备服务连接。iOS 18 到 26 用电脑生成一次即可。"
 
     static let connectionChecksTitle = "连不上时检查这些"
 
     static let connectionChecks = """
-    1. 只打开 LocalDevVPN 不够。必须点 Connect，等到界面显示 Connected。
+    1. 只打开 LocalDevVPN 不够。必须点 Connect，等到界面显示 Connected；这只表示 VPN 状态，不证明定位服务可用。
     2. 这台手机已作为客户端连上 Wi-Fi。家里路由、别人的热点、书包里的发射盒都行，不需要能上公网。只开流量、关掉 Wi-Fi 通常连不上。
-    3. 自己开个人热点不算。那是热点主人，系统仍当成没连 Wi-Fi。LocalDevVPN 是另一条虚线路，默认 10.7；家里普通 Wi-Fi 一般不用改 IP。只有已经连着 Wi-Fi 仍失败时，再把 Device / Tunnel IP 改到当前 Wi-Fi 网段。
+    3. 自己开个人热点不算 Wi-Fi 客户端连接。LocalDevVPN 是另一条虚线路，默认 10.7；家里普通 Wi-Fi 一般不用改 IP。只有已经连着 Wi-Fi 仍失败时，再把 Device / Tunnel IP 改到当前 Wi-Fi 网段。
     4. 仍失败：点「清理隧道会话」，重连 LocalDevVPN，或划掉本 App 再打开。
     """
 }
@@ -79,11 +79,11 @@ struct RouteLocationStatus: Equatable {
 enum RouteLocationPushFailure: Equatable, Sendable {
     case notReady(RouteLocationReadiness)
     case tunnel
-    /// 隧道网卡还在，但当前只有蜂窝：系统不把本机隧道当成可握手的本地地址。
+    /// 设备连接失败且默认路径观察含蜂窝、不含 Wi-Fi；不代表未关联 Wi-Fi。
     case tunnelOnCellular
     case pairing
     case rejected
-    /// 系统侧 clear 失败。本地句柄还在，模拟定位不能当成已关闭。
+    /// 系统侧 clear 失败，不能确认模拟定位已经关闭。
     case clearFailed
     /// 这次调用已被更新的 set/clear 或取消取代，调用方不要改界面状态。
     case superseded
@@ -93,15 +93,15 @@ enum RouteLocationPushFailure: Equatable, Sendable {
         case .notReady(let readiness):
             return readiness.blockingMessage ?? "路线定位还没准备好。"
         case .tunnel:
-            return "连不上本机隧道。请确认这台手机已作为客户端连上 Wi-Fi（自己开热点不算）。只开流量系统不放行。仍失败请清理隧道会话，或划掉本 App 再打开。"
+            return "本机隧道或设备服务连接失败，未确认推送成功。请检查 LocalDevVPN 和 Wi-Fi 客户端连接（无公网也可以）。仍失败可清理隧道会话并重连，或划掉本 App 再打开。"
         case .tunnelOnCellular:
-            return "当前只开了流量。请作为客户端连上 Wi-Fi（无公网也可以），不要用本机个人热点。"
+            return "本机隧道或设备服务连接失败，未确认推送成功。当前默认路径观察为蜂窝流量，无法据此确认 Wi-Fi 是否已连接。请检查 LocalDevVPN 和 Wi-Fi 客户端连接；无公网热点也可以。"
         case .pairing:
             return "配对文件无效。请重新导入配对文件后再试。"
         case .rejected:
             return "系统定位推送失败，已暂停。"
         case .clearFailed:
-            return "系统定位没有关掉，模拟仍在生效。"
+            return "未确认系统定位已关闭，模拟可能仍在生效。"
         case .superseded:
             return "定位操作已取消。"
         }

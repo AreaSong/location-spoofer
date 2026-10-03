@@ -471,7 +471,7 @@ extension MapHomeView {
     var homeRuntimeStatusTone: StatusPill.Tone {
         if UIPreview.isEnabled() { return .neutral }
         if runtimeMode.mode == .developerTunnel {
-            return routeLocation.readiness == .ready ? .ok : .warn
+            return routeLocation.activity.lastFailure == nil && routeLocation.isSimulating ? .ok : .warn
         }
         if runtimeMode.mode == .thirdParty {
             switch thirdPartyProxy.connectionState {
@@ -489,7 +489,7 @@ extension MapHomeView {
     var homeRuntimeStatusText: String {
         if UIPreview.isEnabled() { return "开发者模式" }
         if runtimeMode.mode == .developerTunnel {
-            return routeLocation.readiness == .ready ? "隧道已连接" : "隧道未就绪"
+            return routeLocation.connectionSummary
         }
         if runtimeMode.mode == .thirdParty {
             switch thirdPartyProxy.connectionState {

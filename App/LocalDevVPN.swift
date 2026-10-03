@@ -18,7 +18,7 @@ enum LocalDevVPN {
         return UIApplication.shared.canOpenURL(detectURL)
     }
 
-    /// 网卡可见，或 49152 端口能通，都算隧道已连。只打开 LocalDevVPN 主界面不算。
+    /// 只用于发现候选隧道环境。网卡或 TCP 端口可见不证明握手、配对或定位写入成功。
     static var isConnected: Bool {
         if hasTunnelInterface(in: ipv4Addresses() + peerAddresses()) {
             return true

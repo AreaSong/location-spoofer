@@ -152,7 +152,7 @@ struct SettingsView: View {
 
     var virtualLocationStatusText: String {
         if runtimeMode.mode == .developerTunnel {
-            return routeLocation.isSimulating ? "已开启" : "已关闭"
+            return routeLocation.simulationStatusText
         }
         if runtimeMode.mode == .localWiFi {
             return actions.virtualLocationEnabled ? "已开启" : "已关闭"
@@ -198,7 +198,7 @@ struct SettingsView: View {
 
     var virtualLocationIsActive: Bool {
         if runtimeMode.mode == .developerTunnel {
-            return routeLocation.isSimulating
+            return routeLocation.isSimulating || routeLocation.activity.simulationMayStillBeActive
         }
         if runtimeMode.mode == .localWiFi {
             return actions.virtualLocationEnabled

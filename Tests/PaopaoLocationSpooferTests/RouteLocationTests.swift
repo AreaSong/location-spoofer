@@ -207,18 +207,18 @@ final class RouteLocationTests: XCTestCase {
     }
 
     @MainActor
-    func testSetupStoreExplainsCellularWithoutRetrying() async throws {
+    func testSetupStoreExplainsDefaultCellularPathAfterBoundedRetries() async throws {
         let client = FakeIdeviceClient(results: [.tunnel, .tunnel, .tunnel])
         let store = try readyStore(
             client: client,
             tunnelRetryDelaysNanoseconds: [1_000_000, 1_000_000],
-            isCellularWithoutWiFi: { true }
+            defaultPathUsesCellular: { true }
         )
 
         let failure = await store.set(latitude: 22.5, longitude: 113.9)
 
         XCTAssertEqual(failure, .tunnelOnCellular)
-        XCTAssertEqual(client.pushes.count, 1)
+        XCTAssertEqual(client.pushes.count, 3)
         XCTAssertFalse(store.isSimulating)
         XCTAssertEqual(store.activity.lastFailure, .tunnelOnCellular)
     }
@@ -307,7 +307,7 @@ final class RouteLocationTests: XCTestCase {
 
         XCTAssertNil(setFailure)
         XCTAssertEqual(clearFailure, .clearFailed)
-        XCTAssertEqual(clearFailure?.message, "系统定位没有关掉，模拟仍在生效。")
+        XCTAssertEqual(clearFailure?.message, "未确认系统定位已关闭，模拟可能仍在生效。")
         XCTAssertTrue(store.isSimulating)
         XCTAssertEqual(client.clears, 1)
     }
@@ -641,7 +641,7 @@ final class RouteLocationTests: XCTestCase {
         isVPNInstalled: @escaping @MainActor () -> Bool = { true },
         isTunnelConnected: @escaping @MainActor () -> Bool = { true },
         tunnelRetryDelaysNanoseconds: [UInt64] = [1_000_000],
-        isCellularWithoutWiFi: @escaping @MainActor () -> Bool = { false }
+        defaultPathUsesCellular: @escaping @MainActor () -> Bool = { false }
     ) throws -> RouteLocationSetupStore {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("RouteLocationSetupStoreTests.\(UUID().uuidString)", isDirectory: true)
@@ -657,7 +657,7 @@ final class RouteLocationTests: XCTestCase {
             isTunnelConnected: isTunnelConnected,
             deviceAddress: "10.7.0.1",
             tunnelRetryDelaysNanoseconds: tunnelRetryDelaysNanoseconds,
-            isCellularWithoutWiFi: isCellularWithoutWiFi
+            networkObservation: { .init(usesWiFi: !defaultPathUsesCellular(), usesCellular: defaultPathUsesCellular()) }
         )
         return RouteLocationSetupStore(pairingStore: pairingStore, client: client, environment: environment)
     }
@@ -925,7 +925,7 @@ extension RouteLocationTests {
         ))
         let store = RouteLocationSetupStore(pairingStore: pairing, client: client, environment: .init(
             isVPNInstalled: { true }, isTunnelConnected: { true }, deviceAddress: "mock",
-            tunnelRetryDelaysNanoseconds: [], isCellularWithoutWiFi: { false }
+            tunnelRetryDelaysNanoseconds: [], networkObservation: { .init() }
         ))
         addTeardownBlock {
             _ = await store.clear()
@@ -1082,5 +1082,41 @@ extension RouteLocationTests {
             XCTAssertTrue(store.isSimulating)
             XCTAssertEqual(probe.snapshot.events, ["set:1", "set:2", "set:2"])
         }
+    }
+}
+
+
+extension RouteLocationTests {
+    @MainActor
+    func testDefaultCellularPathDoesNotRemoveTunnelRecoveryBudget() async throws {
+        // 默认路径走蜂窝与本机服务的结果独立；可同时关联无公网热点。
+        let client = FakeIdeviceClient(results: [.tunnel, nil])
+        let store = try readyStore(client: client, defaultPathUsesCellular: { true })
+        let failure = await store.set(latitude: 1, longitude: 2)
+        XCTAssertNil(failure)
+        XCTAssertEqual(client.pushes.count, 2)
+        XCTAssertTrue(store.isSimulating)
+        _ = await store.clear()
+    }
+
+    func testTunnelErrorDoesNotClaimWiFiAssociationFromDefaultPath() {
+        XCTAssertFalse(RouteLocationPushFailure.tunnelOnCellular.message.contains("当前只开了流量"))
+        XCTAssertFalse(RouteLocationPushFailure.tunnel.message.contains("系统不放行"))
+    }
+
+    @MainActor
+    func testFailedSwitchSeparatesLastSuccessFromPossibleSimulation() async throws {
+        let client = FakeIdeviceClient(results: [nil, .rejected, nil])
+        let store = try readyStore(client: client)
+        _ = await store.set(latitude: 1, longitude: 2)
+        let failure = await store.set(latitude: 3, longitude: 4)
+        XCTAssertEqual(failure, .rejected)
+        XCTAssertFalse(store.isSimulating)
+        XCTAssertTrue(store.activity.simulationMayStillBeActive)
+        let recovered = await store.reassertIfNeeded()
+        XCTAssertNil(recovered)
+        XCTAssertEqual(client.pushes.last?.latitude, 1)
+        XCTAssertTrue(store.isSimulating)
+        _ = await store.clear()
     }
 }

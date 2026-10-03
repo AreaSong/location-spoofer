@@ -191,7 +191,7 @@ final class DeveloperLocationMaintenanceTests: XCTestCase {
         let environment = RouteLocationEnvironment(
             isVPNInstalled: { true }, isTunnelConnected: connected,
             deviceAddress: "10.7.0.1", tunnelRetryDelaysNanoseconds: [],
-            isCellularWithoutWiFi: { false }, monotonicTime: { clock.time },
+            networkObservation: { .init() }, monotonicTime: { clock.time },
             waitForMaintenance: {
                 try await Task.sleep(nanoseconds: automatic ? 20_000_000 : 60_000_000_000)
             }

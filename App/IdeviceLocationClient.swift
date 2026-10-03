@@ -57,6 +57,8 @@ final class IdeviceLocationClient: IdeviceLocationPushing, @unchecked Sendable {
         var abandon: @Sendable () -> Void
         var retainsSimulation: @Sendable () -> Bool
         var clearReconnecting: (@Sendable () -> RouteLocationPushFailure?)? = nil
+        /// 提供时，与真机共用旧句柄释放、重连及代次检查，只替换设备 IO。
+        var connect: (@Sendable () -> RouteLocationPushFailure?)? = nil
     }
     private let operations: DeviceOperations?
 
@@ -109,12 +111,13 @@ final class IdeviceLocationClient: IdeviceLocationPushing, @unchecked Sendable {
         queue.sync {
             guard mutation == currentMutation() else { return .superseded }
             defer { publishHandleSnapshot() }
-            return .finished(setLocked(
+            return setLocked(
                 latitude: latitude,
                 longitude: longitude,
                 pairingPath: pairingPath,
-                deviceAddress: deviceAddress
-            ))
+                deviceAddress: deviceAddress,
+                mutation: mutation
+            )
         }
     }
 
@@ -194,28 +197,58 @@ final class IdeviceLocationClient: IdeviceLocationPushing, @unchecked Sendable {
         latitude: Double,
         longitude: Double,
         pairingPath: String,
-        deviceAddress: String
-    ) -> RouteLocationPushFailure? {
+        deviceAddress: String,
+        mutation: UInt64
+    ) -> IdeviceCommandOutcome {
+        if let operations, operations.connect == nil {
+            return .finished(operations.set(latitude, longitude))
+        }
+        let reconnecting = hasSimulationLocked
+        if reconnecting {
+            if writeLocationLocked(latitude: latitude, longitude: longitude) == nil {
+                return .finished(nil)
+            }
+            // 旧套接字已死，不向它补发 clear。资源仍在同一串行队列释放。
+            abandonSessionLocked()
+            RuntimeLogger.warning("APP", "隧道", "旧定位通道失效", details: [
+                "阶段": "retained-set", "重连": "待检查定位意图"
+            ])
+        }
+        // 同步 C 调用期间停止/换点仍可更新短锁代次，返回后禁止为旧点重连。
+        guard mutation == currentMutation(), !Task.isCancelled else { return .superseded }
+        RuntimeLogger.info("APP", "隧道", "准备建立定位通道", details: [
+            "阶段": "connect", "重连": String(reconnecting), "定位意图有效": "true"
+        ])
+        if let failure = connectLocked(pairingPath: pairingPath, deviceAddress: deviceAddress) {
+            return .finished(failure)
+        }
+        guard mutation == currentMutation(), !Task.isCancelled else {
+            abandonSessionLocked()
+            return .superseded
+        }
+        let failure = writeLocationLocked(latitude: latitude, longitude: longitude)
+        if failure != nil { abandonSessionLocked() }
+        return .finished(failure)
+    }
+
+    private var hasSimulationLocked: Bool {
+        if let operations { return operations.retainsSimulation() }
+        #if targetEnvironment(simulator)
+        return false
+        #else
+        return simulation != nil
+        #endif
+    }
+
+    private func writeLocationLocked(latitude: Double, longitude: Double) -> RouteLocationPushFailure? {
         if let operations { return operations.set(latitude, longitude) }
         #if targetEnvironment(simulator)
-        _ = latitude
-        _ = longitude
-        _ = pairingPath
-        _ = deviceAddress
         return .rejected
         #else
-        if simulation != nil {
-            guard let error = location_simulation_set(simulation, latitude, longitude) else { return nil }
-            idevice_error_free(error)
-            // 旧套接字已死。再 clear 会堵在串行队列上，重启 LocalDevVPN 也解不开。
-            abandonSessionLocked()
-        }
-        return openSession(
-            latitude: latitude,
-            longitude: longitude,
-            pairingPath: pairingPath,
-            deviceAddress: deviceAddress
-        )
+        guard let error = location_simulation_set(simulation, latitude, longitude) else { return nil }
+        idevice_error_free(error)
+        RuntimeLogger.warning("APP", "隧道", "设备定位写入失败", details: ["阶段": "location-set"])
+        return .rejected
         #endif
     }
 
@@ -235,29 +268,24 @@ final class IdeviceLocationClient: IdeviceLocationPushing, @unchecked Sendable {
         #endif
     }
 
-    #if !targetEnvironment(simulator)
     private func abandonSessionLocked() {
+        if let operations { operations.abandon(); return }
+        #if !targetEnvironment(simulator)
         releaseSession()
-    }
-
-    private func openSession(
-        latitude: Double,
-        longitude: Double,
-        pairingPath: String,
-        deviceAddress: String
-    ) -> RouteLocationPushFailure? {
-        if let failure = connectLocked(pairingPath: pairingPath, deviceAddress: deviceAddress) {
-            return failure
-        }
-        if let setFailed = location_simulation_set(simulation, latitude, longitude) {
-            idevice_error_free(setFailed)
-            releaseSession()
-            return .rejected
-        }
-        return nil
+        #endif
     }
 
     private func connectLocked(pairingPath: String, deviceAddress: String) -> RouteLocationPushFailure? {
+        if let connect = operations?.connect { return connect() }
+        #if targetEnvironment(simulator)
+        return .rejected
+        #else
+        return connectDeviceLocked(pairingPath: pairingPath, deviceAddress: deviceAddress)
+        #endif
+    }
+
+    #if !targetEnvironment(simulator)
+    private func connectDeviceLocked(pairingPath: String, deviceAddress: String) -> RouteLocationPushFailure? {
         abandonSessionLocked()
         var pairing: OpaquePointer?
         let readFailed = pairingPath.withCString { rp_pairing_file_read($0, &pairing) }
@@ -271,8 +299,7 @@ final class IdeviceLocationClient: IdeviceLocationPushing, @unchecked Sendable {
         let hostnames = hostnameCandidates(pairingPath: pairingPath)
         let endpoints = tunnelEndpointsToTry(preferred: deviceAddress)
         RuntimeLogger.info("APP", "隧道", "开始连接本机隧道", details: [
-            "地址": endpoints.joined(separator: ","),
-            "主机身份": hostnames.joined(separator: ",")
+            "阶段": "connect", "端点数": String(endpoints.count), "身份候选数": String(hostnames.count)
         ])
         for endpoint in endpoints {
             for hostname in hostnames {
@@ -287,8 +314,7 @@ final class IdeviceLocationClient: IdeviceLocationPushing, @unchecked Sendable {
                     continue
                 }
                 RuntimeLogger.info("APP", "隧道", "本机隧道已连接", details: [
-                    "地址": endpoint,
-                    "主机身份": hostname
+                    "阶段": "location-service", "结果": "connected"
                 ])
                 return nil
             }
@@ -346,17 +372,20 @@ final class IdeviceLocationClient: IdeviceLocationPushing, @unchecked Sendable {
             }
         }
         if let tunnelFailed {
+            RuntimeLogger.warning("APP", "隧道", "设备连接失败", details: ["阶段": "remote-pairing-tunnel"])
             idevice_error_free(tunnelFailed)
             releaseSession()
             return .tunnel
         }
 
         if let serverFailed = remote_server_connect_rsd(adapter, handshake, &server) {
+            RuntimeLogger.warning("APP", "隧道", "设备连接失败", details: ["阶段": "remote-server-rsd"])
             idevice_error_free(serverFailed)
             releaseSession()
             return .tunnel
         }
         if let simulationFailed = location_simulation_new(server, &simulation) {
+            RuntimeLogger.warning("APP", "隧道", "定位服务不可用", details: ["阶段": "location-service"])
             idevice_error_free(simulationFailed)
             releaseSession()
             return .rejected

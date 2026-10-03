@@ -2,6 +2,27 @@ import Network
 import Foundation
 import SystemConfiguration.CaptiveNetwork
 
+/// 默认路径观察不是公网探测，也不能证明 Wi-Fi 客户端是否已关联。
+struct DeveloperNetworkObservation: Equatable, Sendable {
+    var pathSatisfied: Bool? = nil
+    var usesWiFi = false
+    var usesCellular = false
+    var observedAt: Date? = nil
+
+    var diagnosticDetails: [String: String] {
+        [
+            "网络来源": "NWPathMonitor.default",
+            "快照时机": "设备结果返回后",
+            "路径可用": pathSatisfied.map(String.init) ?? "unknown",
+            "路径WiFi": String(usesWiFi),
+            "路径蜂窝": String(usesCellular),
+            "路径观察时间": observedAt.map { ISO8601DateFormatter().string(from: $0) } ?? "unknown",
+            "WiFi客户端关联": "unknown",
+            "公网可用性": "未探测"
+        ]
+    }
+}
+
 enum WiFiChangeReason: String {
     case reconnected = "Wi-Fi 恢复连接"
     case interfaceChanged = "网络接口切换到 Wi-Fi"
@@ -27,6 +48,8 @@ final class NetworkMonitor: ObservableObject {
 
     /// Wi-Fi 重连、接口切换或 SSID 变化时触发。调用方必须在离开页面时移除订阅。
     private var wifiChangeHandlers: [UUID: @MainActor (WiFiChangeReason) -> Void] = [:]
+
+    private(set) var developerObservation = DeveloperNetworkObservation()
 
     private let monitor = NWPathMonitor()
     private var ssidTimer: Timer?
@@ -64,6 +87,9 @@ final class NetworkMonitor: ObservableObject {
         let satisfied = path.status == .satisfied
         let wifi = path.usesInterfaceType(.wifi)
         let cellular = path.usesInterfaceType(.cellular)
+        developerObservation = DeveloperNetworkObservation(
+            pathSatisfied: satisfied, usesWiFi: wifi, usesCellular: cellular, observedAt: Date()
+        )
         let reason: WiFiChangeReason?
         if !hasReceivedInitialPath {
             // NWPathMonitor 的首次回调只是状态基线，不是网络切换。

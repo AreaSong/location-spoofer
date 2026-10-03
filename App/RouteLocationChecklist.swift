@@ -27,7 +27,7 @@ struct RouteLocationChecklist: View {
             checklistRow(
                 title: "本机隧道",
                 ready: setup.status.tunnelConnected,
-                readyText: "已连接",
+                readyText: "已发现接口或端口，服务待验证",
                 missingText: "未连接，请点 Connect",
                 actionTitle: "打开 LocalDevVPN",
                 actionDisabled: !setup.status.vpnInstalled,

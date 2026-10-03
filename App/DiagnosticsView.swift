@@ -250,13 +250,13 @@ struct RuntimeLogsView: View {
         store.refresh()
         let status = store.status
         let readiness = status.readiness
-        testResult = readiness == .ready ? "隧道已就绪" : (readiness.blockingMessage ?? "隧道未就绪")
+        testResult = store.connectionSummary
         testMessage = """
         ======== 开发者隧道环境检测 ========
         LocalDevVPN: \(status.vpnInstalled ? "已安装" : "未安装")
-        本机隧道: \(status.tunnelConnected ? "已连接" : "未连接")
+        本机隧道环境: \(status.tunnelConnected ? "已发现接口或端口，服务待验证" : "未发现")
         配对文件: \(status.hasPairing ? "已导入" : "未导入")
-        结果: \(readiness == .ready ? "就绪，可以开始虚拟定位" : (readiness.blockingMessage ?? "未就绪"))
+        结果: \(readiness == .ready ? "环境可尝试；本检测不握手、不推送定位" : (readiness.blockingMessage ?? "未就绪"))
         \(store.activity.diagnosticText)
         """
         RuntimeLogger.info("APP", "诊断", "开发者隧道环境检测", details: [

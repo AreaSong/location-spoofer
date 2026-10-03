@@ -9,8 +9,8 @@ struct RouteLocationEnvironment {
     var deviceAddress: String
     /// LocalDevVPN 重启后 RSD 要几秒才起来，连不上就按这个间隔再试。
     var tunnelRetryDelaysNanoseconds: [UInt64]
-    /// 只有蜂窝、没有 Wi-Fi 时，系统通常拒绝开发者隧道握手。
-    var isCellularWithoutWiFi: @MainActor () -> Bool
+    /// 仅解释观察结果；不能据默认路径阻断本机连接或减少恢复预算。
+    var networkObservation: @MainActor () -> DeveloperNetworkObservation
     /// 单调时钟不受系统校时影响；等待可在测试里替换，不依赖真实后台调度。
     var monotonicTime: @MainActor () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }
     var waitForMaintenance: @Sendable () async throws -> Void = {
@@ -22,9 +22,7 @@ struct RouteLocationEnvironment {
         isTunnelConnected: { LocalDevVPN.isConnected },
         deviceAddress: LocalDevVPN.defaultAddress,
         tunnelRetryDelaysNanoseconds: [500_000_000, 2_000_000_000, 4_000_000_000],
-        isCellularWithoutWiFi: {
-            NetworkMonitor.shared.usesCellular && !NetworkMonitor.shared.isWiFiEnabled
-        }
+        networkObservation: { NetworkMonitor.shared.developerObservation }
     )
 }
 
@@ -43,6 +41,19 @@ final class RouteLocationSetupStore: ObservableObject, DeveloperLocationPushing 
     )
 
     var readiness: RouteLocationReadiness { status.readiness }
+
+    var simulationStatusText: String {
+        if activity.simulationMayStillBeActive { return "可能仍在模拟" }
+        return isSimulating ? "已开启" : "已关闭"
+    }
+
+    var connectionSummary: String {
+        if activity.lastFailure != nil {
+            return activity.simulationMayStillBeActive ? "推送或清理失败，旧模拟可能仍生效" : "定位通道未确认可用"
+        }
+        if isSimulating { return "最近定位推送成功" }
+        return readiness == .ready ? "环境可尝试，定位通道待验证" : "隧道环境未就绪"
+    }
 
     private let pairingStore: RoutePairingStore
     private let client: IdeviceLocationPushing
@@ -175,16 +186,21 @@ final class RouteLocationSetupStore: ObservableObject, DeveloperLocationPushing 
 
     func set(latitude: Double, longitude: Double) async -> RouteLocationPushFailure? {
         guard writesAllowed, !isClearing, !Task.isCancelled else { return .superseded }
+        // 环境拒绝也是一次新意图，不能让仍在途的旧请求随后覆盖此结果。
+        let mutation = client.beginMutation()
+        deviceTask?.cancel()
         refresh()
         let current = readiness
         if current != .ready {
-            return .notReady(current)
+            let failure = RouteLocationPushFailure.notReady(current)
+            activity.lastFailure = failure
+            activity.simulationMayStillBeActive = activity.simulationMayStillBeActive || isSimulating
+            isSimulating = false
+            return failure
         }
-        let mutation = client.beginMutation()
         let path = pairingStore.pairingURL.path
         let address = environment.deviceAddress
-        let cellularWithoutWiFi = environment.isCellularWithoutWiFi()
-        let delays = cellularWithoutWiFi ? [] : environment.tunnelRetryDelaysNanoseconds
+        let delays = environment.tunnelRetryDelaysNanoseconds
         let client = client
         // 提交之后即保守记录可能生效；取消不能证明 C 调用没有写入。
         activity.simulationMayStillBeActive = true
@@ -199,7 +215,7 @@ final class RouteLocationSetupStore: ObservableObject, DeveloperLocationPushing 
                 )
             }
         }
-        let failure = applySetResult(outcome, mutation: mutation, cellularWithoutWiFi: cellularWithoutWiFi)
+        let failure = applySetResult(outcome, mutation: mutation)
         if failure == nil {
             maintainedCoordinate = (latitude, longitude)
             lastMaintenanceAttemptAt = environment.monotonicTime()
@@ -290,15 +306,15 @@ final class RouteLocationSetupStore: ObservableObject, DeveloperLocationPushing 
 
     private func applySetResult(
         _ outcome: IdeviceCommandOutcome,
-        mutation: UInt64,
-        cellularWithoutWiFi: Bool = false
+        mutation: UInt64
     ) -> RouteLocationPushFailure? {
         guard !Task.isCancelled, client.currentMutation() == mutation else { return .superseded }
         switch outcome {
         case .superseded:
             return .superseded
         case .finished(let failure):
-            let reported = Self.explained(failure, cellularWithoutWiFi: cellularWithoutWiFi)
+            let observation = environment.networkObservation()
+            let reported = Self.explained(failure, observation: observation)
             activity.lastSetAt = Date()
             activity.lastFailure = reported
             guard let reported else {
@@ -306,15 +322,21 @@ final class RouteLocationSetupStore: ObservableObject, DeveloperLocationPushing 
                 activity.simulationMayStillBeActive = false
                 return nil
             }
+            var details = observation.diagnosticDetails
+            details["阶段"] = "set"
+            details["失败类别"] = String(describing: failure)
+            details["定位意图有效"] = String(writesAllowed)
+            RuntimeLogger.warning("APP", "隧道", "定位推送未确认成功", details: details)
             // 失败后立刻丢掉半开隧道，避免占到系统隔夜才回收。
             client.abandonSession()
             if isSimulating {
                 activity.simulationMayStillBeActive = true
             }
+            isSimulating = false
             // 推送失败先看隧道是不是断了，把具体原因告诉用户。
             refresh()
             if readiness != .ready {
-                isSimulating = false
+                activity.lastFailure = .notReady(readiness)
                 return .notReady(readiness)
             }
             return reported
@@ -323,9 +345,9 @@ final class RouteLocationSetupStore: ObservableObject, DeveloperLocationPushing 
 
     private static func explained(
         _ failure: RouteLocationPushFailure?,
-        cellularWithoutWiFi: Bool
+        observation: DeveloperNetworkObservation
     ) -> RouteLocationPushFailure? {
-        if failure == .tunnel, cellularWithoutWiFi {
+        if failure == .tunnel, observation.usesCellular, !observation.usesWiFi {
             return .tunnelOnCellular
         }
         return failure
