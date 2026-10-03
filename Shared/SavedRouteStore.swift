@@ -108,48 +108,56 @@ final class SavedRouteStore: ObservableObject {
     private let defaults: UserDefaults
     private let pathStore: RoutePathFileStore
 
-    init(defaults: UserDefaults = AppGroup.defaults, pathDirectory: URL? = nil) {
-        let pathStore = RoutePathFileStore(directory: pathDirectory ?? RoutePathFileStore.defaultDirectory)
+    private var migrationPending = false
+
+    init(
+        defaults: UserDefaults = AppGroup.defaults,
+        pathDirectory: URL? = nil,
+        beforePathDelete: @escaping (UUID) throws -> Void = { _ in },
+        beforePathWrite: @escaping (UUID) throws -> Void = { _ in }
+    ) {
+        let pathStore = RoutePathFileStore(
+            directory: pathDirectory ?? RoutePathFileStore.defaultDirectory,
+            beforeDelete: beforePathDelete,
+            beforeWrite: beforePathWrite
+        )
         self.defaults = defaults
         self.pathStore = pathStore
         let decoded = Self.loadCatalog(defaults)
-        let kept = Array(decoded.prefix(Self.limit))
-        let dropped = decoded.dropFirst(Self.limit)
-        dropped.forEach { pathStore.delete($0.id) }
-        let hadEmbeddedPath = kept.contains { ($0.pathPoints?.count ?? 0) >= 2 }
-        let hydrated = kept.map { Self.hydrate($0, pathStore: pathStore) }
-        routes = hydrated
-        if hadEmbeddedPath {
-            persistIgnoringFailure()
+        routes = Array(decoded.prefix(Self.limit)).map { Self.hydrate($0, pathStore: pathStore) }
+        migrationPending = decoded.contains { ($0.pathPoints?.count ?? 0) >= 2 }
+        do { try finishMigration() } catch {
+            RuntimeLogger.error("APP", "路线", "迁移路线失败，保留原目录以便重试", error: error)
         }
     }
 
     @discardableResult
-    func save(_ route: SavedRoute) -> SavedRoute {
-        pathStore.write(route)
-        var stored = route
-        stored.pathPoints = pathStore.read(matching: route) ?? route.pathPoints
-        var next = routes.filter { $0.id != stored.id }
-        next.insert(stored, at: 0)
-        if next.count > Self.limit {
-            next.suffix(from: Self.limit).forEach { pathStore.delete($0.id) }
-            next = Array(next.prefix(Self.limit))
-        }
-        routes = next
-        persistIgnoringFailure()
+    func save(_ route: SavedRoute) throws -> SavedRoute {
+        try finishMigration()
+        var next = routes.filter { $0.id != route.id }
+        next.insert(route, at: 0)
+        let dropped = Array(next.dropFirst(Self.limit))
+        next = Array(next.prefix(Self.limit))
+        let stored = try commit(route, at: 0, in: next)
+        cleanup(dropped)
         return stored
     }
 
-    func rename(_ id: UUID, to name: String) {
+    func rename(_ id: UUID, to name: String) throws {
+        try finishMigration()
         guard let index = routes.firstIndex(where: { $0.id == id }) else { return }
-        routes[index].name = name
-        persistIgnoringFailure()
+        var next = routes
+        next[index].name = name
+        try persist(next)
+        routes = next
     }
 
-    func delete(_ route: SavedRoute) {
-        pathStore.delete(route.id)
-        routes = routes.filter { $0.id != route.id }
-        persistIgnoringFailure()
+    func delete(_ route: SavedRoute) throws {
+        try finishMigration()
+        let next = routes.filter { $0.id != route.id }
+        try persist(next)
+        routes = next
+        cleanup([route])
     }
 
     func exportTransferred() throws -> Data {
@@ -158,35 +166,72 @@ final class SavedRouteStore: ObservableObject {
 
     @discardableResult
     func importTransferred(_ incoming: [SavedRoute]) -> RouteTransfer.MergeResult {
-        var added = 0
-        var updated = 0
-        var skippedOverLimit = 0
-        var next = routes
+        var result = RouteTransfer.MergeResult(added: 0, updated: 0, skippedOverLimit: 0)
         for item in incoming {
-            if let index = next.firstIndex(where: { $0.id == item.id || sameGeometry($0, item) }) {
-                var merged = item
-                if next[index].id != item.id {
-                    merged = replacing(item, id: next[index].id, createdAt: next[index].createdAt)
+            do {
+                try finishMigration()
+                var next = routes
+                if let index = next.firstIndex(where: { $0.id == item.id || sameGeometry($0, item) }) {
+                    let merged = next[index].id == item.id ? item
+                        : replacing(item, id: next[index].id, createdAt: next[index].createdAt)
+                    next[index] = merged
+                    try commit(merged, at: index, in: next)
+                    result.updated += 1
+                } else if next.count >= Self.limit {
+                    result.skippedOverLimit += 1
+                } else {
+                    next.insert(item, at: 0)
+                    try commit(item, at: 0, in: next)
+                    result.added += 1
                 }
-                pathStore.delete(next[index].id)
-                pathStore.write(merged)
-                var stored = merged
-                stored.pathPoints = pathStore.read(matching: merged)
-                next[index] = stored
-                updated += 1
-            } else if next.count >= Self.limit {
-                skippedOverLimit += 1
-            } else {
-                pathStore.write(item)
-                var stored = item
-                stored.pathPoints = pathStore.read(matching: item)
-                next.insert(stored, at: 0)
-                added += 1
+            } catch {
+                result.failed += 1
+                RuntimeLogger.error("APP", "路线", "导入路线失败", error: error)
             }
         }
+        return result
+    }
+
+    @discardableResult
+    private func commit(_ route: SavedRoute, at index: Int, in proposed: [SavedRoute]) throws -> SavedRoute {
+        // 先验证目录可编码，避免路径已替换后才发现元数据无效。
+        let catalog = try JSONEncoder().encode(proposed)
+        var stored = route
+        stored.pathPoints = try pathStore.write(route)
+        var next = proposed
+        next[index] = stored
+        // UserDefaults 不提供持久化确认；这里不宣称跨文件崩溃事务保证。
+        defaults.set(catalog, forKey: Keys.routes)
         routes = next
-        persistIgnoringFailure()
-        return RouteTransfer.MergeResult(added: added, updated: updated, skippedOverLimit: skippedOverLimit)
+        return stored
+    }
+
+    private func finishMigration() throws {
+        guard migrationPending else { return }
+        let decoded = Self.loadCatalog(defaults)
+        let kept = Array(decoded.prefix(Self.limit))
+        let catalog = try JSONEncoder().encode(kept)
+        var migrated = kept
+        for index in kept.indices {
+            if (kept[index].pathPoints?.count ?? 0) >= 2 {
+                migrated[index].pathPoints = try pathStore.write(kept[index])
+            } else {
+                migrated[index] = Self.hydrate(kept[index], pathStore: pathStore)
+            }
+        }
+        // 所有内嵌路径写入并回读验证后才移除旧目录中的恢复来源。
+        defaults.set(catalog, forKey: Keys.routes)
+        routes = migrated
+        migrationPending = false
+        cleanup(Array(decoded.dropFirst(Self.limit)))
+    }
+
+    private func cleanup(_ removed: [SavedRoute]) {
+        for route in removed {
+            do { try pathStore.delete(route.id) } catch {
+                RuntimeLogger.error("APP", "路线", "清理未引用路径失败", error: error)
+            }
+        }
     }
 
     private func sameGeometry(_ lhs: SavedRoute, _ rhs: SavedRoute) -> Bool {
@@ -221,10 +266,9 @@ final class SavedRouteStore: ObservableObject {
 
     private static func hydrate(_ route: SavedRoute, pathStore: RoutePathFileStore) -> SavedRoute {
         var copy = route
-        if let embedded = copy.pathPoints, embedded.count >= 2 {
-            pathStore.write(copy)
+        if (copy.pathPoints?.count ?? 0) < 2 {
+            copy.pathPoints = pathStore.read(matching: route)
         }
-        copy.pathPoints = pathStore.read(matching: route)
         return copy
     }
 
@@ -236,15 +280,7 @@ final class SavedRouteStore: ObservableObject {
         return decoded
     }
 
-    private func persistIgnoringFailure() {
-        do {
-            try persist()
-        } catch {
-            RuntimeLogger.error("APP", "路线", "保存路线失败", error: error)
-        }
-    }
-
-    private func persist() throws {
-        defaults.set(try JSONEncoder().encode(routes), forKey: Keys.routes)
+    private func persist(_ next: [SavedRoute]) throws {
+        defaults.set(try JSONEncoder().encode(next), forKey: Keys.routes)
     }
 }

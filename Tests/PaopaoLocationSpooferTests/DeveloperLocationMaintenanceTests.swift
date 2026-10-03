@@ -147,6 +147,7 @@ final class DeveloperLocationMaintenanceTests: XCTestCase {
         XCTAssertEqual(cleared, .clearFailed)
         XCTAssertEqual(client.pushes.count, 1)
 
+        XCTAssertTrue(store.resumeWrites())
         _ = await store.set(latitude: 22.6, longitude: 114.0)
         let invalidated = await store.invalidateActiveSession()
         _ = await store.reassertIfNeeded()

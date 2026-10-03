@@ -25,13 +25,20 @@ enum RouteKML {
         data.starts(with: [0x50, 0x4B])
     }
 
-    static func decode(_ data: Data, fallbackName: String = "导入路线") throws -> [SavedRoute] {
+    static func decode(
+        _ data: Data, fallbackName: String = "导入路线",
+        checkpoint: @escaping (RouteImportPreparation.Stage) throws -> Void = { _ in try Task.checkCancellation() }
+    ) throws -> [SavedRoute] {
+        try checkpoint(.decoding)
         if looksLikeKMZ(data) { throw ParseError.unsupportedArchive }
-        let collector = Collector(fallbackName: fallbackName)
+        let collector = Collector(fallbackName: fallbackName, checkpoint: checkpoint)
         let parser = XMLParser(data: data)
         parser.shouldProcessNamespaces = true
         parser.delegate = collector
-        guard parser.parse() else { throw ParseError.invalidXML }
+        let parsed = parser.parse()
+        if let error = collector.failure { throw error }
+        try checkpoint(.parsing)
+        guard parsed else { throw ParseError.invalidXML }
         let routes = collector.routes
         guard !routes.isEmpty else { throw ParseError.empty }
         return routes
@@ -39,6 +46,8 @@ enum RouteKML {
 }
 
 private final class Collector: NSObject, XMLParserDelegate {
+    private let checkpoint: (RouteImportPreparation.Stage) throws -> Void
+    private(set) var failure: Error?
     private let fallbackName: String
     private var inPlacemark = false
     private var inLineString = false
@@ -55,8 +64,21 @@ private final class Collector: NSObject, XMLParserDelegate {
     private var loosePoints: [CoordinatePair] = []
     private(set) var routes: [SavedRoute] = []
 
-    init(fallbackName: String) {
+    init(fallbackName: String, checkpoint: @escaping (RouteImportPreparation.Stage) throws -> Void) {
         self.fallbackName = fallbackName
+        self.checkpoint = checkpoint
+    }
+
+    /// 只在 XMLParser 自己的同步回调中终止解析，不跨线程操作解析器。
+    private func collect(_ parser: XMLParser, body: () throws -> Void) {
+        guard failure == nil else { return }
+        do {
+            try checkpoint(.parsing)
+            try body()
+        } catch {
+            failure = error
+            parser.abortParsing()
+        }
     }
 
     func parser(
@@ -66,33 +88,37 @@ private final class Collector: NSObject, XMLParserDelegate {
         qualifiedName qName: String?,
         attributes attributeDict: [String: String] = [:]
     ) {
-        switch localName(elementName, qualifiedName: qName) {
-        case "placemark":
-            flushPlacemark()
-            inPlacemark = true
-        case "linestring":
-            inLineString = true
-        case "point":
-            inPoint = true
-        case "track":
-            inTrack = true
-        case "name":
-            capturingName = inPlacemark
-            nameBuffer = ""
-        case "coordinates":
-            capturingCoordinates = inLineString || inPoint
-            textBuffer = ""
-        case "coord":
-            capturingCoord = inTrack
-            textBuffer = ""
-        default:
-            break
+        collect(parser) {
+            switch localName(elementName, qualifiedName: qName) {
+            case "placemark":
+                try flushPlacemark()
+                inPlacemark = true
+            case "linestring":
+                inLineString = true
+            case "point":
+                inPoint = true
+            case "track":
+                inTrack = true
+            case "name":
+                capturingName = inPlacemark
+                nameBuffer = ""
+            case "coordinates":
+                capturingCoordinates = inLineString || inPoint
+                textBuffer = ""
+            case "coord":
+                capturingCoord = inTrack
+                textBuffer = ""
+            default:
+                break
+            }
         }
     }
 
     func parser(_ parser: XMLParser, foundCharacters string: String) {
-        if capturingName { nameBuffer += string }
-        if capturingCoordinates || capturingCoord { textBuffer += string }
+        collect(parser) {
+            if capturingName { nameBuffer += string }
+            if capturingCoordinates || capturingCoord { textBuffer += string }
+        }
     }
 
     func parser(
@@ -101,27 +127,29 @@ private final class Collector: NSObject, XMLParserDelegate {
         namespaceURI: String?,
         qualifiedName qName: String?
     ) {
-        switch localName(elementName, qualifiedName: qName) {
-        case "name":
-            finishName()
-        case "coordinates":
-            finishCoordinates()
-        case "coord":
-            finishCoord()
-        case "linestring":
-            inLineString = false
-        case "point":
-            inPoint = false
-        case "track":
-            inTrack = false
-        case "placemark":
-            flushPlacemark()
-            inPlacemark = false
-        case "kml", "document":
-            flushPlacemark()
-            if routes.isEmpty { flushLoosePoints() }
-        default:
-            break
+        collect(parser) {
+            switch localName(elementName, qualifiedName: qName) {
+            case "name":
+                finishName()
+            case "coordinates":
+                try finishCoordinates()
+            case "coord":
+                try finishCoord()
+            case "linestring":
+                inLineString = false
+            case "point":
+                inPoint = false
+            case "track":
+                inTrack = false
+            case "placemark":
+                try flushPlacemark()
+                inPlacemark = false
+            case "kml", "document":
+                try flushPlacemark()
+                if routes.isEmpty { try flushLoosePoints() }
+            default:
+                break
+            }
         }
     }
 
@@ -131,46 +159,47 @@ private final class Collector: NSObject, XMLParserDelegate {
         if !trimmed.isEmpty { currentName = trimmed }
     }
 
-    private func finishCoordinates() {
+    private func finishCoordinates() throws {
         capturingCoordinates = false
-        let points = parseCommaTuples(textBuffer)
+        let points = try parseCommaTuples(textBuffer)
         if inLineString {
-            appendPoints(points, to: &pathPoints)
+            try appendPoints(points, to: &pathPoints)
         } else if inPoint, inPlacemark {
-            appendPoints(points, to: &pointPoints)
+            try appendPoints(points, to: &pointPoints)
         } else if inPoint {
-            appendPoints(points, to: &loosePoints)
+            try appendPoints(points, to: &loosePoints)
         }
         textBuffer = ""
     }
 
-    private func finishCoord() {
+    private func finishCoord() throws {
         capturingCoord = false
-        if let point = parseSpaceTuple(textBuffer) {
-            appendPoints([point], to: &pathPoints)
+        if let point = try parseSpaceTuple(textBuffer) {
+            try appendPoints([point], to: &pathPoints)
         }
         textBuffer = ""
     }
 
-    private func flushPlacemark() {
+    private func flushPlacemark() throws {
         defer {
             currentName = nil
             pathPoints = []
             pointPoints = []
         }
         if !pathPoints.isEmpty {
-            appendRoute(points: pathPoints, name: currentName)
+            try appendRoute(points: pathPoints, name: currentName)
             return
         }
-        appendPoints(pointPoints, to: &loosePoints)
+        try appendPoints(pointPoints, to: &loosePoints)
     }
 
-    private func flushLoosePoints() {
-        appendRoute(points: loosePoints, name: nil)
+    private func flushLoosePoints() throws {
+        try appendRoute(points: loosePoints, name: nil)
     }
 
-    private func appendRoute(points: [CoordinatePair], name: String?) {
-        let simplified = RoutePathSimplifier.simplify(points)
+    private func appendRoute(points: [CoordinatePair], name: String?) throws {
+        try checkpoint(.simplifying(points.count))
+        let simplified = try RoutePathSimplifier.simplify(points) { try checkpoint(.simplificationStep) }
         guard simplified.count >= 2,
               RoutePath.make(simplified).totalMeters >= RoutePlayback.minimumDistanceMeters else {
             return
@@ -191,8 +220,9 @@ private final class Collector: NSObject, XMLParserDelegate {
         )
     }
 
-    private func appendPoints(_ incoming: [CoordinatePair], to points: inout [CoordinatePair]) {
+    private func appendPoints(_ incoming: [CoordinatePair], to points: inout [CoordinatePair]) throws {
         for point in incoming {
+            try checkpoint(.converting)
             if let last = points.last,
                RoutePlayback.distanceMeters(from: last, to: point) < 0.5 {
                 continue
@@ -201,20 +231,21 @@ private final class Collector: NSObject, XMLParserDelegate {
         }
     }
 
-    private func parseCommaTuples(_ text: String) -> [CoordinatePair] {
+    private func parseCommaTuples(_ text: String) throws -> [CoordinatePair] {
         let normalized = text.replacingOccurrences(of: #",\s*"#, with: ",", options: .regularExpression)
-        return normalized
+        return try normalized
             .split { $0.isWhitespace || $0.isNewline }
-            .compactMap { parseLonLat(String($0).split(separator: ",").map(String.init)) }
+            .compactMap { try parseLonLat(String($0).split(separator: ",").map(String.init)) }
     }
 
-    private func parseSpaceTuple(_ text: String) -> CoordinatePair? {
-        parseLonLat(
+    private func parseSpaceTuple(_ text: String) throws -> CoordinatePair? {
+        try parseLonLat(
             text.split { $0.isWhitespace || $0.isNewline }.map(String.init)
         )
     }
 
-    private func parseLonLat(_ parts: [String]) -> CoordinatePair? {
+    private func parseLonLat(_ parts: [String]) throws -> CoordinatePair? {
+        try checkpoint(.converting)
         guard parts.count >= 2,
               let lon = Double(parts[0]),
               let lat = Double(parts[1]),

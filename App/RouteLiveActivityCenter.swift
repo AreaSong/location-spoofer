@@ -28,6 +28,7 @@ final class RouteLiveActivityCenter {
     private var creationRetryTask: Task<Void, Never>?
     private var pendingCreation: SyncRequest?
     private var allowDeferredCreationAttempt = false
+    private var payloadRejected = false
 
     func sync(
         route: RouteActivitySnapshot?,
@@ -111,9 +112,10 @@ final class RouteLiveActivityCenter {
         let ending = next.phaseKey == .finished || next.phaseKey == .stopped
         let becomingTerminal = ending && lastRoute?.phaseKey != next.phaseKey
         lastSpot = nil
-        let state = routeState(next)
-        let content = ActivityContent(state: state, staleDate: RouteActivitySync.staleDate(for: next))
-        await ensureActivity(name: next.routeName, content: content, token: token)
+        let state = RouteActivityPayload.routeState(next)
+        guard let content = await preparedContent(
+            name: next.routeName, state: state, staleDate: RouteActivitySync.staleDate(for: next), token: token
+        ) else { return }
         guard !superseded(token), let activity else { return }
         if becomingTerminal {
             await finishRoute(next, activity: activity, content: content, token: token)
@@ -175,9 +177,10 @@ final class RouteLiveActivityCenter {
         }
         lastRoute = nil
         closedRouteTerminal = nil
-        let state = spotState(next)
-        let content = ActivityContent(state: state, staleDate: SpotActivitySync.staleDate(for: next))
-        await ensureActivity(name: next.placeName, content: content, token: token)
+        let state = RouteActivityPayload.spotState(next)
+        guard let content = await preparedContent(
+            name: next.placeName, state: state, staleDate: SpotActivitySync.staleDate(for: next), token: token
+        ) else { return }
         guard !superseded(token), let activity else { return }
         if next.status == .stopped {
             await finishSpot(activity, content: content, token: token)
@@ -212,8 +215,40 @@ final class RouteLiveActivityCenter {
         closedSpotStop = true
     }
 
-    private func ensureActivity(
+    /// 所有 request/update/end(content) 共用此出口；接管后必须重算不可变 attributes 的占用。
+    private func preparedContent(
         name: String,
+        state: RouteActivityAttributes.ContentState,
+        staleDate: Date?,
+        token: Int
+    ) async -> ActivityContent<RouteActivityAttributes.ContentState>? {
+        do {
+            let existing = activity.flatMap {
+                ActivityRunPolicy.shouldReplace(runtimeState(of: $0)) ? nil : $0.attributes
+            }
+            let payload = try RouteActivityPayload.prepare(name: name, state: state, existingAttributes: existing)
+            if payloadRejected { noteCreationSucceeded() }
+            let content = ActivityContent(state: payload.state, staleDate: staleDate)
+            await ensureActivity(attributes: payload.attributes, content: content, token: token)
+            guard !superseded(token), let activity else { return nil }
+            let adopted = try payload.reconciled(with: activity.attributes, sourceState: state)
+            return ActivityContent(state: adopted.state, staleDate: staleDate)
+        } catch {
+            if !payloadRejected {
+                RuntimeLogger.error("RouteLiveActivity", "payload", "灵动岛载荷超出预算或无法编码，已停止本次发布",
+                                    error: error, details: ["limit": String(RouteActivityPayload.byteLimit)])
+            }
+            payloadRejected = true
+            creationFailures = 3
+            creationRetryTask?.cancel()
+            creationRetryTask = nil
+            allowDeferredCreationAttempt = false
+            return nil
+        }
+    }
+
+    private func ensureActivity(
+        attributes: RouteActivityAttributes,
         content: ActivityContent<RouteActivityAttributes.ContentState>,
         token: Int
     ) async {
@@ -227,12 +262,12 @@ final class RouteLiveActivityCenter {
                 return
             }
         }
-        await requestActivity(name: name, content: content, token: token)
+        await requestActivity(attributes: attributes, content: content, token: token)
     }
 
     /// 创建失败先立刻再试一次，仍失败就延后重放当前快照。次数用完后停止，避免空转。
     private func requestActivity(
-        name: String,
+        attributes: RouteActivityAttributes,
         content: ActivityContent<RouteActivityAttributes.ContentState>,
         token: Int
     ) async {
@@ -251,7 +286,7 @@ final class RouteLiveActivityCenter {
             allowDeferredCreationAttempt = false
             do {
                 let created = try Activity.request(
-                    attributes: RouteActivityAttributes(name: name),
+                    attributes: attributes,
                     content: content,
                     pushType: nil
                 )
@@ -298,6 +333,7 @@ final class RouteLiveActivityCenter {
     }
 
     private func noteCreationSucceeded() {
+        payloadRejected = false
         creationFailures = 0
         failedCreationKey = nil
         creationRetryTask?.cancel()
@@ -476,66 +512,4 @@ final class RouteLiveActivityCenter {
         closedSpotStop = false
     }
 
-    private func routeDetail(_ snapshot: RouteActivitySnapshot) -> String {
-        RouteActivitySync.detailText(for: snapshot)
-    }
-
-    private func showsRouteProgress(_ phase: RouteActivityPhaseKey) -> Bool {
-        switch phase {
-        case .playing, .userPaused, .systemFault, .retrying, .finished, .actionFailed:
-            return true
-        case .stopped, .planning:
-            return false
-        }
-    }
-
-    private func routeState(_ snapshot: RouteActivitySnapshot) -> RouteActivityAttributes.ContentState {
-        RouteActivityAttributes.ContentState(
-            kind: "route",
-            title: snapshot.routeName,
-            statusText: snapshot.statusText,
-            detailText: routeDetail(snapshot),
-            distanceText: snapshot.distanceText,
-            timeText: snapshot.timeText,
-            progress: min(max(snapshot.progress, 0), 1),
-            showsProgress: showsRouteProgress(snapshot.phaseKey),
-            symbolName: snapshot.symbolName,
-            modeSymbolName: snapshot.modeSymbolName,
-            isWarning: snapshot.isWarning,
-            primaryAction: snapshot.primaryAction,
-            primaryTitle: snapshot.primaryTitle,
-            secondaryAction: snapshot.secondaryAction,
-            secondaryTitle: snapshot.secondaryTitle,
-            tertiaryAction: snapshot.tertiaryAction,
-            tertiaryTitle: snapshot.tertiaryTitle,
-            phase: snapshot.phaseKey.rawValue,
-            errorText: snapshot.errorText,
-            retryCommand: snapshot.retryCommand,
-            speedText: snapshot.speedText
-        )
-    }
-
-    private func spotState(_ snapshot: SpotActivitySnapshot) -> RouteActivityAttributes.ContentState {
-        RouteActivityAttributes.ContentState(
-            kind: "spot",
-            title: snapshot.placeName,
-            statusText: snapshot.statusText,
-            detailText: snapshot.caption,
-            distanceText: "",
-            timeText: "",
-            progress: 0,
-            showsProgress: false,
-            symbolName: snapshot.symbolName,
-            isWarning: snapshot.isWarning,
-            primaryAction: snapshot.primaryAction,
-            primaryTitle: snapshot.primaryTitle,
-            secondaryAction: snapshot.secondaryAction,
-            secondaryTitle: snapshot.secondaryTitle,
-            tertiaryAction: snapshot.tertiaryAction,
-            tertiaryTitle: snapshot.tertiaryTitle,
-            phase: snapshot.status.rawValue,
-            errorText: snapshot.errorText,
-            retryCommand: snapshot.retryCommand
-        )
-    }
 }

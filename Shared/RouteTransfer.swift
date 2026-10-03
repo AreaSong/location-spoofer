@@ -8,6 +8,16 @@ enum RouteTransfer {
         var added: Int
         var updated: Int
         var skippedOverLimit: Int
+        var failed: Int = 0
+
+        var title: String {
+            if failed == 0 { return "路线已导入" }
+            return added + updated == 0 ? "路线导入失败" : "路线部分导入"
+        }
+
+        var message: String {
+            "新增 \(added) 条，更新 \(updated) 条，超出上限 \(skippedOverLimit) 条，失败 \(failed) 条"
+        }
     }
 
     enum TransferError: LocalizedError, Equatable {
@@ -45,24 +55,34 @@ enum RouteTransfer {
     }
 
     static func encode(_ routes: [SavedRoute]) throws -> Data {
-        let document = Document(format: format, version: version, routes: routes.map(item(from:)))
+        let formatter = makeDateFormatter()
+        let document = Document(format: format, version: version, routes: routes.map { item(from: $0, formatter: formatter) })
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         return try encoder.encode(document)
     }
 
-    static func decode(_ data: Data) throws -> [SavedRoute] {
+    static func decode(
+        _ data: Data,
+        checkpoint: () throws -> Void = { try Task.checkCancellation() }
+    ) throws -> [SavedRoute] {
+        try checkpoint()
         let document: Document
         do {
             document = try JSONDecoder().decode(Document.self, from: data)
         } catch {
             throw TransferError.invalidJSON
         }
+        try checkpoint()
         guard document.format == format, document.version == version else {
             throw TransferError.unsupportedFormat
         }
         guard !document.routes.isEmpty else { throw TransferError.empty }
-        return try document.routes.map(route(from:))
+        let formatter = makeDateFormatter()
+        return try document.routes.map { item in
+            try checkpoint()
+            return try route(from: item, formatter: formatter, checkpoint: checkpoint)
+        }
     }
 
     static func decode(text: String) throws -> [SavedRoute] {
@@ -72,7 +92,7 @@ enum RouteTransfer {
         return try decode(data)
     }
 
-    private static func item(from route: SavedRoute) -> Item {
+    private static func item(from route: SavedRoute, formatter: ISO8601DateFormatter) -> Item {
         Item(
             id: route.id,
             name: route.name,
@@ -80,7 +100,7 @@ enum RouteTransfer {
             speedKilometersPerHour: route.speedKilometersPerHour,
             offsetMeters: route.offsetMeters,
             repeatMode: route.repeatMode.rawValue,
-            createdAt: dateFormatter.string(from: route.createdAt),
+            createdAt: formatter.string(from: route.createdAt),
             start: coordinate(route.start),
             end: coordinate(route.end),
             vias: route.viaPoints.map(coordinate),
@@ -88,7 +108,7 @@ enum RouteTransfer {
         )
     }
 
-    private static func route(from item: Item) throws -> SavedRoute {
+    private static func route(from item: Item, formatter: ISO8601DateFormatter, checkpoint: () throws -> Void) throws -> SavedRoute {
         guard let travelMode = RouteTravelMode(rawValue: item.travelMode),
               let repeatMode = RouteRepeatMode(rawValue: item.repeatMode) else {
             throw TransferError.invalidJSON
@@ -102,9 +122,9 @@ enum RouteTransfer {
             speedKilometersPerHour: item.speedKilometersPerHour,
             offsetMeters: item.offsetMeters,
             repeatMode: repeatMode,
-            viaPoints: try item.vias.map(pair),
-            pathPoints: try item.path.map { try $0.map(pair) },
-            createdAt: dateFormatter.date(from: item.createdAt) ?? Date()
+            viaPoints: try item.vias.map { try checkpoint(); return try pair($0) },
+            pathPoints: try item.path.map { try $0.map { try checkpoint(); return try pair($0) } },
+            createdAt: formatter.date(from: item.createdAt) ?? Date()
         )
     }
 
@@ -124,9 +144,9 @@ enum RouteTransfer {
         )
     }
 
-    private static let dateFormatter: ISO8601DateFormatter = {
+    private static func makeDateFormatter() -> ISO8601DateFormatter {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         return formatter
-    }()
+    }
 }

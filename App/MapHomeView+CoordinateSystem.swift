@@ -38,10 +38,7 @@ extension MapHomeView {
     ) {
         geocodeDebounceTask?.cancel()
         reverseGeocodeTask?.cancel()
-        searchRequestID &+= 1
-        isSearching = false
-        searchResults = []
-        searchError = ""
+        search.dismissResults()
         realtimeRequestTask?.cancel()
         realtimeRequestTask = nil
         realtimeRequestContext = nil

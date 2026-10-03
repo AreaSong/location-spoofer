@@ -197,8 +197,8 @@ grep -q 'MARKETING_VERSION: "1.1.0.0"' "$ROOT/project.yml" || fail "marketing ve
 grep -q 'CURRENT_PROJECT_VERSION: "11"' "$ROOT/project.yml" || fail "build version must be 11"
 
 grep -q 'func mustSucceed' "$ROOT/Shared/RuntimeModeSwitchCleanup.swift" \
-  || fail "leaving third-party for developer tunnel must not hard-block on WLOC clear"
-grep -q '仍继续切换' "$ROOT/App/SettingsView+AppMode.swift" \
-  || fail "developer-tunnel switch must continue if third-party clear fails"
+  || fail "mode cleanup must define mandatory persisted-location cleanup"
+grep -q 'presentThirdPartyCoordinateClearBlocked(destination: newMode, error: error)' "$ROOT/App/SettingsView+AppMode.swift" \
+  || fail "mode switch must report and retain the current mode if third-party clear fails"
 
 echo "PASS: third-party proxy mode contract"

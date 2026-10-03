@@ -5,22 +5,30 @@ import UniformTypeIdentifiers
 struct SavedRouteListView: View {
     @ObservedObject var store: SavedRouteStore
     @ObservedObject var recentRoutes: RecentRouteStore
+    @ObservedObject var routeImport: RouteImportCoordinator
+    var isListPresented: () -> Bool
     var onSelect: (SavedRoute) -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var query = ""
     @State private var editingRoute: SavedRoute?
     @State private var editName = ""
-    @State private var showsImporter = false
-    @State private var transferTitle = ""
-    @State private var transferMessage = ""
-    @State private var showsTransferAlert = false
+    @State private var pageID = UUID()
+    @State private var fileSelection: RouteImportCoordinator.FileRequest?
 
     var body: some View {
         List {
+            if routeImport.isBusy {
+                Section {
+                    ProgressView(routeImport.state == .cancelling ? "正在取消，等待处理结束…" : "正在导入路线…")
+                    Button("取消导入", role: .cancel) { routeImport.cancel() }
+                        .disabled(routeImport.state != .preparing)
+                }
+            }
             if !filteredRecent.isEmpty {
                 Section("最近走过") {
                     ForEach(filteredRecent) { route in
                         Button {
+                            routeImport.leavePage(pageID)
                             onSelect(route.savedRoute())
                             dismiss()
                         } label: {
@@ -60,23 +68,36 @@ struct SavedRouteListView: View {
                     Button("分享备份文件") { shareFile() }
                         .disabled(store.routes.isEmpty)
                     Button("从剪贴板导入") { importFromClipboard() }
-                    Button("从文件导入") { showsImporter = true }
+                        .disabled(routeImport.isBusy)
+                    Button("从文件导入") {
+                        guard isListPresented() else { return }
+                        fileSelection = routeImport.beginFileSelection(pageID: pageID)
+                    }
+                    .disabled(routeImport.isBusy)
                 } label: {
                     Image(systemName: "square.and.arrow.up")
                 }
                 .accessibilityLabel("导入或导出路线")
             }
             ToolbarItem(placement: .navigationBarTrailing) {
-                Button("完成") { dismiss() }
+                Button("完成") { routeImport.leavePage(pageID); dismiss() }
             }
         }
-        .fileImporter(isPresented: $showsImporter, allowedContentTypes: Self.importTypes) { result in
-            importFile(result)
+        .onAppear {
+            if isListPresented() { routeImport.enterPage(pageID) }
         }
-        .alert(transferTitle, isPresented: $showsTransferAlert) {
+        .sheet(item: $fileSelection) { request in
+            RouteImportFilePicker(types: Self.importTypes) { result in
+                importFile(result, request: request)
+            }
+        }
+        .alert(routeImport.notice?.title ?? "路线", isPresented: Binding(
+            get: { routeImport.notice != nil },
+            set: { if !$0 { routeImport.notice = nil } }
+        )) {
             Button("好", role: .cancel) {}
         } message: {
-            Text(transferMessage)
+            Text(routeImport.notice?.message ?? "")
         }
         .alert("编辑路线名称", isPresented: Binding(
             get: { editingRoute != nil },
@@ -86,7 +107,8 @@ struct SavedRouteListView: View {
             Button("保存") {
                 if let route = editingRoute {
                     let name = editName.trimmingCharacters(in: .whitespacesAndNewlines)
-                    store.rename(route.id, to: name.isEmpty ? route.name : name)
+                    do { try store.rename(route.id, to: name.isEmpty ? route.name : name) }
+                    catch { present("路线改名失败", error.localizedDescription) }
                 }
                 editingRoute = nil
             }
@@ -98,6 +120,7 @@ struct SavedRouteListView: View {
 
     private func routeRow(_ route: SavedRoute) -> some View {
         Button {
+            routeImport.leavePage(pageID)
             onSelect(route)
             dismiss()
         } label: {
@@ -113,7 +136,8 @@ struct SavedRouteListView: View {
         }
         .swipeActions(edge: .trailing, allowsFullSwipe: false) {
             Button(role: .destructive) {
-                store.delete(route)
+                do { try store.delete(route) }
+                catch { present("路线删除失败", error.localizedDescription) }
             } label: {
                 Label("删除", systemImage: "trash")
             }
@@ -151,65 +175,31 @@ struct SavedRouteListView: View {
         }
     }
 
+    private var pageAllowsImport: Bool {
+        isListPresented() && routeImport.ownsPage(pageID)
+    }
+
     private func importFromClipboard() {
-        guard let text = UIPasteboard.general.string, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            present("路线导入失败", "剪贴板里没有路线备份")
-            return
-        }
-        importRoutes(from: Data(text.utf8))
+        guard pageAllowsImport, !routeImport.isBusy else { return }
+        // UIKit 读取仅在主 actor 捕获快照；空白检查及 UTF-8 转换在后台进行。
+        startImport(.clipboard(UIPasteboard.general.string ?? ""))
     }
 
-    private func importFile(_ result: Result<URL, Error>) {
+    private func importFile(_ result: Result<URL, Error>, request: RouteImportCoordinator.FileRequest) {
+        guard request.pageID == pageID, pageAllowsImport,
+              routeImport.acceptFileSelection(request) else { return }
+        if fileSelection == request { fileSelection = nil }
         switch result {
-        case .success(let url):
-            let accessing = url.startAccessingSecurityScopedResource()
-            defer { if accessing { url.stopAccessingSecurityScopedResource() } }
-            do {
-                importRoutes(
-                    from: try Data(contentsOf: url),
-                    fallbackName: url.deletingPathExtension().lastPathComponent
-                )
-            } catch {
-                present("路线导入失败", error.localizedDescription)
-            }
+        case .success(let url): startImport(.file(url))
         case .failure(let error):
+            guard !RouteImportCoordinator.isCancellation(error) else { return }
             present("路线导入失败", error.localizedDescription)
         }
     }
 
-    private func importRoutes(from data: Data, fallbackName: String = "导入路线") {
-        do {
-            let incoming = try Self.decodeIncoming(data, fallbackName: fallbackName)
-            let result = store.importTransferred(incoming)
-            present(
-                "路线已导入",
-                "新增 \(result.added) 条，更新 \(result.updated) 条，超出上限 \(result.skippedOverLimit) 条"
-            )
-        } catch {
-            present("路线导入失败", error.localizedDescription)
-        }
-    }
-
-    private static func decodeIncoming(_ data: Data, fallbackName: String) throws -> [SavedRoute] {
-        if RouteGPX.looksLikeGPX(data) {
-            return try RouteGPX.decode(data, fallbackName: fallbackName)
-        }
-        if RouteKML.looksLikeKMZ(data) {
-            throw RouteKML.ParseError.unsupportedArchive
-        }
-        if RouteKML.looksLikeKML(data) {
-            return try RouteKML.decode(data, fallbackName: fallbackName)
-        }
-        do {
-            return try RouteTransfer.decode(data)
-        } catch {
-            if let routes = try? RouteGPX.decode(data, fallbackName: fallbackName) {
-                return routes
-            }
-            if let routes = try? RouteKML.decode(data, fallbackName: fallbackName) {
-                return routes
-            }
-            throw error
+    private func startImport(_ input: RouteImportPreparation.Input) {
+        routeImport.start(input, pageID: pageID, isPageActive: { pageAllowsImport }) { prepared in
+            store.importTransferred(prepared.routes)
         }
     }
 
@@ -224,9 +214,7 @@ struct SavedRouteListView: View {
     }
 
     private func present(_ title: String, _ message: String) {
-        transferTitle = title
-        transferMessage = message
-        showsTransferAlert = true
+        routeImport.report(title, message)
     }
 
     private var filteredRoutes: [SavedRoute] {

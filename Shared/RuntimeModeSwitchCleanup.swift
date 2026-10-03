@@ -9,9 +9,6 @@ enum RuntimeModePersistedLocation: Equatable {
 }
 
 enum RuntimeModeSwitchCleanup {
-    static let thirdPartyClearBestEffortMessage =
-        "未能通知第三方客户端清除坐标。请在客户端关掉 WLOC 模块；真实位置若还停在旧点，再开关一次定位服务。"
-
     /// 切模式前要尝试清掉的持久定位。APP 模式即使不是从第三方切过来，也要清 WLOC，避免模块继续拦截。
     static func required(
         from current: ProxyRuntimeMode,
@@ -28,15 +25,11 @@ enum RuntimeModeSwitchCleanup {
         return required
     }
 
-    /// 清不掉就保持原模式。切到开发者隧道时第三方 WLOC 只尽力清除：客户端已坏时不能把人锁在第三方模式里。
+    /// 清理失败一律保持原模式，避免旧持久坐标跨模式残留。
     static func mustSucceed(
         from current: ProxyRuntimeMode,
         to next: ProxyRuntimeMode
     ) -> Set<RuntimeModePersistedLocation> {
-        var items = required(from: current, to: next)
-        if next == .developerTunnel {
-            items.remove(.thirdPartyWLOC)
-        }
-        return items
+        required(from: current, to: next)
     }
 }

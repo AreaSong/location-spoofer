@@ -22,6 +22,10 @@ enum UpdateCheckResult: Identifiable {
 struct SettingsView: View {
     @ObservedObject var setup: SetupCoordinator
     @ObservedObject var actions: LocationActionCoordinator
+    @ObservedObject var favoriteImport: FavoriteImportCoordinator
+    var isSettingsPresented: () -> Bool
+    @State var showingBugReport = false
+    @State var favoritePageID = UUID()
     @ObservedObject var favorites: FavoriteLocationStore
     @ObservedObject var session: SpoofSession
     @ObservedObject var proxy = ProxyManager.shared
@@ -49,8 +53,6 @@ struct SettingsView: View {
     @State var mapCoordinateSystemName = CoordinateConverter.MapCoordinateSystem.gcj02.diagnosticName
     @State var mapCoordinateSystemUsedFallback = false
     @State var showFavoriteImporter = false
-    @State var favoriteTransferTitle = "收藏"
-    @State var favoriteTransferMessage = ""
     @State var showSigningResignSheet = false
 
     var body: some View {
@@ -185,8 +187,7 @@ struct SettingsView: View {
         UIPreview.isEnabled()
             || modeOperationRunning
             || actions.state.isBusy
-            || session.state == .verifying
-            || thirdPartyProxy.isRequesting
+            || (session.state == .verifying && session.writesSuspended)
             || routeLocation.isClearing
     }
 

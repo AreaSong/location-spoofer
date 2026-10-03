@@ -13,10 +13,13 @@ final class SetupCoordinator: ObservableObject {
     @Published private(set) var setupStep: SetupStep = .proxy
 
     let certificateStore = CertificateAuthorityStore()
-    let proxy = ProxyManager.shared
+    let proxy: ProxyManager
     private var isVerificationRunning = false
 
-    init() { RuntimeLogger.info("APP", "Setup", "初始化") }
+    init(proxy: ProxyManager? = nil) {
+        self.proxy = proxy ?? .shared
+        RuntimeLogger.info("APP", "Setup", "初始化")
+    }
 
     private var appVersion: String {
         let v = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?"
@@ -57,6 +60,11 @@ final class SetupCoordinator: ObservableObject {
             presentFailure(presentSetup: presentSetup)
         case .verificationInProgress, .verificationSuperseded:
             break
+        case .coordinateWriteFailed(let reason):
+            trustState = .unavailable
+            setupStep = .proxy
+            message = reason
+            presentFailure(presentSetup: presentSetup)
         default:
             trustState = .unavailable
             setupStep = .proxy
@@ -136,6 +144,9 @@ final class SetupCoordinator: ObservableObject {
             log("  ⚠ 代理未运行，尝试启动…")
             do { try await proxy.start() } catch {
                 log("  ✗ 启动失败: \(error.localizedDescription)")
+                if error is LocationAccuracy.ValidationError {
+                    return .coordinateWriteFailed(error.localizedDescription)
+                }
                 return .proxyNotRunning
             }
             log("  ✓ 代理启动成功")

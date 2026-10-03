@@ -291,8 +291,9 @@ final class RouteLocationTests: XCTestCase {
 
         XCTAssertNil(clearFailure)
         XCTAssertEqual(setFailure, .superseded)
-        XCTAssertEqual(client.clears, 1)
-        XCTAssertTrue(client.pushes.isEmpty)
+        XCTAssertEqual(client.reconnectClears, 1)
+        // 保守重连 clear 的假实现记录 (0, 0)，旧 set 本身仍未执行。
+        XCTAssertEqual(client.pushes.map(\.latitude), [0])
         XCTAssertFalse(store.isSimulating)
     }
 
@@ -520,6 +521,7 @@ final class RouteLocationTests: XCTestCase {
         XCTAssertEqual(store.activity.lastFailure, .clearFailed)
         XCTAssertTrue(store.activity.simulationMayStillBeActive)
 
+        XCTAssertTrue(store.resumeWrites())
         let setAt = store.activity.lastSetAt
         let clientForCancel = client
         let entered = expectation(description: "superseded set")
@@ -756,6 +758,10 @@ final class FakeIdeviceClient: IdeviceLocationPushing, @unchecked Sendable {
         defer { lock.unlock() }
         guard mutation == self.mutation else { return .superseded }
         _ = deviceAddress
+        if retainsSimulation {
+            clears += 1
+            return finishClear()
+        }
         reconnectClears += 1
         pushes.append((0, 0, pairingPath))
         return finishClear()
@@ -780,5 +786,301 @@ final class FakeIdeviceClient: IdeviceLocationPushing, @unchecked Sendable {
             deviceSimulationActive = false
         }
         return .finished(failure)
+    }
+}
+
+/// 替换设备操作，保留 IdeviceLocationClient 的实际串行执行权和锁。
+private final class SerialDeviceProbe: @unchecked Sendable {
+    let entered: XCTestExpectation
+    let release = DispatchSemaphore(value: 0)
+    private let lock = NSLock()
+    private var events: [String] = []
+    private var active = false
+    private var coordinate: (Double, Double)?
+    private let blockedLatitude: Double?
+    private var timedOut = false
+    let clearFailure: RouteLocationPushFailure?
+
+    init(entered: XCTestExpectation, clearFailure: RouteLocationPushFailure? = nil, blockedLatitude: Double? = nil) {
+        self.blockedLatitude = blockedLatitude
+        self.entered = entered
+        self.clearFailure = clearFailure
+    }
+
+    var snapshot: (events: [String], active: Bool, timedOut: Bool, coordinate: (Double, Double)?) {
+        lock.lock()
+        defer { lock.unlock() }
+        return (events, active, timedOut, coordinate)
+    }
+
+    var operations: IdeviceLocationClient.DeviceOperations {
+        .init(set: { [self] latitude, longitude in
+            lock.lock()
+            let first = blockedLatitude.map { $0 == latitude && !events.contains("set:\(Int(latitude))") } ?? events.isEmpty
+            events.append("set:\(Int(latitude))")
+            lock.unlock()
+            if first {
+                entered.fulfill()
+                // 仅作死锁看门狗；正常路径由主 actor 明确释放，无定时 sleep。
+                let timeout = release.wait(timeout: .now() + 3) == .timedOut
+                lock.lock()
+                timedOut = timeout
+                lock.unlock()
+            }
+            lock.lock()
+            active = true
+            coordinate = (latitude, longitude)
+            lock.unlock()
+            return nil
+        }, clear: { [self] in
+            lock.lock()
+            defer { lock.unlock() }
+            events.append("clear")
+            if clearFailure == nil { active = false }
+            return clearFailure
+        }, abandon: { [self] in
+            lock.lock()
+            events.append("abandon")
+            lock.unlock()
+        }, retainsSimulation: { [self] in snapshot.active })
+    }
+}
+
+extension RouteLocationTests {
+    @MainActor
+    func testRealClientQueueDoesNotBlockStopAndSkipsQueuedWrites() async throws {
+        let entered = expectation(description: "设备 set 独占真实串行队列")
+        let probe = SerialDeviceProbe(entered: entered)
+        let client = IdeviceLocationClient(operations: probe.operations)
+        let store = try serialStore(client)
+        let initial = Task { await store.set(latitude: 1, longitude: 1) }
+        await fulfillment(of: [entered], timeout: 2)
+        let queued = Task { await store.set(latitude: 2, longitude: 2) }
+        // 在 actor 上提交停止；begin/current/retains/abandon 都不得等待慢队列。
+        let stopped = expectation(description: "主 actor 已处理停止")
+        let clear = Task {
+            store.suspendWrites()
+            _ = client.currentMutation()
+            _ = client.retainsSimulation
+            stopped.fulfill()
+            return await store.clear()
+        }
+        await fulfillment(of: [stopped], timeout: 2)
+        XCTAssertFalse(store.resumeWrites())
+        let rejected = await store.set(latitude: 3, longitude: 3)
+        XCTAssertEqual(rejected, .superseded)
+        probe.release.signal()
+        let oldResult = await initial.value
+        let queuedResult = await queued.value
+        let clearResult = await clear.value
+        XCTAssertEqual(oldResult, .superseded)
+        XCTAssertEqual(queuedResult, .superseded)
+        XCTAssertNil(clearResult)
+        XCTAssertEqual(probe.snapshot.events, ["set:1", "clear"])
+        XCTAssertFalse(probe.snapshot.timedOut)
+        XCTAssertFalse(probe.snapshot.active)
+        XCTAssertFalse(store.isSimulating)
+        _ = await store.reassertIfNeeded()
+        XCTAssertEqual(probe.snapshot.events.count, 2)
+        XCTAssertTrue(store.resumeWrites())
+        let restarted = await store.set(latitude: 4, longitude: 4)
+        XCTAssertNil(restarted)
+        XCTAssertTrue(store.isSimulating)
+        _ = await store.reassertIfNeeded()
+        XCTAssertEqual(probe.snapshot.events, ["set:1", "clear", "set:4", "set:4"])
+    }
+
+    @MainActor
+    func testInFlightSuccessThenFailedClearDoesNotRearmMaintenance() async throws {
+        let entered = expectation(description: "慢设备写入")
+        let probe = SerialDeviceProbe(entered: entered, clearFailure: .clearFailed)
+        let client = IdeviceLocationClient(operations: probe.operations)
+        let store = try serialStore(client)
+        let initial = Task { await store.set(latitude: 1, longitude: 1) }
+        await fulfillment(of: [entered], timeout: 2)
+        store.suspendWrites()
+        // abandon 的调用本身也不能在主 actor 等待设备队列。
+        client.abandonSession()
+        let clear = Task { await store.clear() }
+        probe.release.signal()
+        let old = await initial.value
+        let failed = await clear.value
+        XCTAssertEqual(old, .superseded)
+        XCTAssertEqual(failed, .clearFailed)
+        XCTAssertTrue(store.activity.simulationMayStillBeActive)
+        XCTAssertTrue(probe.snapshot.active)
+        XCTAssertFalse(probe.snapshot.timedOut)
+        _ = await store.reassertIfNeeded()
+        let rejected = await store.set(latitude: 2, longitude: 2)
+        XCTAssertEqual(rejected, .superseded)
+        XCTAssertEqual(probe.snapshot.events, ["set:1", "abandon", "clear"])
+    }
+
+    @MainActor
+    private func serialStore(_ client: IdeviceLocationClient) throws -> RouteLocationSetupStore {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let pairing = RoutePairingStore(directoryURL: directory)
+        try pairing.install(PropertyListSerialization.data(
+            fromPropertyList: ["kind": "test"], format: .xml, options: 0
+        ))
+        let store = RouteLocationSetupStore(pairingStore: pairing, client: client, environment: .init(
+            isVPNInstalled: { true }, isTunnelConnected: { true }, deviceAddress: "mock",
+            tunnelRetryDelaysNanoseconds: [], isCellularWithoutWiFi: { false }
+        ))
+        addTeardownBlock {
+            _ = await store.clear()
+            try FileManager.default.removeItem(at: directory)
+        }
+        return store
+    }
+}
+
+/// 模拟已有设备定位，但在下一次慢 set 返回时丢失本地句柄。
+private final class LostHandleProbe: @unchecked Sendable {
+    let entered: XCTestExpectation
+    let release = DispatchSemaphore(value: 0)
+    private let lock = NSLock()
+    private var retained = false
+    private var sets = 0
+    private var reconnects = 0
+
+    init(entered: XCTestExpectation) { self.entered = entered }
+
+    private func hasHandle() -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return retained
+    }
+
+    private func set() -> RouteLocationPushFailure? {
+        lock.lock()
+        sets += 1
+        let first = sets == 1
+        retained = first
+        lock.unlock()
+        if first { return nil }
+        entered.fulfill()
+        _ = release.wait(timeout: .now() + 3)
+        return .tunnel
+    }
+
+    private func reconnect() -> RouteLocationPushFailure? {
+        lock.lock()
+        defer { lock.unlock() }
+        reconnects += 1
+        return .tunnel
+    }
+
+    var reconnectCount: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return reconnects
+    }
+
+    var operations: IdeviceLocationClient.DeviceOperations {
+        .init(
+            set: { [self] _, _ in set() },
+            clear: { nil }, // 无句柄的普通 clear 会空成功，正是本测试需防止的分支。
+            abandon: {},
+            retainsSimulation: { [self] in hasHandle() },
+            clearReconnecting: { [self] in reconnect() }
+        )
+    }
+}
+
+extension RouteLocationTests {
+    @MainActor
+    func testClearRechecksHandleAfterInFlightSetLosesIt() async throws {
+        let entered = expectation(description: "下一次 set 仍在途，快照尚未发布")
+        let probe = LostHandleProbe(entered: entered)
+        let client = IdeviceLocationClient(operations: probe.operations)
+        let store = try serialStore(client)
+        let first = await store.set(latitude: 1, longitude: 1)
+        XCTAssertNil(first)
+        XCTAssertTrue(client.retainsSimulation)
+        let pending = Task { await store.set(latitude: 2, longitude: 2) }
+        await fulfillment(of: [entered], timeout: 2)
+        XCTAssertTrue(client.retainsSimulation) // 确认仍是旧完成快照。
+        let submitted = expectation(description: "清除已提交")
+        let clear = Task { submitted.fulfill(); return await store.clear() }
+        await fulfillment(of: [submitted], timeout: 2)
+        probe.release.signal()
+        let stale = await pending.value
+        let failure = await clear.value
+        XCTAssertEqual(stale, .superseded)
+        XCTAssertEqual(failure, .tunnel)
+        XCTAssertEqual(probe.reconnectCount, 1)
+        XCTAssertTrue(store.activity.simulationMayStillBeActive)
+        _ = await store.reassertIfNeeded()
+        XCTAssertTrue(store.resumeWrites()) // 清理已返回，允许用户显式重试。
+    }
+}
+
+
+extension RouteLocationTests {
+    @MainActor
+    func testRouteHandoffAndMaintenanceUseFinalSynchronousDeviceSuccess() async throws {
+        try await checkRouteDeviceDrain(stopSpoof: false)
+    }
+
+    @MainActor
+    func testStoppedSpoofCannotRearmMaintenanceAfterRouteExit() async throws {
+        try await checkRouteDeviceDrain(stopSpoof: true)
+    }
+
+    @MainActor
+    private func checkRouteDeviceDrain(stopSpoof: Bool) async throws {
+        let entered = expectation(description: "真实串行队列内 B 写入挂起")
+        let probe = SerialDeviceProbe(entered: entered, blockedLatitude: 2)
+        let store = try serialStore(IdeviceLocationClient(operations: probe.operations))
+        let servicesProbe = SpoofServiceProbe()
+        servicesProbe.mode = .developerTunnel
+        var services = servicesProbe.services()
+        services.pushDeveloper = { await store.set(latitude: $0.latitude, longitude: $0.longitude) }
+        services.clearDeveloper = { await store.clear() }
+        services.resumeWrites = { store.resumeWrites() }
+        services.suspendWrites = { store.suspendWrites() }
+        let session = SpoofSession()
+        session.bind(services)
+        let a = CoordinateConverter.coordinatePair(lat: 1, lon: 2, mapCoordinateSystem: .wgs84)
+        let b = CoordinateConverter.coordinatePair(lat: 2, lon: 3, mapCoordinateSystem: .wgs84)
+        let end = CoordinateConverter.coordinatePair(lat: 2.001, lon: 3, mapCoordinateSystem: .wgs84)
+        let initial = await session.writeMoving(a)
+        XCTAssertTrue(initial)
+        let suite = "RouteDeviceDrain.\(UUID())"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let route = RoutePlaybackController(preferenceStore: .init(defaults: defaults), sessionStore: .init(defaults: defaults))
+        route.load(SavedRoute(name: "合成路线", start: b, end: end, travelMode: .walk,
+                              speedKilometersPerHour: 5, offsetMeters: 0, repeatMode: .once, pathPoints: [b, end]))
+        route.now = { Date(timeIntervalSince1970: 1) }
+        var handed: [CoordinatePair] = []
+        session.bindRoutePlayback(route) { handed.append($0) }
+        route.requestPlay()
+        route.noteActivated()
+        await fulfillment(of: [entered], timeout: 2)
+        let pending = route.exit()
+        if stopSpoof { session.stop() }
+        XCTAssertTrue(handed.isEmpty)
+        probe.release.signal()
+        await pending?.value
+        await route.waitForHandoff()
+        await session.waitForOperation()
+        XCTAssertFalse(probe.snapshot.timedOut)
+        _ = await store.reassertIfNeeded()
+        if stopSpoof {
+            XCTAssertTrue(handed.isEmpty)
+            XCTAssertNil(session.writtenCoordinate)
+            XCTAssertFalse(store.isSimulating)
+            XCTAssertFalse(probe.snapshot.active)
+            XCTAssertEqual(probe.snapshot.events, ["set:1", "set:2", "clear"])
+        } else {
+            XCTAssertEqual(handed.count, 1)
+            XCTAssertEqual(handed.first?.wgs84.latitude, 2)
+            XCTAssertEqual(session.writtenLatitude, probe.snapshot.coordinate?.0)
+            XCTAssertEqual(session.writtenLongitude, probe.snapshot.coordinate?.1)
+            XCTAssertTrue(store.isSimulating)
+            XCTAssertEqual(probe.snapshot.events, ["set:1", "set:2", "set:2"])
+        }
     }
 }

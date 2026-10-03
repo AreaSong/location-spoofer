@@ -12,7 +12,7 @@ extension SettingsView {
                     }
                 }
                 .pickerStyle(.inline)
-                .disabled(modeOperationRunning || actions.state.isBusy || thirdPartyProxy.isRequesting)
+                .disabled(modeOperationRunning || actions.state.isBusy || routeLocation.isClearing)
 
                 if runtimeMode.mode == .localWiFi, let message = appModeNetworkBlockedMessage {
                     Text(message)
@@ -186,7 +186,7 @@ extension SettingsView {
             }
 
             Section("支持") {
-                NavigationLink {
+                NavigationLink(isActive: $showingBugReport) {
                     BugReportView(setup: setup)
                 } label: {
                     Label("报告 Bug", systemImage: "ladybug")
@@ -245,9 +245,16 @@ extension SettingsView {
         }
         .navigationTitle("设置")
         .navigationBarTitleDisplayMode(.inline)
-        .onAppear(perform: refreshMapCoordinateSystemDisplay)
+        .onAppear {
+            refreshMapCoordinateSystemDisplay()
+            if isSettingsPresented(), !showingBugReport { favoriteImport.enterPage(favoritePageID) }
+        }
+        .onChange(of: showingBugReport) { showing in
+            if showing { favoriteImport.leavePage() }
+            else if isSettingsPresented() { favoriteImport.enterPage(favoritePageID) }
+        }
         .toolbar {
-            ToolbarItem(placement: .navigationBarTrailing) { Button("完成") { dismiss() } }
+            ToolbarItem(placement: .navigationBarTrailing) { Button("完成") { favoriteImport.leavePage(); dismiss() } }
         }
         .sheet(item: $activeTip) { kind in
             TipSheetView(kind: kind)
@@ -285,13 +292,13 @@ extension SettingsView {
         .fileImporter(isPresented: $showFavoriteImporter, allowedContentTypes: [.json]) { result in
             importFavorites(from: result)
         }
-        .alert(favoriteTransferTitle, isPresented: Binding(
-            get: { !favoriteTransferMessage.isEmpty },
-            set: { if !$0 { favoriteTransferMessage = "" } }
+        .alert(favoriteImport.notice?.title ?? "收藏", isPresented: Binding(
+            get: { favoriteImport.notice != nil },
+            set: { if !$0 { favoriteImport.notice = nil } }
         )) {
             Button("知道了", role: .cancel) {}
         } message: {
-            Text(favoriteTransferMessage)
+            Text(favoriteImport.notice?.message ?? "")
         }
     }
 }

@@ -17,10 +17,18 @@ extension SettingsView {
             Button(action: importFavoritesFromClipboard) {
                 Label("从剪贴板导入", systemImage: "clipboard")
             }
+            .disabled(favoriteImport.isBusy)
             Button {
+                guard !favoriteImport.isBusy else { return }
                 showFavoriteImporter = true
             } label: {
                 Label("从文件导入", systemImage: "folder")
+            }
+            .disabled(favoriteImport.isBusy)
+            if favoriteImport.isBusy {
+                ProgressView(favoriteImport.state == .cancelling ? "正在取消，等待读取结束…" : "正在导入收藏…")
+                Button("取消导入", role: .cancel) { favoriteImport.cancel() }
+                    .disabled(favoriteImport.state == .cancelling)
             }
         }
     }
@@ -54,51 +62,42 @@ extension SettingsView {
         }
     }
 
+    var favoritePageAllowsImport: Bool {
+        isSettingsPresented() && !showingBugReport && favoriteImport.ownsPage(favoritePageID)
+    }
+
     func importFavoritesFromClipboard() {
+        guard !favoriteImport.isBusy, favoritePageAllowsImport else { return }
         guard let text = UIPasteboard.general.string, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             presentFavoriteTransferError("剪贴板里没有收藏备份")
             return
         }
-        importFavorites(from: Data(text.utf8))
+        startFavoriteImport(.clipboard(text))
     }
 
     func importFavorites(from result: Result<URL, Error>) {
+        guard favoritePageAllowsImport, !favoriteImport.isBusy else { return }
         switch result {
-        case .success(let url):
-            let accessing = url.startAccessingSecurityScopedResource()
-            defer {
-                if accessing {
-                    url.stopAccessingSecurityScopedResource()
-                }
-            }
-            do {
-                importFavorites(from: try Data(contentsOf: url))
-            } catch {
-                presentFavoriteTransferError(error.localizedDescription)
-            }
+        case .success(let url): startFavoriteImport(.file(url))
         case .failure(let error):
+            let cocoa = error as NSError
+            guard !(error is CancellationError),
+                  !(cocoa.domain == NSCocoaErrorDomain && cocoa.code == NSUserCancelledError) else { return }
             presentFavoriteTransferError(error.localizedDescription)
         }
     }
 
-    func importFavorites(from data: Data) {
-        do {
-            let incoming = try FavoriteTransfer.decode(data)
-            let result = favorites.importTransferred(incoming)
-            favoriteTransferTitle = "收藏已导入"
-            favoriteTransferMessage = "新增 \(result.added) 个，更新 \(result.updated) 个，跳过重复 \(result.skippedDuplicates) 个，超出上限 \(result.skippedOverLimit) 个"
+    func startFavoriteImport(_ input: FavoriteImportPreparation.Input) {
+        favoriteImport.start(input, isPageActive: { favoritePageAllowsImport }) { prepared in
+            let result = favorites.importPrepared(prepared)
             RuntimeLogger.info("APP", "收藏", "已合并导入收藏", details: [
-                "新增": String(result.added),
-                "更新": String(result.updated)
+                "新增": String(result.added), "更新": String(result.updated)
             ])
-        } catch {
-            presentFavoriteTransferError(error.localizedDescription)
+            return result
         }
     }
 
     func presentFavoriteTransferError(_ message: String) {
-        favoriteTransferTitle = "收藏导入失败"
-        favoriteTransferMessage = message
+        favoriteImport.report(message)
     }
-
 }

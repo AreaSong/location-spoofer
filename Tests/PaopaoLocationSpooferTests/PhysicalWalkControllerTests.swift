@@ -48,6 +48,64 @@ final class PhysicalWalkControllerTests: XCTestCase {
         super.tearDown()
     }
 
+    func testSlowWriteCoalescesCumulativeSamples() async {
+        let controller = PhysicalWalkController(sensor: FakePhysicalWalkSensor(), heading: FakePhysicalWalkHeading())
+        controller.ignoresWriteGate = true
+        let started = expectation(description: "首笔写入挂起")
+        var release: CheckedContinuation<Void, Never>?
+        var writes: [CoordinatePair] = []
+        controller.applyCoordinate = { pair in
+            writes.append(pair)
+            if writes.count == 1 {
+                await withCheckedContinuation { release = $0; started.fulfill() }
+            }
+            return true
+        }
+        controller.start(latitude: 1, longitude: 2)
+        await controller.ingest(sample: PhysicalWalkSample(distanceMeters: 0, steps: 0))
+        let first = Task { await controller.ingest(sample: PhysicalWalkSample(distanceMeters: 10, steps: 0)) }
+        await fulfillment(of: [started], timeout: 2)
+        await controller.ingest(sample: PhysicalWalkSample(distanceMeters: 20, steps: 0))
+        await controller.ingest(sample: PhysicalWalkSample(distanceMeters: 30, steps: 0))
+        XCTAssertEqual(writes.count, 1, "慢写入期间只保留一个最新累计位置")
+        release?.resume()
+        await first.value
+        XCTAssertEqual(writes.count, 2)
+        XCTAssertEqual(controller.movedMeters, 30, accuracy: 0.01)
+        XCTAssertEqual(writes.last?.wgs84.latitude ?? 0, controller.currentLatitude ?? 0, accuracy: 0.0000001)
+        controller.stop()
+    }
+
+    func testSensorBurstKeepsOnePendingCumulativePosition() async {
+        let sensor = FakePhysicalWalkSensor()
+        let controller = PhysicalWalkController(sensor: sensor, heading: FakePhysicalWalkHeading())
+        controller.ignoresWriteGate = true
+        let entered = expectation(description: "传感器首笔已发送")
+        let last = expectation(description: "合并后的累计位置已写入")
+        var release: CheckedContinuation<Void, Never>?
+        var writes: [CoordinatePair] = []
+        controller.applyCoordinate = { pair in
+            writes.append(pair)
+            if writes.count == 1 {
+                await withCheckedContinuation { release = $0; entered.fulfill() }
+            } else { last.fulfill() }
+            return true
+        }
+        controller.start(latitude: 1, longitude: 2)
+        sensor.emit(sample: .init(distanceMeters: 0, steps: 0))
+        sensor.emit(sample: .init(distanceMeters: 10, steps: 0))
+        await fulfillment(of: [entered], timeout: 2)
+        for meters in 11...1010 { sensor.emit(sample: .init(distanceMeters: Double(meters), steps: 0)) }
+        XCTAssertEqual(writes.count, 1)
+        release?.resume()
+        await fulfillment(of: [last], timeout: 2)
+        await controller.stop()?.value
+        XCTAssertEqual(writes.count, 2)
+        XCTAssertEqual(controller.movedMeters, 1010, accuracy: 0.01)
+        let expected = PhysicalWalkDisplacement.offsetWGS84(latitude: 1, longitude: 2, distanceMeters: 1010, headingDegrees: 0)
+        XCTAssertEqual(writes.last?.wgs84.latitude ?? 0, expected.latitude, accuracy: 1e-8)
+    }
+
     func testTenMeterWalkWritesTheDisplacedCoordinate() async throws {
         let sensor = FakePhysicalWalkSensor()
         let heading = FakePhysicalWalkHeading()

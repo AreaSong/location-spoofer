@@ -131,11 +131,23 @@ enum CoordinateConverter {
 
     // MARK: - 工具
 
+    /// 范围为 [-180, 180]；保留恰好 ±180 的符号以延续等长路径的原方向。
+    static func normalizedLongitude(_ longitude: Double) -> Double {
+        let wrapped = longitude.truncatingRemainder(dividingBy: 360)
+        if wrapped > 180 { return wrapped - 360 }
+        if wrapped < -180 { return wrapped + 360 }
+        return wrapped
+    }
+
+    static func shortestLongitudeDelta(from start: Double, to end: Double) -> Double {
+        normalizedLongitude(end - start)
+    }
+
     /// Haversine 距离（米）
     static func distance(lat1: Double, lon1: Double, lat2: Double, lon2: Double) -> Double {
         let r = 6371000.0
         let dLat = (lat2 - lat1) * .pi / 180.0
-        let dLon = (lon2 - lon1) * .pi / 180.0
+        let dLon = shortestLongitudeDelta(from: lon1, to: lon2) * .pi / 180.0
         let a = sin(dLat / 2) * sin(dLat / 2)
               + cos(lat1 * .pi / 180.0) * cos(lat2 * .pi / 180.0)
               * sin(dLon / 2) * sin(dLon / 2)

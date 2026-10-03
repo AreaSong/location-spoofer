@@ -360,3 +360,88 @@ private final class FakeThirdPartyRequester: ThirdPartyProxyRequesting {
         return (data, response)
     }
 }
+
+private actor ControlledThirdPartyRequester: ThirdPartyProxyRequesting {
+    private var continuation: CheckedContinuation<Void, Never>?
+    private var requests: [String] = []
+    let entered: XCTestExpectation
+    let failClear: Bool
+
+    init(entered: XCTestExpectation, failClear: Bool = false) {
+        self.entered = entered
+        self.failClear = failClear
+    }
+
+    func release() { continuation?.resume(); continuation = nil }
+    func actions() -> [String] { requests }
+
+    func data(for request: URLRequest) async throws -> (Data, URLResponse) {
+        let components = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)!
+        let values = Dictionary(uniqueKeysWithValues: components.queryItems!.map { ($0.name, $0.value!) })
+        let action = values["action"] ?? "save"
+        requests.append(action)
+        if requests.count == 1 {
+            await withCheckedContinuation { continuation in
+                self.continuation = continuation
+                entered.fulfill()
+            }
+        }
+        try Task.checkCancellation()
+        let body: String
+        if action == "clear" {
+            body = failClear ? #"{"success":false,"error":"mock failure"}"# : #"{"success":true}"#
+        } else {
+            body = "{\"success\":true,\"latitude\":\(values["lat"] ?? "1"),\"longitude\":\(values["lon"] ?? "1")}"
+        }
+        return (Data(body.utf8), HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!)
+    }
+}
+
+extension ThirdPartyProxyManagerTests {
+    func testStopDropsQueuedSaveAndDrainsStartedSaveBeforeClear() async throws {
+        let entered = expectation(description: "第一个请求已开始")
+        let requester = ControlledThirdPartyRequester(entered: entered)
+        let manager = ThirdPartyProxyManager(requester: requester, randomRadiusMeters: { 0 })
+        let favorite = FavoriteLocation(name: "mock", latitude: 1, longitude: 1, accuracy: 5, mapCoordinateSystem: .wgs84)
+        let first = Task { try await manager.save(favorite) }
+        await fulfillment(of: [entered], timeout: 2)
+        let submitted = expectation(description: "旧 save 排队")
+        let queued = Task { submitted.fulfill(); return try await manager.save(favorite) }
+        await fulfillment(of: [submitted], timeout: 2)
+        manager.suspendWrites()
+        first.cancel()
+        let clearSubmitted = expectation(description: "clear 排队")
+        let clear = Task { clearSubmitted.fulfill(); try await manager.clear() }
+        await fulfillment(of: [clearSubmitted], timeout: 2)
+        XCTAssertFalse(manager.resumeWrites())
+        do { _ = try await manager.save(favorite); XCTFail("停止后不能写入") } catch is CancellationError {}
+        await requester.release()
+        do { _ = try await first.value; XCTFail("旧成功必须失效") } catch is CancellationError {}
+        do { _ = try await queued.value; XCTFail("旧队列必须失效") } catch is CancellationError {}
+        try await clear.value
+        let actions = await requester.actions()
+        XCTAssertEqual(actions, ["save", "clear"])
+        XCTAssertNil(manager.activeSettings)
+        XCTAssertEqual(manager.connectionState, .connected(active: false))
+        XCTAssertTrue(manager.resumeWrites())
+        _ = try await manager.save(favorite)
+        XCTAssertEqual(manager.connectionState, .connected(active: true))
+    }
+
+    func testFailedClearKeepsWritesSuspendedUntilExplicitRestart() async throws {
+        let entered = expectation(description: "清除请求已开始")
+        let requester = ControlledThirdPartyRequester(entered: entered, failClear: true)
+        let manager = ThirdPartyProxyManager(requester: requester)
+        let clear = Task { try await manager.clear() }
+        await fulfillment(of: [entered], timeout: 2)
+        XCTAssertFalse(manager.resumeWrites())
+        await requester.release()
+        do { try await clear.value; XCTFail("应该报告清理失败") } catch is ThirdPartyProxyError {}
+        let favorite = FavoriteLocation(name: "mock", latitude: 1, longitude: 1, accuracy: 5, mapCoordinateSystem: .wgs84)
+        do { _ = try await manager.save(favorite); XCTFail("失败不能恢复旧生产者") } catch is CancellationError {}
+        let actions = await requester.actions()
+        XCTAssertEqual(actions, ["clear"])
+        XCTAssertTrue(manager.resumeWrites())
+        _ = try await manager.save(favorite)
+    }
+}

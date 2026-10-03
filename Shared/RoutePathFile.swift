@@ -1,4 +1,5 @@
 import Foundation
+import Darwin
 
 struct RoutePathPoint: Codable, Equatable {
     var latitude: Double
@@ -17,11 +18,18 @@ enum RoutePathSimplifier {
     static let maxPoints = 400
 
     static func simplify(_ points: [CoordinatePair]) -> [CoordinatePair] {
+        simplify(points, checkpoint: {})
+    }
+
+    /// 检查点在调用线程执行；普通保存继续使用不可取消的同步入口。
+    static func simplify(_ points: [CoordinatePair], checkpoint: () throws -> Void) rethrows -> [CoordinatePair] {
+        try checkpoint()
         guard points.count > maxPoints else { return points }
         var tolerance = 8.0
         var simplified = points
         while simplified.count > maxPoints, tolerance < 5_000 {
-            simplified = douglasPeucker(points, epsilonMeters: tolerance)
+            try checkpoint()
+            simplified = try douglasPeucker(points, epsilonMeters: tolerance, checkpoint: checkpoint)
             tolerance *= 1.8
         }
         if simplified.count > maxPoints {
@@ -30,12 +38,12 @@ enum RoutePathSimplifier {
         return simplified
     }
 
-    private static func douglasPeucker(_ points: [CoordinatePair], epsilonMeters: Double) -> [CoordinatePair] {
+    private static func douglasPeucker(_ points: [CoordinatePair], epsilonMeters: Double, checkpoint: () throws -> Void) rethrows -> [CoordinatePair] {
         guard points.count > 2, let origin = points.first else { return points }
         var keep = Array(repeating: false, count: points.count)
         keep[0] = true
         keep[points.count - 1] = true
-        mark(points, origin: origin, from: 0, to: points.count - 1, epsilonMeters: epsilonMeters, keep: &keep)
+        try mark(points, origin: origin, from: 0, to: points.count - 1, epsilonMeters: epsilonMeters, keep: &keep, checkpoint: checkpoint)
         return points.enumerated().compactMap { keep[$0.offset] ? $0.element : nil }
     }
 
@@ -45,28 +53,31 @@ enum RoutePathSimplifier {
         from: Int,
         to: Int,
         epsilonMeters: Double,
-        keep: inout [Bool]
-    ) {
-        guard to - from > 1 else { return }
-        let start = meters(from: origin, to: points[from])
-        let end = meters(from: origin, to: points[to])
-        var farthest = from
-        var farthestDistance = 0.0
-        for index in (from + 1)..<to {
-            let distance = perpendicularDistance(
-                meters(from: origin, to: points[index]),
-                start: start,
-                end: end
-            )
-            if distance > farthestDistance {
-                farthestDistance = distance
-                farthest = index
+        keep: inout [Bool],
+        checkpoint: () throws -> Void
+    ) rethrows {
+        // 后台线程栈较小，用显式栈保持原先先左后右的深度遍历顺序。
+        var pending = [(from, to)]
+        while let (from, to) = pending.popLast() {
+            try checkpoint()
+            guard to - from > 1 else { continue }
+            let start = meters(from: origin, to: points[from])
+            let end = meters(from: origin, to: points[to])
+            var farthest = from
+            var farthestDistance = 0.0
+            for index in (from + 1)..<to {
+                if index.isMultiple(of: 256) { try checkpoint() }
+                let distance = segmentDistance(meters(from: origin, to: points[index]), start: start, end: end)
+                if distance > farthestDistance {
+                    farthestDistance = distance
+                    farthest = index
+                }
             }
+            guard farthestDistance > epsilonMeters else { continue }
+            keep[farthest] = true
+            pending.append((farthest, to))
+            pending.append((from, farthest))
         }
-        guard farthestDistance > epsilonMeters else { return }
-        keep[farthest] = true
-        mark(points, origin: origin, from: from, to: farthest, epsilonMeters: epsilonMeters, keep: &keep)
-        mark(points, origin: origin, from: farthest, to: to, epsilonMeters: epsilonMeters, keep: &keep)
     }
 
     private static func downsample(_ points: [CoordinatePair], limit: Int) -> [CoordinatePair] {
@@ -85,21 +96,23 @@ enum RoutePathSimplifier {
         let latScale = 111_320.0
         let lonScale = 111_320.0 * cos(origin.wgs84.latitude * .pi / 180)
         let y = (point.wgs84.latitude - origin.wgs84.latitude) * latScale
-        let x = (point.wgs84.longitude - origin.wgs84.longitude) * lonScale
+        let x = CoordinateConverter.shortestLongitudeDelta(from: origin.wgs84.longitude, to: point.wgs84.longitude) * lonScale
         return (x, y)
     }
 
-    private static func perpendicularDistance(
+    private static func segmentDistance(
         _ point: (x: Double, y: Double),
         start: (x: Double, y: Double),
         end: (x: Double, y: Double)
     ) -> Double {
         let dx = end.x - start.x
         let dy = end.y - start.y
-        let length = hypot(dx, dy)
-        guard length > 0 else { return hypot(point.x - start.x, point.y - start.y) }
-        let area = abs(dy * point.x - dx * point.y + end.x * start.y - end.y * start.x)
-        return area / length
+        let squaredLength = dx * dx + dy * dy
+        guard squaredLength > 0 else { return hypot(point.x - start.x, point.y - start.y) }
+        // 投影必须落在线段上；落在延长线的折返点仍与端点有真实距离。
+        let projection = ((point.x - start.x) * dx + (point.y - start.y) * dy) / squaredLength
+        let clamped = min(1, max(0, projection))
+        return hypot(point.x - (start.x + clamped * dx), point.y - (start.y + clamped * dy))
     }
 }
 
@@ -108,18 +121,27 @@ final class RoutePathFileStore {
     private let encoder = JSONEncoder()
     private let decoder = JSONDecoder()
 
-    init(directory: URL) {
+    private let beforeWrite: (UUID) throws -> Void
+    private let beforeDelete: (UUID) throws -> Void
+
+    init(
+        directory: URL,
+        beforeDelete: @escaping (UUID) throws -> Void = { _ in },
+        beforeWrite: @escaping (UUID) throws -> Void = { _ in }
+    ) {
         self.directory = directory
+        self.beforeWrite = beforeWrite
+        self.beforeDelete = beforeDelete
     }
 
     static var defaultDirectory: URL {
         AppGroup.containerURL.appendingPathComponent("RoutePaths", isDirectory: true)
     }
 
-    func write(_ route: SavedRoute) {
+    func write(_ route: SavedRoute) throws -> [CoordinatePair]? {
         guard let pathPoints = route.pathPoints, pathPoints.count >= 2 else {
-            delete(route.id)
-            return
+            try delete(route.id)
+            return nil
         }
         let simplified = RoutePathSimplifier.simplify(pathPoints)
         let document = RoutePathDocument(
@@ -129,13 +151,19 @@ final class RoutePathFileStore {
             vias: route.viaPoints.map(point),
             points: simplified.map(point)
         )
-        do {
-            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-            let data = try encoder.encode(document)
-            try data.write(to: fileURL(route.id), options: .atomic)
-        } catch {
-            RuntimeLogger.error("APP", "路线", "写入路线路径失败", error: error)
+        try beforeWrite(route.id)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let data = try encoder.encode(document)
+        let staged = directory.appendingPathComponent(".\(UUID().uuidString).tmp")
+        defer { try? FileManager.default.removeItem(at: staged) }
+        try data.write(to: staged, options: .atomic)
+        let verified = try decoder.decode(RoutePathDocument.self, from: Data(contentsOf: staged))
+        guard verified == document else { throw CocoaError(.fileReadCorruptFile) }
+        // 同目录 rename 原子替换：验证失败或替换失败均保留原路径文件。
+        guard Darwin.rename(staged.path, fileURL(route.id).path) == 0 else {
+            throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
         }
+        return verified.points.map(pair)
     }
 
     func read(matching route: SavedRoute) -> [CoordinatePair]? {
@@ -149,8 +177,14 @@ final class RoutePathFileStore {
         return document.points.map(pair)
     }
 
-    func delete(_ id: UUID) {
-        try? FileManager.default.removeItem(at: fileURL(id))
+    func delete(_ id: UUID) throws {
+        try beforeDelete(id)
+        do {
+            try FileManager.default.removeItem(at: fileURL(id))
+        } catch let error as NSError where error.domain == NSCocoaErrorDomain
+            && error.code == NSFileNoSuchFileError {
+            // 已不存在即满足删除结果；其他错误必须交给决策层。
+        }
     }
 
     private func fileURL(_ id: UUID) -> URL {

@@ -249,8 +249,16 @@ grep -q '检测未命中白名单，当前按国内标准显示' "$SETTINGS_VIEW
 test -f "$ROOT/Shared/CoordinateTextParser.swift" || fail "coordinate search must parse typed latitude/longitude"
 test -f "$ROOT/Shared/FavoriteTransfer.swift" || fail "favorite backup must use a dedicated transfer format"
 grep -q 'paopao-favorites' "$ROOT/Shared/FavoriteTransfer.swift" || fail "favorite backup JSON must use the paopao-favorites format"
-grep -q 'SettingsView(setup: setup, actions: actions, favorites: favorites, session: session)' "$MAP_HOME" || fail "settings must share the map favorite store"
-grep -q '按国内标准(GCJ-02)选点' "$MAP_HOME" || fail "typed coordinates must offer an explicit GCJ-02 choice"
+python3 - "$MAP_HOME" <<'PY_CHECK'
+import pathlib, re, sys
+source = pathlib.Path(sys.argv[1]).read_text()
+call = re.search(r"case \.settings: SettingsView\((.*?)\n\s*\)", source, re.S)
+assert call, "settings construction must exist"
+for argument in ["favorites: favorites", "favoriteImport: favoriteImport", "isSettingsPresented: { activeSheet == .settings }"]:
+    assert argument in call.group(1), f"settings must share map ownership: {argument}"
+PY_CHECK
+# 第 7 阶段将搜索结果构造移入模型，文案契约仍需保留。
+grep -q '按国内标准(GCJ-02)选点' "$ROOT/App/MapSearchModel.swift" || fail "typed coordinates must offer an explicit GCJ-02 choice"
 ! grep -q '当前地图：' "$MAP_HOME" || fail "expanded spot must not spend a row on 当前地图"
 grep -q 'bottomCardExpandedHeightFraction' "$ROOT/App/AppStyle.swift" \
   || fail "expanded bottom card must cap height against the screen"
@@ -346,12 +354,20 @@ test -f "$ROOT/Shared/RoutePlaybackController.swift" || fail "route playback con
 test -f "$ROOT/App/RoutePlaybackPanel.swift" || fail "route playback panel is missing"
 test -f "$ROOT/Shared/SavedRouteStore.swift" || fail "saved routes must have a dedicated store"
 test -f "$ROOT/App/SavedRouteListView.swift" || fail "saved routes must have a list sheet"
+grep -q 'routeImport.start' "$ROOT/App/SavedRouteListView.swift" \
+  || fail "the saved route list must start the route import coordinator"
+grep -q 'Task.detached' "$ROOT/App/RouteImportCoordinator.swift" \
+  || fail "route import preparation must leave the main actor"
+grep -q 'RouteImportPreparation.prepare' "$ROOT/App/RouteImportCoordinator.swift" \
+  || fail "route import coordinator must invoke real preparation"
+! grep -q 'Data(contentsOf:' "$ROOT/App/SavedRouteListView.swift" \
+  || fail "the saved route list must not read route files synchronously"
 test -f "$ROOT/Shared/RouteGPX.swift" || fail "saved routes must import GPX tracks"
 test -f "$ROOT/Shared/RouteKML.swift" || fail "saved routes must import KML tracks"
-grep -q 'RouteGPX.decode' "$ROOT/App/SavedRouteListView.swift" \
-  || fail "the saved route list must decode GPX files"
-grep -q 'RouteKML.decode' "$ROOT/App/SavedRouteListView.swift" \
-  || fail "the saved route list must decode KML files"
+grep -q 'RouteGPX.decode' "$ROOT/Shared/RouteImportPreparation.swift" \
+  || fail "route import preparation must decode GPX files"
+grep -q 'RouteKML.decode' "$ROOT/Shared/RouteImportPreparation.swift" \
+  || fail "route import preparation must decode KML files"
 grep -q 'filenameExtension: ext' "$ROOT/App/SavedRouteListView.swift" \
   || fail "the saved route list must accept GPX and KML file types"
 grep -q 'enum RouteRepeatMode' "$ROOT/Shared/RoutePlayback.swift" \

@@ -19,12 +19,19 @@ enum RouteGPX {
         return prefix.contains("<gpx")
     }
 
-    static func decode(_ data: Data, fallbackName: String = "导入路线") throws -> [SavedRoute] {
-        let collector = Collector(fallbackName: fallbackName)
+    static func decode(
+        _ data: Data, fallbackName: String = "导入路线",
+        checkpoint: @escaping (RouteImportPreparation.Stage) throws -> Void = { _ in try Task.checkCancellation() }
+    ) throws -> [SavedRoute] {
+        try checkpoint(.decoding)
+        let collector = Collector(fallbackName: fallbackName, checkpoint: checkpoint)
         let parser = XMLParser(data: data)
         parser.shouldProcessNamespaces = true
         parser.delegate = collector
-        guard parser.parse() else { throw ParseError.invalidXML }
+        let parsed = parser.parse()
+        if let error = collector.failure { throw error }
+        try checkpoint(.parsing)
+        guard parsed else { throw ParseError.invalidXML }
         let routes = collector.routes
         guard !routes.isEmpty else { throw ParseError.empty }
         return routes
@@ -32,6 +39,8 @@ enum RouteGPX {
 }
 
 private final class Collector: NSObject, XMLParserDelegate {
+    private let checkpoint: (RouteImportPreparation.Stage) throws -> Void
+    private(set) var failure: Error?
     private let fallbackName: String
     private var inMetadata = false
     private var inPath = false
@@ -42,8 +51,21 @@ private final class Collector: NSObject, XMLParserDelegate {
     private var waypoints: [CoordinatePair] = []
     private(set) var routes: [SavedRoute] = []
 
-    init(fallbackName: String) {
+    init(fallbackName: String, checkpoint: @escaping (RouteImportPreparation.Stage) throws -> Void) {
         self.fallbackName = fallbackName
+        self.checkpoint = checkpoint
+    }
+
+    /// 只在 XMLParser 自己的同步回调中终止解析，不跨线程操作解析器。
+    private func collect(_ parser: XMLParser, body: () throws -> Void) {
+        guard failure == nil else { return }
+        do {
+            try checkpoint(.parsing)
+            try body()
+        } catch {
+            failure = error
+            parser.abortParsing()
+        }
     }
 
     func parser(
@@ -53,33 +75,37 @@ private final class Collector: NSObject, XMLParserDelegate {
         qualifiedName qName: String?,
         attributes attributeDict: [String: String] = [:]
     ) {
-        let name = localName(elementName)
-        switch name {
-        case "metadata":
-            inMetadata = true
-        case "trk", "rte":
-            flushPath()
-            inPath = true
-            currentName = nil
-            currentPoints = []
-        case "name":
-            capturingName = inPath && !inMetadata
-            nameBuffer = ""
-        case "trkpt", "rtept":
-            if inPath, let point = coordinate(from: attributeDict) {
-                append(point, to: &currentPoints)
+        collect(parser) {
+            let name = localName(elementName)
+            switch name {
+            case "metadata":
+                inMetadata = true
+            case "trk", "rte":
+                try flushPath()
+                inPath = true
+                currentName = nil
+                currentPoints = []
+            case "name":
+                capturingName = inPath && !inMetadata
+                nameBuffer = ""
+            case "trkpt", "rtept":
+                if inPath, let point = try coordinate(from: attributeDict) {
+                    append(point, to: &currentPoints)
+                }
+            case "wpt":
+                if let point = try coordinate(from: attributeDict) {
+                    append(point, to: &waypoints)
+                }
+            default:
+                break
             }
-        case "wpt":
-            if let point = coordinate(from: attributeDict) {
-                append(point, to: &waypoints)
-            }
-        default:
-            break
         }
     }
 
     func parser(_ parser: XMLParser, foundCharacters string: String) {
-        if capturingName { nameBuffer += string }
+        collect(parser) {
+            if capturingName { nameBuffer += string }
+        }
     }
 
     func parser(
@@ -88,41 +114,44 @@ private final class Collector: NSObject, XMLParserDelegate {
         namespaceURI: String?,
         qualifiedName qName: String?
     ) {
-        let name = localName(elementName)
-        switch name {
-        case "metadata":
-            inMetadata = false
-        case "name":
-            if capturingName {
-                let trimmed = nameBuffer.trimmingCharacters(in: .whitespacesAndNewlines)
-                if !trimmed.isEmpty { currentName = trimmed }
+        collect(parser) {
+            let name = localName(elementName)
+            switch name {
+            case "metadata":
+                inMetadata = false
+            case "name":
+                if capturingName {
+                    let trimmed = nameBuffer.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if !trimmed.isEmpty { currentName = trimmed }
+                }
+                capturingName = false
+            case "trk", "rte":
+                try flushPath()
+                inPath = false
+            case "gpx":
+                try flushPath()
+                if routes.isEmpty { try flushWaypoints() }
+            default:
+                break
             }
-            capturingName = false
-        case "trk", "rte":
-            flushPath()
-            inPath = false
-        case "gpx":
-            flushPath()
-            if routes.isEmpty { flushWaypoints() }
-        default:
-            break
         }
     }
 
-    private func flushPath() {
+    private func flushPath() throws {
         defer {
             currentName = nil
             currentPoints = []
         }
-        appendRoute(points: currentPoints, name: currentName)
+        try appendRoute(points: currentPoints, name: currentName)
     }
 
-    private func flushWaypoints() {
-        appendRoute(points: waypoints, name: nil)
+    private func flushWaypoints() throws {
+        try appendRoute(points: waypoints, name: nil)
     }
 
-    private func appendRoute(points: [CoordinatePair], name: String?) {
-        let simplified = RoutePathSimplifier.simplify(points)
+    private func appendRoute(points: [CoordinatePair], name: String?) throws {
+        try checkpoint(.simplifying(points.count))
+        let simplified = try RoutePathSimplifier.simplify(points) { try checkpoint(.simplificationStep) }
         guard simplified.count >= 2,
               RoutePath.make(simplified).totalMeters >= RoutePlayback.minimumDistanceMeters else {
             return
@@ -151,7 +180,8 @@ private final class Collector: NSObject, XMLParserDelegate {
         points.append(point)
     }
 
-    private func coordinate(from attributes: [String: String]) -> CoordinatePair? {
+    private func coordinate(from attributes: [String: String]) throws -> CoordinatePair? {
+        try checkpoint(.converting)
         guard let lat = Double(attributes["lat"] ?? ""),
               let lon = Double(attributes["lon"] ?? ""),
               lat >= -90, lat <= 90,

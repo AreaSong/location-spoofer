@@ -140,8 +140,12 @@ extension MapHomeView {
             noteIslandRejection(action, "这个收藏点已经不在了。")
             return
         }
-        select(favorite)
-        beginLocationOperation(target: favorite)
+        IslandFavoriteShortcuts.performSwitch(to: favorite, action: action) { target in
+            select(target)
+            beginLocationOperation(target: target)
+        } reject: { command, message in
+            noteIslandRejection(command, message)
+        }
     }
 
     private func performRoutePlayback(_ command: String) {
@@ -307,8 +311,9 @@ extension MapHomeView {
     }
 
     func bindRoutePlayback() {
-        route.applyCoordinate = { pair in
-            await applyRouteCoordinate(pair)
+        session.bindRoutePlayback(route, preview: UIPreview.isEnabled()) { pair in
+            mapState.selectMapTap(pair.coordinate(for: CoordinateConverter.currentMapCoordinateSystem))
+            syncRouteActivity()
         }
     }
 
@@ -332,8 +337,13 @@ extension MapHomeView {
     func commitSaveRoute(overwrite: Bool) {
         let trimmed = saveRouteName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let snapshot = route.makeSavedRoute(name: trimmed, overwrite: overwrite) else { return }
-        savedRoutes.save(snapshot)
-        route.noteSaved(snapshot)
+        do {
+            let stored = try savedRoutes.save(snapshot)
+            route.noteSaved(stored)
+        } catch {
+            route.statusMessage = "路线保存失败，请重试：\(error.localizedDescription)"
+            return
+        }
         route.statusMessage = overwrite
             ? "已覆盖「\(snapshot.name)」。"
             : "已保存「\(snapshot.name)」。"
@@ -347,21 +357,8 @@ extension MapHomeView {
     }
 
     func exitRoute() {
-        let previous = route.phase
-        let stoppedKeeping = previous == .preparing
-            && route.statusMessage == RouteActivitySync.stoppedMessage
-        let pendingWrite = route.exit()
+        route.exit()
         showsRoutePanel = false
-        guard RouteLocationStop.shouldHandoffToSpot(
-            from: previous,
-            to: .inactive,
-            activationWritePending: pendingWrite != nil,
-            isStoppedKeepingLocation: stoppedKeeping
-        ) else { return }
-        Task { @MainActor in
-            await pendingWrite?.value
-            handoffKeptRouteLocationToSpot()
-        }
     }
 
     /// 播放中或暂停时退出要先确认；只是摆了图钉的话直接退。
@@ -532,6 +529,7 @@ extension MapHomeView {
     }
 
     func playRoute(fromStart: Bool = false) {
+        guard session.resumeWrites() else { return }
         stopPhysicalWalkForRoutePlayback()
         bindRoutePlayback()
         if fromStart {
@@ -603,7 +601,11 @@ extension MapHomeView {
             coordinatePair: start,
             accuracy: LocationAccuracyStore.shared.meters
         )
-        beginLocationOperation(target: startFavorite)
+        route.beginActivation {
+            beginLocationOperation(target: startFavorite, isRouteActivation: true)
+            await session.waitForOperation()
+            return session.state == .active && !session.writesSuspended
+        }
     }
 
     func beginRouteLocation() -> Bool {
@@ -611,40 +613,6 @@ extension MapHomeView {
             showRouteLocationSetup = true
             return false
         }
-        return true
-    }
-
-    func applyRouteCoordinate(_ pair: CoordinatePair) async -> Bool {
-        if UIPreview.isEnabled() {
-            rememberLastRouteWrite(pair)
-            return true
-        }
-        guard routeUsesDeveloperTunnel else {
-            let applied = await session.writeRoute(pair, offsetMeters: route.offsetMeters)
-            if applied, let latitude = session.writtenLatitude, let longitude = session.writtenLongitude {
-                rememberLastRouteWrite(
-                    CoordinateConverter.coordinatePair(
-                        lat: latitude,
-                        lon: longitude,
-                        mapCoordinateSystem: .wgs84
-                    )
-                )
-            }
-            return applied
-        }
-        let coordinate = RoutePlayback.offset(pair, radiusMeters: route.offsetMeters).wgs84
-        if let failure = await routeLocation.set(latitude: coordinate.latitude, longitude: coordinate.longitude) {
-            if failure == .superseded { return false }
-            route.pushFailureMessage = failure.message
-            return false
-        }
-        rememberLastRouteWrite(
-            CoordinateConverter.coordinatePair(
-                lat: coordinate.latitude,
-                lon: coordinate.longitude,
-                mapCoordinateSystem: .wgs84
-            )
-        )
         return true
     }
 
@@ -660,36 +628,6 @@ extension MapHomeView {
         }
     }
 
-    func handoffRouteLocationIfNeeded(from previous: RoutePhase, to next: RoutePhase) {
-        guard next != .inactive else { return }
-        guard RouteLocationStop.shouldHandoffToSpot(
-            from: previous,
-            to: next,
-            isStoppedKeepingLocation: route.statusMessage == RouteActivitySync.stoppedMessage
-        ) else { return }
-        handoffKeptRouteLocationToSpot()
-    }
-
-    private func rememberLastRouteWrite(_ pair: CoordinatePair) {
-        lastRouteWrittenPair = pair
-    }
-
-    private func handoffKeptRouteLocationToSpot() {
-        guard let pair = RouteLocationStop.keptCoordinate(
-            writtenLatitude: session.writtenLatitude,
-            writtenLongitude: session.writtenLongitude,
-            lastWritten: lastRouteWrittenPair
-        ) else { return }
-        let wgs = pair.wgs84
-        if UIPreview.isEnabled() {
-            session.setPreviewActive(true, latitude: wgs.latitude, longitude: wgs.longitude)
-        } else {
-            session.adoptActiveLocation(latitude: wgs.latitude, longitude: wgs.longitude)
-        }
-        mapState.selectMapTap(pair.coordinate(for: CoordinateConverter.currentMapCoordinateSystem))
-        syncRouteActivity()
-    }
-
     func handleRouteSpoofStateChange(_ state: SpoofState) {
         if routeUsesDeveloperTunnel {
             if state == .idle, route.waitingForActivation {
@@ -699,9 +637,7 @@ extension MapHomeView {
         }
         switch state {
         case .active:
-            if route.waitingForActivation {
-                route.noteActivated()
-            }
+            break
         case .idle:
             if route.waitingForActivation {
                 settleRouteSimulation(after: route.cancelWaiting(), from: .preparing)

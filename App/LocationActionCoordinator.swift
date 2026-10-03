@@ -4,7 +4,7 @@ import Foundation
 protocol LocationActionProxying: AnyObject {
     var isRunning: Bool { get }
     func start() async throws
-    func setCoords(lat: Double, lon: Double, enabled: Bool, accuracy: Int) -> UInt64
+    func setCoords(lat: Double, lon: Double, enabled: Bool, accuracy: Int) throws -> UInt64
 }
 
 extension ProxyManager: LocationActionProxying {}
@@ -54,18 +54,21 @@ final class LocationActionCoordinator: ObservableObject {
         self.settings = settings
         self.randomRadiusMeters = randomRadiusMeters
         self.offsetWGS84 = offsetWGS84
-        self.virtualLocationEnabled = settings.load()?.enabled == true
+        let restored = settings.load()
+        self.virtualLocationEnabled = restored?.enabled == true
+            && restored.map { LocationAccuracy.isValid($0.accuracy) } == true
     }
 
     func apply(_ favorite: FavoriteLocation) async -> Bool {
         guard beginApply() else { return false }
         do {
+            try LocationAccuracy.validatedCInt(favorite.accuracy)
             if !proxy.isRunning { try await proxy.start() }
             guard !Task.isCancelled else {
                 finishCancelledApply()
                 return false
             }
-            return commit(favorite) != nil
+            return try commit(favorite) != nil
         } catch {
             failApply(error)
             return false
@@ -81,11 +84,23 @@ final class LocationActionCoordinator: ObservableObject {
             return nil
         }
         guard beginApply() else { return nil }
-        return commit(favorite)
+        do {
+            return try commit(favorite)
+        } catch {
+            failApply(error)
+            return nil
+        }
     }
 
     func updateSpoofedWGS84(latitude: Double, longitude: Double, accuracy: Int) -> Bool {
         guard proxy.isRunning, !state.isBusy else { return false }
+        do {
+            try LocationAccuracy.validatedCInt(accuracy)
+            _ = try proxy.setCoords(lat: latitude, lon: longitude, enabled: true, accuracy: accuracy)
+        } catch {
+            failApply(error)
+            return false
+        }
         let value = WlocSettings(
             longitude: longitude,
             latitude: latitude,
@@ -93,19 +108,18 @@ final class LocationActionCoordinator: ObservableObject {
             enabled: true
         )
         settings.save(value)
-        _ = proxy.setCoords(
-            lat: latitude,
-            lon: longitude,
-            enabled: true,
-            accuracy: accuracy
-        )
         virtualLocationEnabled = true
         return true
     }
 
     func clear() {
         guard !state.isBusy else { return }
-        _ = proxy.setCoords(lat: 0, lon: 0, enabled: false, accuracy: 25)
+        do {
+            _ = try proxy.setCoords(lat: 0, lon: 0, enabled: false, accuracy: 25)
+        } catch {
+            failApply(error)
+            return
+        }
         settings.clear()
         state = .idle
         virtualLocationEnabled = false
@@ -119,7 +133,8 @@ final class LocationActionCoordinator: ObservableObject {
         return true
     }
 
-    private func commit(_ favorite: FavoriteLocation) -> (latitude: Double, longitude: Double)? {
+    private func commit(_ favorite: FavoriteLocation) throws -> (latitude: Double, longitude: Double)? {
+        try LocationAccuracy.validatedCInt(favorite.accuracy)
         // WLOC 合约固定使用持久化的 WGS-84 值，不依赖当前地图地图坐标标准。
         let original = favorite.coordinatePair.wgs84
         let radius = randomRadiusMeters()
@@ -132,13 +147,13 @@ final class LocationActionCoordinator: ObservableObject {
             anchorLatitude: original.latitude,
             anchorLongitude: original.longitude
         )
-        settings.save(value)
-        _ = proxy.setCoords(
+        _ = try proxy.setCoords(
             lat: wgs.latitude,
             lon: wgs.longitude,
             enabled: true,
             accuracy: favorite.accuracy
         )
+        settings.save(value)
         var details = [
             "WLOC写入标准": CoordinateConverter.MapCoordinateSystem.wgs84.diagnosticName,
             "当前地图标准": CoordinateConverter.currentMapCoordinateSystem.diagnosticName,
@@ -171,8 +186,7 @@ final class LocationActionCoordinator: ObservableObject {
     }
 
     private func failApply(_ error: Error) {
-        virtualLocationEnabled = false
-        message = "启动失败"
+        message = "位置更新失败：\(error.localizedDescription)"
         state = .failed(error.localizedDescription)
         RuntimeLogger.error("APP", "Location", "apply失败", error: error)
     }

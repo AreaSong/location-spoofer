@@ -221,8 +221,13 @@ final class FavoriteLocationStore: ObservableObject {
     }
 
     @discardableResult
-    func importTransferred(_ incoming: [FavoriteLocation]) -> FavoriteTransfer.MergeResult {
-        let unique = dedupedIncoming(incoming)
+    func importTransferred(_ incoming: [FavoriteLocation]) throws -> FavoriteTransfer.MergeResult {
+        importPrepared(try FavoriteTransfer.prepare(incoming))
+    }
+
+    @discardableResult
+    func importPrepared(_ prepared: FavoriteTransfer.Prepared) -> FavoriteTransfer.MergeResult {
+        let unique = prepared.favorites
         var added = 0
         var updated = 0
         var skippedOverLimit = 0
@@ -247,23 +252,9 @@ final class FavoriteLocationStore: ObservableObject {
         return FavoriteTransfer.MergeResult(
             added: added,
             updated: updated,
-            skippedDuplicates: incoming.count - unique.count,
+            skippedDuplicates: prepared.skippedDuplicates,
             skippedOverLimit: skippedOverLimit
         )
-    }
-
-    private func dedupedIncoming(_ incoming: [FavoriteLocation]) -> [FavoriteLocation] {
-        var unique: [FavoriteLocation] = []
-        for item in incoming {
-            if let index = unique.firstIndex(where: { isSameWGS84($0, item) }) {
-                unique[index].name = item.name
-                unique[index].coordinatePair = item.coordinatePair
-                unique[index].accuracy = item.accuracy
-            } else {
-                unique.append(item)
-            }
-        }
-        return unique
     }
 
     private func trimToLimitDroppingOldest() {
@@ -275,8 +266,7 @@ final class FavoriteLocationStore: ObservableObject {
     }
 
     private func isSameWGS84(_ lhs: FavoriteLocation, _ rhs: FavoriteLocation) -> Bool {
-        abs(lhs.coordinatePair.wgs84.latitude - rhs.coordinatePair.wgs84.latitude) < 0.000001
-            && abs(lhs.coordinatePair.wgs84.longitude - rhs.coordinatePair.wgs84.longitude) < 0.000001
+        FavoriteTransfer.isSameWGS84(lhs, rhs)
     }
 
     func migrateLegacyCoordinates() throws {

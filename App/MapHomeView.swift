@@ -3,15 +3,6 @@ import MapKit
 import UIKit
 import CoreLocation
 
-struct SearchLocationResult: Identifiable {
-    let id = UUID()
-    let name: String
-    let subtitle: String
-    let coordinate: CLLocationCoordinate2D
-    let mapCoordinateSystem: CoordinateConverter.MapCoordinateSystem
-    var remembersPreference = false
-}
-
 enum HomeSheet: String, Identifiable {
     case settings, logs, favorites, savedRoutes
     var id: String { rawValue }
@@ -51,6 +42,8 @@ struct MapHomeView: View {
     @Environment(\.scenePhase) private var scenePhase
     @ObservedObject var setup: SetupCoordinator
     @StateObject var favorites: FavoriteLocationStore
+    @StateObject var favoriteImport = FavoriteImportCoordinator()
+    @StateObject var routeImport = RouteImportCoordinator()
     @StateObject var savedRoutes = SavedRouteStore()
     @StateObject var recentRoutes = RecentRouteStore()
     @StateObject var actions: LocationActionCoordinator
@@ -74,11 +67,8 @@ struct MapHomeView: View {
     @ObservedObject var routeLocation = RouteLocationSetupStore.shared
     @ObservedObject var runtimeFailure = LocationRuntimeFailureStore.shared
 
-    @State var searchText = ""
-    @State var searchResults: [SearchLocationResult] = []
-    @State var isSearching = false
-    @State var searchRequestID: UInt64 = 0
-    @State var searchError = ""
+    @StateObject var search = MapSearchModel.forMap()
+    @FocusState var searchFocused: Bool
     @State var mapRuntimeDidStart = false
     @State var activeSheet: HomeSheet?
     @State var showEnableTip = false
@@ -113,8 +103,6 @@ struct MapHomeView: View {
     @State var showsRoutePanel = false
     @State var showExitRouteConfirm = false
     @State var developerLocationError = ""
-    @State var lastRoutePhase = RoutePhase.inactive
-    @State var lastRouteWrittenPair: CoordinatePair?
     @State var lastDeveloperTunnelRecoveryAt: Date?
     @State var realtimeRequestTask: Task<Void, Never>?
     @State var realtimeRequestContext: RealtimeLocationRequestContext?
@@ -288,57 +276,63 @@ struct MapHomeView: View {
                         locationUnavailableOverlay(block)
                             .onAppear { pauseRouteIfLocationBlocked() }
                     }
-                    if !searchResults.isEmpty || !searchError.isEmpty { searchResultList }
-                    Spacer()
-                    // 右下角按钮
-                    HStack {
-                        Spacer()
-                        VStack(spacing: 12) {
-                            Button {
-                                mapStyle.cycle()
-                            } label: {
-                                Image(systemName: mapStyle.style.symbolName)
-                                    .font(.system(size: 18, weight: .semibold))
-                                    .frame(width: 44, height: 44)
-                                    .background(.regularMaterial, in: Circle())
-                                    .shadow(color: .black.opacity(0.2), radius: 6, y: 3)
-                            }
-                            .accessibilityLabel("地图图层")
-                            .accessibilityValue(mapStyle.style.title)
-                            .accessibilityHint("切换标准、卫星或混合图")
-                            Button {
-                                if let url = URL(string: "maps://app") {
-                                    UIApplication.shared.open(url)
-                                }
-                            } label: {
-                                Image(systemName: "map.fill")
-                                    .font(.system(size: 18, weight: .semibold))
-                                    .frame(width: 44, height: 44)
-                                    .background(.regularMaterial, in: Circle())
-                                    .shadow(color: .black.opacity(0.2), radius: 6, y: 3)
-                            }
-                            Button {
-                                requestRealtimeLocation()
-                            } label: {
-                                if realtime.isRequesting {
-                                    ProgressView()
-                                        .frame(width: 44, height: 44)
-                                        .background(.regularMaterial, in: Circle())
-                                        .shadow(color: .black.opacity(0.2), radius: 6, y: 3)
-                                } else {
-                                    Image(systemName: "location.fill")
-                                        .font(.system(size: 20, weight: .semibold))
-                                        .frame(width: 44, height: 44)
-                                        .background(.regularMaterial, in: Circle())
-                                        .shadow(color: .black.opacity(0.2), radius: 6, y: 3)
-                                }
-                            }
-                            .disabled(realtimeButtonTask != nil || realtimeRequestTask != nil || realtime.isRequesting)
-                        }
+                    if search.isSearching || !search.results.isEmpty || !search.error.isEmpty {
+                        searchResultList
+                            .frame(maxHeight: searchFocused ? .infinity : geo.size.height * 0.4)
                     }
-                    .padding(.trailing, 16)
-                    .padding(.bottom, 8)
-                    bottomControls(expandedMaxHeight: geo.size.height * AppLayout.bottomCardExpandedHeightFraction)
+                    Spacer()
+                    // 编辑搜索时为键盘与可滚动结果让出空间；结束编辑后恢复地图操作。
+                    if !searchFocused {
+                        // 右下角按钮
+                        HStack {
+                            Spacer()
+                            VStack(spacing: 12) {
+                                Button {
+                                    mapStyle.cycle()
+                                } label: {
+                                    Image(systemName: mapStyle.style.symbolName)
+                                        .font(.system(size: 18, weight: .semibold))
+                                        .frame(width: 44, height: 44)
+                                        .background(.regularMaterial, in: Circle())
+                                        .shadow(color: .black.opacity(0.2), radius: 6, y: 3)
+                                }
+                                .accessibilityLabel("地图图层")
+                                .accessibilityValue(mapStyle.style.title)
+                                .accessibilityHint("切换标准、卫星或混合图")
+                                Button {
+                                    if let url = URL(string: "maps://app") {
+                                        UIApplication.shared.open(url)
+                                    }
+                                } label: {
+                                    Image(systemName: "map.fill")
+                                        .font(.system(size: 18, weight: .semibold))
+                                        .frame(width: 44, height: 44)
+                                        .background(.regularMaterial, in: Circle())
+                                        .shadow(color: .black.opacity(0.2), radius: 6, y: 3)
+                                }
+                                Button {
+                                    requestRealtimeLocation()
+                                } label: {
+                                    if realtime.isRequesting {
+                                        ProgressView()
+                                            .frame(width: 44, height: 44)
+                                            .background(.regularMaterial, in: Circle())
+                                            .shadow(color: .black.opacity(0.2), radius: 6, y: 3)
+                                    } else {
+                                        Image(systemName: "location.fill")
+                                            .font(.system(size: 20, weight: .semibold))
+                                            .frame(width: 44, height: 44)
+                                            .background(.regularMaterial, in: Circle())
+                                            .shadow(color: .black.opacity(0.2), radius: 6, y: 3)
+                                    }
+                                }
+                                .disabled(realtimeButtonTask != nil || realtimeRequestTask != nil || realtime.isRequesting)
+                            }
+                        }
+                        .padding(.trailing, 16)
+                        .padding(.bottom, 8)
+                        bottomControls(expandedMaxHeight: geo.size.height * AppLayout.bottomCardExpandedHeightFraction)
+                    }
                 }
                 .padding(.horizontal, 16)
                 .padding(.top, 12)
@@ -350,7 +344,10 @@ struct MapHomeView: View {
         .sheet(item: $activeSheet) { sheet in
             NavigationView {
                 switch sheet {
-                case .settings: SettingsView(setup: setup, actions: actions, favorites: favorites, session: session)
+                case .settings: SettingsView(
+                    setup: setup, actions: actions, favoriteImport: favoriteImport,
+                    isSettingsPresented: { activeSheet == .settings }, favorites: favorites, session: session
+                )
                 case .logs: RuntimeLogsView(setup: setup, actions: actions, testFavorite: testFavorite)
                 case .favorites:
                     FavoriteListView(
@@ -367,6 +364,8 @@ struct MapHomeView: View {
                     SavedRouteListView(
                         store: savedRoutes,
                         recentRoutes: recentRoutes,
+                        routeImport: routeImport,
+                        isListPresented: { activeSheet == .savedRoutes },
                         onSelect: { saved in
                             let previous = route.phase
                             settleRouteSimulation(after: route.load(saved), from: previous)
@@ -450,8 +449,6 @@ struct MapHomeView: View {
                     repeatMode: route.repeatMode
                 )
             }
-            handoffRouteLocationIfNeeded(from: lastRoutePhase, to: phase)
-            lastRoutePhase = phase
             syncRouteActivity()
             syncDeveloperLocationKeepAlive()
         }
@@ -511,6 +508,7 @@ struct MapHomeView: View {
             syncPhysicalWalk()
         }
         .onDisappear {
+            search.dismissResults()
             routeLocation.stopTunnelMonitor()
             if let token = wifiChangeObserverToken {
                 net.removeWiFiChangeObserver(token)
@@ -527,7 +525,13 @@ struct MapHomeView: View {
             favoriteSaveTask?.cancel()
             favoriteSaveTask = nil
         }
+        .onChange(of: activeSheet) { sheet in
+            if sheet != .settings { favoriteImport.leavePage() }
+            if sheet != .savedRoutes { routeImport.leavePage() }
+            if sheet != nil { search.dismissResults() }
+        }
         .onChange(of: scenePhase) { phase in
+            if phase == .background { search.dismissResults() }
             guard phase == .active else {
                 if route.phase == .playing {
                     BackgroundKeepAlive.shared.retain(.routePlayback)
@@ -619,6 +623,9 @@ struct MapHomeView: View {
             DispatchQueue.main.async {
                 communityContributionClient = client
             }
+        }
+        .onChange(of: session.writesSuspended) { suspended in
+            if suspended { physicalWalk.stop() }
         }
         .onChange(of: runtimeMode.mode) { mode in
             session.cancelForModeChange()
@@ -736,45 +743,32 @@ struct MapHomeView: View {
 
     var topControls: some View {
         VStack(alignment: .leading, spacing: 8) {
+            MapSearchField(search: search, focus: $searchFocused, onSubmit: doSearch)
             HStack(spacing: 10) {
-                HStack(spacing: 10) {
-                    Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
-                    TextField("搜索地点、坐标或地图链接", text: $searchText)
-                        .textInputAutocapitalization(.never).autocorrectionDisabled().submitLabel(.search).onSubmit(doSearch)
-                    if isSearching { ProgressView().controlSize(.small) }
-                    else if !searchText.isEmpty {
-                        Button {
-                            searchRequestID &+= 1
-                            isSearching = false
-                            searchText = ""
-                            searchResults = []
-                            searchError = ""
-                        } label: {
-                            Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
-                        }.buttonStyle(.plain)
+                if searchFocused {
+                    Spacer()
+                    Button("完成") { searchFocused = false }
+                        .frame(minWidth: 44, minHeight: 44)
+                        .accessibilityLabel("结束搜索输入")
+                } else {
+                    Spacer(minLength: 0)
+                    MapChromeIconButton(systemImage: "list.bullet.rectangle", accessibilityLabel: "日志") {
+                        activeSheet = .logs
                     }
-                    Button(action: doSearch) { Image(systemName: "arrow.right.circle.fill").font(.title3) }
-                        .disabled(searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isSearching)
-                }
-                .padding(.horizontal, 14)
-                .frame(maxWidth: .infinity)
-                .frame(height: 48)
-                .background(.regularMaterial, in: Capsule())
-                .shadow(color: .black.opacity(0.13), radius: 9, y: 4)
-                MapChromeIconButton(systemImage: "list.bullet.rectangle", accessibilityLabel: "日志") {
-                    activeSheet = .logs
-                }
-                MapChromeIconButton(systemImage: "gearshape", accessibilityLabel: "设置") {
-                    activeSheet = .settings
+                    MapChromeIconButton(systemImage: "gearshape", accessibilityLabel: "设置") {
+                        activeSheet = .settings
+                    }
                 }
             }
-            MapHomeTopInfoBar(
-                pair: displayedCoordinatePair,
-                mapSystem: displayedMapCoordinateSystem,
-                walkStore: physicalWalkStore,
-                walkController: physicalWalk,
-                spoofActive: spoofState == .active
-            )
+            if !searchFocused {
+                MapHomeTopInfoBar(
+                    pair: displayedCoordinatePair,
+                    mapSystem: displayedMapCoordinateSystem,
+                    walkStore: physicalWalkStore,
+                    walkController: physicalWalk,
+                    spoofActive: spoofState == .active
+                )
+            }
         }
     }
 

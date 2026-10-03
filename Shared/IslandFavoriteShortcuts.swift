@@ -4,6 +4,23 @@ enum IslandFavoriteShortcuts {
     static let limitWithoutSwitch = 2
     static let limitWithSwitch = 1
 
+    @MainActor
+    static func performSwitch(
+        to favorite: FavoriteLocation,
+        action: String,
+        apply: (FavoriteLocation) -> Void,
+        reject: (String, String) -> Void
+    ) {
+        do {
+            try LocationAccuracy.validatedCInt(favorite.accuracy)
+        } catch {
+            // 必须早于选点和停止走动，重试也保留原收藏，不能悄悄换成全局精度。
+            reject(action, error.localizedDescription)
+            return
+        }
+        apply(favorite)
+    }
+
     static func pick(
         from displayed: [FavoriteLocation],
         selectedID: UUID?,

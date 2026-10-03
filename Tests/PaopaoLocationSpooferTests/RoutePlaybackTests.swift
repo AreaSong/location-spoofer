@@ -297,6 +297,28 @@ final class RoutePlaybackControllerTests: XCTestCase {
     }
 
     @MainActor
+    func testExitWaitsForStartedPlaybackWithoutCancellingItsWrite() async {
+        let route = preparedRoute(repeatMode: .once)
+        let started = expectation(description: "播放写入挂起")
+        var release: CheckedContinuation<Void, Never>?
+        var cancelled = false
+        route.applyCoordinate = { _ in
+            await withCheckedContinuation { release = $0; started.fulfill() }
+            cancelled = Task.isCancelled
+            return true
+        }
+        route.requestPlay()
+        route.noteActivated()
+        await fulfillment(of: [started], timeout: 2)
+        let pending = route.exit()
+        XCTAssertNotNil(pending, "退出必须等待播放中的写入")
+        release?.resume()
+        await pending?.value
+        XCTAssertFalse(cancelled, "保留位置的退出不能取消已发送的写入收据")
+        XCTAssertEqual(route.phase, .inactive)
+    }
+
+    @MainActor
     func testExitDuringActivationDoesNotStartPlayback() async {
         let route = preparedRoute(repeatMode: .once)
         let started = expectation(description: "write started")
@@ -457,10 +479,9 @@ final class RoutePlaybackControllerTests: XCTestCase {
         }
         route.requestPlay()
         route.noteActivated()
-        await fulfillment(of: [replacementEntered], timeout: 2)
-
+        // 新生产者必须先等旧写入收尾，再开始自己的设备调用。
         hold.resume(returning: true)
-        try? await Task.sleep(nanoseconds: 50_000_000)
+        await fulfillment(of: [replacementEntered], timeout: 2)
 
         XCTAssertEqual(route.phase, .playing)
         XCTAssertNotEqual(route.statusMessage, route.pushFailureMessage)

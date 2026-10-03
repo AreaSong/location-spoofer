@@ -101,7 +101,7 @@ struct RouteLocationChecklist: View {
             }
             .buttonStyle(.bordered)
             .controlSize(.small)
-            .disabled(setup.isClearing || isResettingCache || session?.state == .verifying)
+            .disabled(setup.isClearing || isResettingCache)
             Button {
                 Task { await resetTunnelCache() }
             } label: {
@@ -109,7 +109,7 @@ struct RouteLocationChecklist: View {
             }
             .buttonStyle(.bordered)
             .controlSize(.small)
-            .disabled(setup.isClearing || isResettingCache || session?.state == .verifying)
+            .disabled(setup.isClearing || isResettingCache)
             Text("恢复真实定位会关掉系统模拟。清理隧道会话只丢掉卡住的连接，不删除配对文件。虚拟定位用着用着连不上时，先点这个再重连 LocalDevVPN。")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
@@ -137,10 +137,11 @@ struct RouteLocationChecklist: View {
 
     private func resetTunnelCache() async {
         isResettingCache = true
+        session?.suspendWrites()
         defer { isResettingCache = false }
         let message = await setup.resetTunnelCache()
-        session?.noteExternalClear()
-        actionIsWarning = message.contains("可能还停在虚拟点")
+        actionIsWarning = setup.activity.simulationMayStillBeActive
+        if !actionIsWarning { session?.noteExternalClear() }
         actionMessage = message
     }
 

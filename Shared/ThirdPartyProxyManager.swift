@@ -168,6 +168,9 @@ final class ThirdPartyProxyManager: ObservableObject {
     @Published private(set) var connectionState: ThirdPartyProxyConnectionState = .unknown
     @Published private(set) var activeSettings: ThirdPartyProxySettingsResponse?
     @Published private(set) var isRequesting = false
+    private var writesAllowed = true
+    private var writeGeneration: UInt64 = 0
+    private var clearingCount = 0
     private var requestWaiters: [CheckedContinuation<Void, Never>] = []
     private let requester: any ThirdPartyProxyRequesting
     private let randomRadiusMeters: () -> Double
@@ -191,8 +194,22 @@ final class ThirdPartyProxyManager: ObservableObject {
         }
     }
 
+    @discardableResult
+    func resumeWrites() -> Bool {
+        guard clearingCount == 0 else { return false }
+        writesAllowed = true
+        return true
+    }
+
+    func suspendWrites() {
+        writesAllowed = false
+        writeGeneration &+= 1
+    }
+
     func query() async throws -> ThirdPartyProxySettingsResponse {
+        let generation = writeGeneration
         let response = try await perform(action: .query)
+        guard generation == writeGeneration else { throw CancellationError() }
         let active = try validatedQueryState(response)
         if active {
             activeSettings = response
@@ -205,6 +222,8 @@ final class ThirdPartyProxyManager: ObservableObject {
     }
 
     func save(_ favorite: FavoriteLocation, randomRadius: Double? = nil) async throws -> ThirdPartyProxySettingsResponse {
+        guard writesAllowed, !Task.isCancelled else { throw CancellationError() }
+        let generation = writeGeneration
         let wgs84 = favorite.coordinatePair.wgs84
         let radius = randomRadius ?? randomRadiusMeters()
         let response = try await perform(action: .save(
@@ -213,6 +232,7 @@ final class ThirdPartyProxyManager: ObservableObject {
             accuracy: favorite.accuracy,
             randomRadius: radius
         ))
+        guard generation == writeGeneration, !Task.isCancelled else { throw CancellationError() }
         guard response.success else {
             throw ThirdPartyProxyError.rejected(response.error ?? "第三方代理拒绝保存坐标")
         }
@@ -234,6 +254,9 @@ final class ThirdPartyProxyManager: ObservableObject {
     }
 
     func clear() async throws {
+        suspendWrites()
+        clearingCount += 1
+        defer { clearingCount -= 1 }
         let response = try await perform(action: .clear)
         guard response.success else {
             throw ThirdPartyProxyError.rejected(response.error ?? "第三方代理清除坐标失败")
@@ -280,8 +303,17 @@ final class ThirdPartyProxyManager: ObservableObject {
     }
 
     private func perform(action: Action) async throws -> ThirdPartyProxySettingsResponse {
+        let generation = writeGeneration
         await enqueueRequest()
         defer { dequeueRequest() }
+        if case .save = action {
+            guard writesAllowed, generation == writeGeneration, !Task.isCancelled else {
+                throw CancellationError()
+            }
+        }
+        if case .query = action {
+            guard generation == writeGeneration, !Task.isCancelled else { throw CancellationError() }
+        }
 
         var components = URLComponents(url: Self.configurationEndpoint, resolvingAgainstBaseURL: false)!
         switch action {
@@ -304,7 +336,10 @@ final class ThirdPartyProxyManager: ObservableObject {
         request.timeoutInterval = 8
 
         do {
-            let (data, urlResponse) = try await requester.data(for: request)
+            // 调用方取消只作废结果，不取消已经发出的请求。
+            // 保持串行槽直到传输返回，随后 clear 才能发出。
+            let transfer = Task { try await requester.data(for: request) }
+            let (data, urlResponse) = try await transfer.value
             guard let http = urlResponse as? HTTPURLResponse, http.statusCode == 200 else {
                 throw ThirdPartyProxyError.moduleNotIntercepted
             }
@@ -314,12 +349,14 @@ final class ThirdPartyProxyManager: ObservableObject {
 
             return response
         } catch let error as ThirdPartyProxyError {
+            guard generation == writeGeneration else { throw CancellationError() }
             connectionState = .failed(error.diagnosis.title)
             RuntimeLogger.error("APP", "ThirdPartyProxy", "第三方代理请求失败", error: error, details: [
                 "原因": error.diagnosis.title
             ])
             throw error
         } catch {
+            guard generation == writeGeneration, !(error is CancellationError) else { throw CancellationError() }
             let mapped = ThirdPartyProxyError.fromTransport(error)
             connectionState = .failed(mapped.diagnosis.title)
             RuntimeLogger.error("APP", "ThirdPartyProxy", "第三方代理请求失败", error: error, details: [

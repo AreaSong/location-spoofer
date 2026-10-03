@@ -35,12 +35,14 @@ extension SettingsView {
             return
         }
         modeOperationRunning = true
+        session.beginModeCleanup()
         Task { @MainActor in
-            defer { modeOperationRunning = false }
+            defer {
+                modeOperationRunning = false
+                session.endModeCleanup()
+            }
             let currentMode = runtimeMode.mode
             let cleanup = RuntimeModeSwitchCleanup.required(from: currentMode, to: newMode)
-            let mustSucceed = RuntimeModeSwitchCleanup.mustSucceed(from: currentMode, to: newMode)
-            var thirdPartyClearNote: String?
             if cleanup.contains(.developerSimulation) {
                 if let failure = await RouteLocationSetupStore.shared.clear() {
                     presentDeveloperSimulationClearBlocked(failure)
@@ -51,18 +53,8 @@ extension SettingsView {
                 do {
                     try await thirdPartyProxy.clear()
                 } catch {
-                    if mustSucceed.contains(.thirdPartyWLOC) {
-                        presentThirdPartyCoordinateClearBlocked(destination: newMode, error: error)
-                        return
-                    }
-                    let diagnosis = ThirdPartyProxyError.diagnosis(for: error)
-                    RuntimeLogger.warning("APP", "Mode", "切换模式前未能清除第三方坐标，仍继续切换", details: [
-                        "目标模式": newMode.displayName,
-                        "错误": error.localizedDescription,
-                        "原因": diagnosis.title
-                    ])
-                    thirdPartyClearNote =
-                        "\(RuntimeModeSwitchCleanup.thirdPartyClearBestEffortMessage) \(diagnosis.summary)"
+                    presentThirdPartyCoordinateClearBlocked(destination: newMode, error: error)
+                    return
                 }
             }
             switch newMode {
@@ -92,10 +84,7 @@ extension SettingsView {
                 runtimeMode.setMode(.developerTunnel)
                 if runtimeMode.isInitialized(.developerTunnel) {
                     proxyOperationAlertTitle = "模式已切换"
-                    var message = "已切换到开发者隧道模式。请确认 LocalDevVPN 隧道已连接，并已导入配对文件。"
-                    if let thirdPartyClearNote {
-                        message += " \(thirdPartyClearNote)"
-                    }
+                    let message = "已切换到开发者隧道模式。请确认 LocalDevVPN 隧道已连接，并已导入配对文件。"
                     proxyOperationError = message
                 } else {
                     setup.requestDeveloperOnboarding()

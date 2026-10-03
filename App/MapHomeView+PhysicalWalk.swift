@@ -38,8 +38,8 @@ extension MapHomeView {
     func bindPhysicalWalk() {
         physicalWalk.ignoresWriteGate = runtimeMode.mode == .developerTunnel
         physicalWalk.strideMeters = { physicalWalkStore.strideMeters }
-        physicalWalk.applyCoordinate = { pair in
-            await applyPhysicalWalkCoordinate(pair)
+        session.bindPhysicalWalk(physicalWalk) { pair in
+            applyPhysicalWalkMapSelection(pair)
         }
         physicalWalk.onFailure = { message in
             physicalWalkStore.noteFailure(message)
@@ -86,7 +86,7 @@ extension MapHomeView {
             routePlaying: route.phase == .playing,
             routeWaiting: route.waitingForActivation,
             preview: UIPreview.isEnabled(),
-            useBlocked: locationUseBlock != nil
+            useBlocked: locationUseBlock != nil || session.writesSuspended
         )
     }
 
@@ -106,14 +106,6 @@ extension MapHomeView {
             return
         }
         physicalWalk.start(latitude: latitude, longitude: longitude)
-    }
-
-    private func applyPhysicalWalkCoordinate(_ pair: CoordinatePair) async -> Bool {
-        let applied = await session.writeMoving(pair)
-        if applied {
-            applyPhysicalWalkMapSelection(pair)
-        }
-        return applied
     }
 
     private func applyPhysicalWalkMapSelection(_ pair: CoordinatePair) {

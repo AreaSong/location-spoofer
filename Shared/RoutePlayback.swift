@@ -155,7 +155,7 @@ struct RoutePath: Equatable {
         for point in points {
             if let last = result.last,
                abs(last.wgs84.latitude - point.wgs84.latitude) < 1e-8,
-               abs(last.wgs84.longitude - point.wgs84.longitude) < 1e-8 {
+               abs(CoordinateConverter.shortestLongitudeDelta(from: last.wgs84.longitude, to: point.wgs84.longitude)) < 1e-8 {
                 continue
             }
             result.append(point)
@@ -179,7 +179,10 @@ enum RoutePlayback {
     static func interpolate(from start: CoordinatePair, to end: CoordinatePair, progress: Double) -> CoordinatePair {
         let clamped = min(1, max(0, progress))
         let latitude = start.wgs84.latitude + (end.wgs84.latitude - start.wgs84.latitude) * clamped
-        let longitude = start.wgs84.longitude + (end.wgs84.longitude - start.wgs84.longitude) * clamped
+        let delta = CoordinateConverter.shortestLongitudeDelta(from: start.wgs84.longitude, to: end.wgs84.longitude)
+        // 端点保留调用方的 ±180 表示；中间点沿最短经度差移动，再回到合法范围。
+        let longitude = clamped == 0 ? start.wgs84.longitude : clamped == 1 ? end.wgs84.longitude
+            : CoordinateConverter.normalizedLongitude(start.wgs84.longitude + delta * clamped)
         return CoordinateConverter.coordinatePair(
             lat: latitude,
             lon: longitude,

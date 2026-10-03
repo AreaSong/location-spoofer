@@ -248,6 +248,119 @@ final class SpoofSessionTests: XCTestCase {
         XCTAssertEqual(probe.updateCount, 1)
     }
 
+    func testModeCleanupRejectsMovingWritesAndLateResultsUntilExplicitRestart() async {
+        let probe = SpoofServiceProbe()
+        probe.mode = .developerTunnel
+        let started = expectation(description: "移动写入开始")
+        let gate = PauseGate()
+        let session = makeSession(probe)
+        var services = probe.services()
+        services.pushDeveloper = { _ in
+            await gate.pause(started: started)
+            return nil
+        }
+        session.bind(services)
+        let pair = sampleFavorite().coordinatePair
+        let oldGeneration = session.writeGeneration
+        let pending = Task { await session.writeMoving(pair) }
+        await fulfillment(of: [started], timeout: 2)
+        session.beginModeCleanup()
+        XCTAssertFalse(session.resumeWrites())
+        let rejected = await session.writeMoving(pair)
+        XCTAssertFalse(rejected)
+        // 清理失败不会改变外部运行模式，也不会重新放行写入。
+        session.endModeCleanup()
+        XCTAssertEqual(probe.mode, .developerTunnel)
+        XCTAssertTrue(session.writesSuspended)
+        // 成功切换后迟到的旧调用不可更新新模式坐标。
+        probe.mode = .thirdParty
+        session.cancelForModeChange()
+        gate.resume()
+        let stale = await pending.value
+        XCTAssertFalse(stale)
+        XCTAssertNil(session.writtenLatitude)
+        XCTAssertTrue(session.consumeEffects().isEmpty)
+        XCTAssertTrue(session.resumeWrites())
+        XCTAssertFalse(session.acceptsWrite(generation: oldGeneration, mode: .developerTunnel))
+    }
+
+    func testModeCleanupDropsLateThirdPartyRouteResult() async {
+        let probe = SpoofServiceProbe()
+        probe.mode = .thirdParty
+        let started = expectation(description: "路线保存开始")
+        let gate = PauseGate()
+        let session = makeSession(probe)
+        var services = probe.services()
+        services.saveThirdParty = { _, _ in
+            await gate.pause(started: started)
+            return probe.saveResponse
+        }
+        session.bind(services)
+        let pending = Task { await session.writeRoute(sampleFavorite().coordinatePair, offsetMeters: 0) }
+        await fulfillment(of: [started], timeout: 2)
+        session.beginModeCleanup()
+        let rejected = await session.writeRoute(sampleFavorite().coordinatePair, offsetMeters: 0)
+        XCTAssertFalse(rejected)
+        gate.resume()
+        let stale = await pending.value
+        XCTAssertFalse(stale)
+        XCTAssertNil(session.writtenLatitude)
+        session.endModeCleanup()
+    }
+
+    func testFailedModeCleanupDuringActivationAllowsExplicitRestart() async {
+        let probe = SpoofServiceProbe()
+        probe.mode = .developerTunnel
+        let started = expectation(description: "定点启动仍在途")
+        let gate = PauseGate()
+        let returned = expectation(description: "旧调用已返回")
+        let session = makeSession(probe)
+        var services = probe.services()
+        services.pushDeveloper = { _ in
+            await gate.pause(started: started)
+            returned.fulfill()
+            return nil
+        }
+        session.bind(services)
+        session.begin(target: sampleFavorite())
+        await fulfillment(of: [started], timeout: 2)
+        XCTAssertEqual(session.state, .verifying)
+        session.beginModeCleanup()
+        session.endModeCleanup() // 清理失败，原模式保留。
+        XCTAssertNotEqual(session.state, .verifying)
+        XCTAssertTrue(session.writesSuspended)
+        gate.resume()
+        await fulfillment(of: [returned], timeout: 2)
+        session.bind(probe.services())
+        session.begin(target: sampleFavorite())
+        await waitUntil(session, leaves: .verifying)
+        XCTAssertEqual(session.state, .active)
+        XCTAssertEqual(probe.developerPushes, 1)
+        XCTAssertFalse(session.writesSuspended)
+    }
+
+    func testExplicitTaskCancellationDoesNotPublishMovingReceipt() async {
+        let probe = SpoofServiceProbe()
+        probe.mode = .developerTunnel
+        let session = makeSession(probe)
+        let entered = expectation(description: "取消前已开始设备写入")
+        let gate = PauseGate()
+        var services = probe.services()
+        services.pushDeveloper = { _ in
+            await gate.pause(started: entered)
+            return nil
+        }
+        session.bind(services)
+        let pending = Task { await session.writeMoving(sampleFavorite().coordinatePair) }
+        await fulfillment(of: [entered], timeout: 2)
+        pending.cancel()
+        gate.resume()
+        let result = await pending.value
+        XCTAssertFalse(result)
+        XCTAssertNil(session.writtenCoordinate)
+        XCTAssertTrue(session.consumeEffects().isEmpty)
+    }
+
     private func makeSession(_ probe: SpoofServiceProbe) -> SpoofSession {
         let session = SpoofSession()
         session.bind(probe.services())
@@ -302,7 +415,7 @@ private final class PauseGate {
 }
 
 @MainActor
-private final class SpoofServiceProbe {
+final class SpoofServiceProbe {
     var mode = ProxyRuntimeMode.localWiFi
     var revision: UInt64 = 1
     var verifyCount = 0

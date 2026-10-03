@@ -59,6 +59,7 @@ collection services.
 - **Native map interaction**
   - Uses MapKit for the map and system blue dot;
   - Supports place search, pasted map links, typed latitude/longitude, map taps, center-point dragging, and zooming;
+  - A pending search can be cleared or replaced. Editing cancels the old query and hides its results without starting a new network request. Results scroll; tap “完成” to finish editing and restore map controls.
   - The lower-right control cycles Standard, Satellite, and Hybrid map layers;
   - A collapsible strip under the search bar with coordinates on the left and walk heading on the right; expand it to switch domestic and international coordinates
     and copy each one separately, or to change walking direction and the step-fallback stride;
@@ -66,6 +67,8 @@ collection services.
     center only and does not write history;
   - Favorites support a searchable list, sort by time or name, and clipboard/file backup. Matching WGS-84 coordinates
     update the name; new places are appended. Saved places also appear as star pins on the map and can be selected there.
+  - Favorite accuracy accepts integer meters from 5 through 100. A backup containing invalid accuracy is rejected as a whole without changing existing favorites. Invalid historical values are left untouched; applying them reports a failure and preserves the last successful location.
+  - Favorite imports read and prepare in the background, with progress and cancellation. Leaving Settings cancels uncommitted work; a synchronous merge already in progress is not rolled back. If file reading is still pending after cancellation, wait for it to finish before importing again.
 
 - **Location-service response simulation**
   - Processes only the Apple location-service requests defined by the project;
@@ -81,6 +84,7 @@ collection services.
   - Configure speed, offset distance, and once / round-trip / loop repeat;
   - Routes can be saved, overwritten, and reversed, up to 50 entries. GPX / KML tracks can be imported and played back
     along the recorded path without re-routing. Unzip KMZ to KML first;
+  - Route file and clipboard imports read, parse, and simplify in the background. Cancel during preparation or close the route list to discard uncommitted results. File pickers, temporary sheets, and backgrounding do not cancel the import. Synchronous per-route commits already underway are not rolled back; feedback reports actual additions, updates, over-limit skips, and failures;
   - Playback writes coordinates through the current runtime mode: App Mode and Third-party Proxy Mode write through
     the proxy with an 8 m / 5 s write gate; Developer Tunnel Mode pushes every second directly into system location.
 
@@ -351,7 +355,7 @@ Release assets are unsigned IPA files and must be installed on an iPhone with a 
 1. **Enable sideloading support**: On iOS 16 or newer, open Settings → Privacy & Security → Developer Mode, enable it,
    then restart and confirm when prompted. iOS 15 does not have this switch, so skip this step.
 2. **Download the IPA**: Open this project's [Releases](https://github.com/AreaSong/location-spoofer/releases) and download
-   the latest `PaopaoLocationSpoofer-unsigned.ipa`.
+   the latest `Location-Spoofer-unsigned.ipa`.
 3. **Prepare signing software**: Download the appropriate Impactor build from
    [Impactor Releases](https://github.com/claration/Impactor/releases). Other tools that support self-signing and installing
    IPA files, such as Aisi Assistant, may also be used.
@@ -440,7 +444,10 @@ Source builds require:
 - Xcode;
 - Xcode Command Line Tools;
 - XcodeGen;
-- Go 1.23 or newer.
+- Go module minimum 1.23.0, selected explicitly from an installed toolchain; no automatic toolchain download;
+- Python 3 for IPA checks; Node.js is also required for script behavior tests.
+
+See [build and test documentation](docs/BUILD.md) for CI selections, locally tested versions, and validation limits. A minimum requirement does not mean every newer version has been tested.
 
 Building the iOS app directly on Windows is not supported.
 
@@ -457,14 +464,15 @@ Build and run Simulator tests:
 ./build.sh --test
 ```
 
+Run independent checks with `make test-go` and `make test-scripts`. The workflow configures gates for PRs targeting `main`, pushes to `main`, and `v*` tags; only tags can publish after all checks pass. Remote CI execution remains unverified. Simulator selection uses an explicit device UUID from available runtimes and fails if no device is available.
+
 The build script generates an unsigned IPA:
 
 ```text
 dist/PaopaoLocationSpoofer-unsigned.ipa
 ```
 
-The idevice static library linked by Developer Tunnel Mode is checked in as a prebuilt file under `Vendor/idevice/`;
-its provenance and rebuild steps are documented in that directory.
+CI renames the release asset to `Location-Spoofer-unsigned.ipa`. See [Vendor/idevice](Vendor/idevice/README.md) for the Developer Tunnel prebuilt library and evidence: its file identity is verified, but the exact upstream revision is unknown. Object deployment targets conflict with the App minimum; iOS 15–17 compatibility still requires device validation.
 
 Deploy it to a test device using your own signing and installation process.
 

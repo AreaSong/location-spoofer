@@ -205,7 +205,8 @@ extension MapHomeView {
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: AppRadius.card, style: .continuous))
     }
 
-    func beginLocationOperation(target overrideTarget: FavoriteLocation? = nil) {
+    func beginLocationOperation(target overrideTarget: FavoriteLocation? = nil, isRouteActivation: Bool = false) {
+        if !isRouteActivation { physicalWalk.stop() }
         spotStopPending = false
         spotStoppedConfirmUntil = nil
         spotActionFailed = false
@@ -221,7 +222,7 @@ extension MapHomeView {
             }
             return
         }
-        session.begin(target: overrideTarget ?? currentSelectionFavorite)
+        session.begin(target: overrideTarget ?? currentSelectionFavorite, isRouteActivation: isRouteActivation)
         if spoofState != .verifying {
             spotSwitchPending = false
         }
@@ -287,6 +288,14 @@ extension MapHomeView {
                 presentSuccessfulOperationTip(.deactivation)
             case .offerCommunityContribution:
                 queueCommunityContributionPrompt(for: thirdPartyClient.selectedClient)
+            case .locationApplyFailed(let message):
+                activeTip = nil
+                if spoofState == .active {
+                    noteSpotActionFailure(message: message, command: spotSwitchPending ? "switchHere" : "begin")
+                } else {
+                    noteSpotNotApplied(message: message)
+                }
+                syncRouteActivity()
             case .developerPushFailed(let message):
                 developerLocationError = message
                 if spotStopPending || spotRetryCommand == "stopSpoof" {
@@ -300,13 +309,19 @@ extension MapHomeView {
             case .localVerificationFailed(let result):
                 activeTip = nil
                 setup.applyVerificationResult(result, presentSetup: false)
+                let message: String
+                if case .coordinateWriteFailed(let reason) = result {
+                    message = reason
+                } else {
+                    message = "定位没有生效。"
+                }
                 if spoofState == .active {
                     noteSpotActionFailure(
-                        message: "定位没有生效。",
+                        message: message,
                         command: spotSwitchPending ? "switchHere" : "begin"
                     )
                 } else {
-                    noteSpotNotApplied(message: "定位没有生效。")
+                    noteSpotNotApplied(message: message)
                 }
                 syncRouteActivity()
             case .resetLocalDiagnosis:
@@ -328,7 +343,8 @@ extension MapHomeView {
         var initialSwitchLatitude: Double?
         var initialSwitchLongitude: Double?
         if ProxyRuntimeModeStore.shared.mode == .localWiFi,
-           let settings = WlocSettingsStore.load(), settings.enabled {
+           let settings = WlocSettingsStore.load(), settings.enabled,
+           LocationAccuracy.isValid(settings.accuracy) {
             initialState = .active
             initialLatitude = settings.latitude
             initialLongitude = settings.longitude
@@ -402,7 +418,19 @@ extension MapHomeView {
             },
             clearDeveloper: {
                 await RouteLocationSetupStore.shared.clear()
-            }
+            },
+            resumeWrites: {
+                switch ProxyRuntimeModeStore.shared.mode {
+                case .developerTunnel: return RouteLocationSetupStore.shared.resumeWrites()
+                case .thirdParty: return thirdParty.resumeWrites()
+                case .localWiFi: return true
+                }
+            },
+            suspendWrites: {
+                RouteLocationSetupStore.shared.suspendWrites()
+                thirdParty.suspendWrites()
+            },
+            localApplyFailureMessage: { actions.message }
         )
     }
 

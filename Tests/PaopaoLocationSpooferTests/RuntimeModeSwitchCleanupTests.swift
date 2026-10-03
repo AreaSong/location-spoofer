@@ -36,13 +36,10 @@ final class RuntimeModeSwitchCleanupTests: XCTestCase {
         )
     }
 
-    func testLeavingThirdPartyToDeveloperTunnelWLOCIsBestEffort() {
+    func testLeavingThirdPartyToDeveloperTunnelRequiresClear() {
         XCTAssertEqual(
             RuntimeModeSwitchCleanup.mustSucceed(from: .thirdParty, to: .developerTunnel),
-            []
-        )
-        XCTAssertTrue(
-            RuntimeModeSwitchCleanup.thirdPartyClearBestEffortMessage.contains("关掉 WLOC 模块")
+            [.thirdPartyWLOC]
         )
     }
 

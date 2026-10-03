@@ -212,7 +212,7 @@ final class FavoriteLocationStoreTests: XCTestCase {
             accuracy: 30
         )
         let renamed = FavoriteLocation(name: "深圳湾公园", coordinatePair: pair, accuracy: 15)
-        let result = destination.importTransferred([renamed, extra])
+        let result = try destination.importTransferred([renamed, extra])
 
         XCTAssertEqual(result.updated, 1)
         XCTAssertEqual(result.added, 1)
@@ -280,7 +280,7 @@ final class FavoriteLocationStoreTests: XCTestCase {
         XCTAssertEqual(reloaded.displayedFavorites.map(\.name), ["Shanghai", "Beijing"])
     }
 
-    func testImportDedupesBatchAndSkipsPastLimit() {
+    func testImportDedupesBatchAndSkipsPastLimit() throws {
         let suite = "FavoriteLocationStoreTests.cap.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
         defer { defaults.removePersistentDomain(forName: suite) }
@@ -296,7 +296,7 @@ final class FavoriteLocationStoreTests: XCTestCase {
         incoming.append(contentsOf: (0..<room).map { favorite(name: "新 \($0)", latitude: 30 + Double($0) * 0.01) })
         incoming.append(favorite(name: "溢出", latitude: 80))
 
-        let result = store.importTransferred(incoming)
+        let result = try store.importTransferred(incoming)
         XCTAssertEqual(result.skippedDuplicates, 1)
         XCTAssertEqual(result.skippedOverLimit, 1)
         XCTAssertEqual(result.added, room + 1)
@@ -305,17 +305,17 @@ final class FavoriteLocationStoreTests: XCTestCase {
         XCTAssertEqual(store.favorites.first { abs($0.latitude - 22.5) < 0.000001 }?.name, "重复乙")
     }
 
-    func testManualSaveDropsOldestWhenOverLimit() {
+    func testManualSaveDropsOldestWhenOverLimit() throws {
         let suite = "FavoriteLocationStoreTests.saveCap.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
         defer { defaults.removePersistentDomain(forName: suite) }
         let store = FavoriteLocationStore(defaults: defaults)
         let oldest = favorite(name: "最旧", latitude: 1, createdAt: Date(timeIntervalSince1970: 1))
-        store.importTransferred([oldest])
+        try store.importTransferred([oldest])
         let fillers = (0..<(FavoriteLocationStore.limit - 1)).map {
             favorite(name: "填充 \($0)", latitude: 2 + Double($0) * 0.01, createdAt: Date(timeIntervalSince1970: Double($0 + 2)))
         }
-        _ = store.importTransferred(fillers)
+        _ = try store.importTransferred(fillers)
         XCTAssertEqual(store.favorites.count, FavoriteLocationStore.limit)
 
         _ = store.save(name: "最新", coordinatePair: favorite(name: "最新", latitude: 70).coordinatePair, accuracy: 10)

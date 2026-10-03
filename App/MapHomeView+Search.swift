@@ -4,48 +4,9 @@ import UIKit
 import CoreLocation
 
 extension MapHomeView {
-    // 搜索列表：动态高度，不写死
     var searchResultList: some View {
-        VStack(spacing: 0) {
-            if !searchError.isEmpty {
-                Text(searchError).font(.footnote).foregroundStyle(.red)
-                    .frame(maxWidth: .infinity, alignment: .leading).padding(12)
-            }
-            ForEach(searchResults) { r in
-                HStack(spacing: 8) {
-                    Button { selectSearchResult(r) } label: {
-                        HStack(spacing: 10) {
-                            Image(systemName: "mappin.and.ellipse")
-                                .foregroundStyle(.red)
-                            VStack(alignment: .leading, spacing: 3) {
-                                Text(r.name).font(.subheadline.weight(.semibold)).lineLimit(1)
-                                if !r.subtitle.isEmpty { Text(r.subtitle).font(.caption).foregroundStyle(.secondary).lineLimit(1) }
-                            }
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                        }
-                        .contentShape(Rectangle())
-                    }.buttonStyle(.plain)
-                    Button { copySearchCoordinate(r) } label: {
-                        Image(systemName: "doc.on.doc").frame(width: 36, height: 36).contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("复制坐标")
-                    Button { saveSearchResult(r) } label: {
-                        Image(systemName: "star").frame(width: 36, height: 36).contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("收藏")
-                    Button(role: .destructive) { deleteSearchResult(r) } label: {
-                        Image(systemName: "trash").frame(width: 36, height: 36).contentShape(Rectangle())
-                    }.buttonStyle(.plain).foregroundStyle(.red)
-                }
-                .padding(.horizontal, 12).padding(.vertical, 10)
-                if r.id != searchResults.last?.id { Divider().padding(.leading, 46) }
-            }
-        }
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: AppRadius.control, style: .continuous))
-        .shadow(color: .black.opacity(0.12), radius: 8, y: 4)
-        .clipShape(RoundedRectangle(cornerRadius: AppRadius.control, style: .continuous))
+        MapSearchResults(search: search, onSelect: selectSearchResult,
+                         onCopy: copySearchCoordinate, onSave: saveSearchResult)
     }
 
     func favoriteChip(_ f: FavoriteLocation) -> some View {
@@ -111,6 +72,7 @@ extension MapHomeView {
     }
 
     func selectRecent(_ item: RecentSelection) {
+        search.dismissResults()
         if let favorite = favorites.favorites.first(where: {
             $0.coordinatePair.matchesWGS84(
                 latitude: item.coordinatePair.wgs84.latitude,
@@ -278,110 +240,14 @@ extension MapHomeView {
     }
 
     func doSearch() {
-        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !query.isEmpty, !isSearching else { return }
-        searchRequestID &+= 1
-        let requestID = searchRequestID
-        if presentMapLinkSearchResults(query) || presentCoordinateSearchResults(query) {
-            return
-        }
-        isSearching = true
-        searchError = ""
-        let request = MKLocalSearch.Request()
-        request.naturalLanguageQuery = query
-        MKLocalSearch(request: request).start { response, error in
-            DispatchQueue.main.async {
-                guard requestID == searchRequestID else { return }
-                isSearching = false
-                if let error {
-                    searchResults = []
-                    searchError = error.localizedDescription
-                    return
-                }
-                searchResults = (response?.mapItems ?? []).prefix(6).map { item in
-                    let r = SearchLocationResult(
-                        name: item.name ?? "未命名",
-                        subtitle: [item.placemark.locality, item.placemark.subLocality, item.placemark.thoroughfare]
-                            .compactMap { $0 }
-                            .filter { !$0.isEmpty }
-                            .joined(separator: " · "),
-                        coordinate: item.placemark.coordinate,
-                        mapCoordinateSystem: CoordinateConverter.currentMapCoordinateSystem
-                    )
-                    RuntimeLogger.info("APP", "搜索", "获得搜索结果", details: [
-                        "名称": r.name
-                    ])
-                    return r
-                }
-                if searchResults.isEmpty { searchError = "没有找到相关地点" }
-            }
-        }
-    }
-
-    func presentCoordinateSearchResults(_ query: String) -> Bool {
-        guard let parsed = CoordinateTextParser.parse(query) else { return false }
-        let coordinate = CLLocationCoordinate2D(latitude: parsed.latitude, longitude: parsed.longitude)
-        let name = String(format: "%.6f, %.6f", parsed.latitude, parsed.longitude)
-        presentCoordinateChoices(
-            name: name,
-            coordinate: coordinate,
-            preferred: CoordinateInputPreferenceStore.shared.lastSystem,
-            sourceLabel: nil,
-            remembersPreference: true
+        search.submit(
+            system: CoordinateConverter.currentMapCoordinateSystem,
+            preferred: CoordinateInputPreferenceStore.shared.lastSystem
         )
-        RuntimeLogger.info("APP", "搜索", "识别为坐标输入", details: [
-            "latitude": String(parsed.latitude),
-            "longitude": String(parsed.longitude)
-        ])
-        return true
-    }
-
-    func presentMapLinkSearchResults(_ query: String) -> Bool {
-        guard let parsed = MapLinkParser.parse(query) else { return false }
-        let coordinate = CLLocationCoordinate2D(latitude: parsed.latitude, longitude: parsed.longitude)
-        let name = parsed.name ?? String(format: "%.6f, %.6f", parsed.latitude, parsed.longitude)
-        presentCoordinateChoices(
-            name: name,
-            coordinate: coordinate,
-            preferred: parsed.inferredSystem,
-            sourceLabel: "\(parsed.sourceName)链接",
-            remembersPreference: false
-        )
-        RuntimeLogger.info("APP", "搜索", "识别为地图链接", details: [
-            "来源": parsed.sourceName,
-            "推断标准": parsed.inferredSystem.diagnosticName,
-            "latitude": String(parsed.latitude),
-            "longitude": String(parsed.longitude)
-        ])
-        return true
-    }
-
-    func presentCoordinateChoices(
-        name: String,
-        coordinate: CLLocationCoordinate2D,
-        preferred: CoordinateConverter.MapCoordinateSystem,
-        sourceLabel: String?,
-        remembersPreference: Bool
-    ) {
-        isSearching = false
-        searchError = ""
-        func result(_ system: CoordinateConverter.MapCoordinateSystem) -> SearchLocationResult {
-            let choice = system == .gcj02 ? "按国内标准(GCJ-02)选点" : "按国际标准(WGS-84)选点"
-            let subtitle = sourceLabel.map { "\($0) · \(choice)" } ?? choice
-            return SearchLocationResult(
-                name: name,
-                subtitle: subtitle,
-                coordinate: coordinate,
-                mapCoordinateSystem: system,
-                remembersPreference: remembersPreference
-            )
-        }
-        let gcj = result(.gcj02)
-        let wgs = result(.wgs84)
-        searchResults = preferred == .wgs84 ? [wgs, gcj] : [gcj, wgs]
     }
 
     func selectSearchResult(_ result: SearchLocationResult) {
+        search.select(result)
         geocodeDebounceTask?.cancel()
         reverseGeocodeTask?.cancel()
         favorites.select(nil)
@@ -402,9 +268,6 @@ extension MapHomeView {
         )
         cachedSelectionPair = pair
         rememberDiscreteSelection(name: result.name, coordinatePair: pair)
-        searchText = result.name
-        searchResults = []
-        searchError = ""
     }
 
     func copySearchCoordinate(_ result: SearchLocationResult) {
@@ -421,6 +284,7 @@ extension MapHomeView {
     }
 
     func saveSearchResult(_ result: SearchLocationResult) {
+        search.dismissResults()
         let pair = CoordinatePair(
             mapCoordinate: result.coordinate,
             mapCoordinateSystem: result.mapCoordinateSystem
@@ -437,16 +301,13 @@ extension MapHomeView {
         )
     }
 
-    func deleteSearchResult(_ result: SearchLocationResult) {
-        searchResults.removeAll { $0.id == result.id }
-    }
-
     func handleFavoritePinTap(_ pin: FavoriteMapPin) {
         guard let favorite = favorites.favorites.first(where: { $0.id == pin.id }) else { return }
         select(favorite)
     }
 
     func select(_ favorite: FavoriteLocation) {
+        search.dismissResults()
         geocodeDebounceTask?.cancel()
         reverseGeocodeTask?.cancel()
         favorites.select(favorite.id)

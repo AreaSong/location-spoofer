@@ -47,9 +47,10 @@ final class RouteLocationSetupStore: ObservableObject, DeveloperLocationPushing 
     private let pairingStore: RoutePairingStore
     private let client: IdeviceLocationPushing
     private let environment: RouteLocationEnvironment
-    /// 持有正在进行的设备调用，clear 或新的 set 可以取消它，避免脱离任务树的旧写入。
+    /// 持有最新提交的任务；取消仅终止未开始部分和重试，不中断同步设备调用。
     private var deviceTask: Task<IdeviceCommandOutcome, Error>?
     private var deviceTaskID: UUID?
+    private var writesAllowed = true
     private var monitorTask: Task<Void, Never>?
     private var maintenanceTask: Task<Void, Never>?
     private var maintainedCoordinate: (latitude: Double, longitude: Double)?
@@ -144,7 +145,10 @@ final class RouteLocationSetupStore: ObservableObject, DeveloperLocationPushing 
     }
 
     func invalidateActiveSession() async -> RouteLocationPushFailure? {
-        stopLocationMaintenance()
+        guard !isClearing else { return .superseded }
+        suspendWrites()
+        isClearing = true
+        defer { isClearing = false }
         let mutation = client.beginMutation()
         let client = client
         let outcome = await performDevice {
@@ -153,8 +157,24 @@ final class RouteLocationSetupStore: ObservableObject, DeveloperLocationPushing 
         return applyInvalidateResult(outcome, mutation: mutation)
     }
 
+    /// 只有显式开启定点或播放才重新开放；旧生产者不能自行恢复资格。
+    @discardableResult
+    func resumeWrites() -> Bool {
+        guard !isClearing else { return false }
+        writesAllowed = true
+        return true
+    }
+
+    func suspendWrites() {
+        guard writesAllowed else { return }
+        writesAllowed = false
+        stopLocationMaintenance()
+        _ = client.beginMutation()
+        deviceTask?.cancel()
+    }
+
     func set(latitude: Double, longitude: Double) async -> RouteLocationPushFailure? {
-        guard !Task.isCancelled else { return .superseded }
+        guard writesAllowed, !isClearing, !Task.isCancelled else { return .superseded }
         refresh()
         let current = readiness
         if current != .ready {
@@ -166,6 +186,8 @@ final class RouteLocationSetupStore: ObservableObject, DeveloperLocationPushing 
         let cellularWithoutWiFi = environment.isCellularWithoutWiFi()
         let delays = cellularWithoutWiFi ? [] : environment.tunnelRetryDelaysNanoseconds
         let client = client
+        // 提交之后即保守记录可能生效；取消不能证明 C 调用没有写入。
+        activity.simulationMayStillBeActive = true
         let outcome = await performDevice {
             try await Self.retryingTunnel(delays: delays) {
                 client.set(
@@ -227,11 +249,13 @@ final class RouteLocationSetupStore: ObservableObject, DeveloperLocationPushing 
 
     func clear() async -> RouteLocationPushFailure? {
         // 停止意图立即撤销自动补写；即使 clear 失败，也不能再把定位重新开启。
-        stopLocationMaintenance()
+        guard !isClearing else { return .superseded }
+        suspendWrites()
         isClearing = true
         defer { isClearing = false }
         let mutation = client.beginMutation()
-        let reconnect = activity.simulationMayStillBeActive && !client.retainsSimulation
+        // 快照可能落后于在途 set；是否需要连接必须在设备队列内判断。
+        let reconnect = activity.simulationMayStillBeActive || isSimulating
         let path = pairingStore.pairingURL.path
         let address = environment.deviceAddress
         let delays = environment.tunnelRetryDelaysNanoseconds
@@ -269,7 +293,7 @@ final class RouteLocationSetupStore: ObservableObject, DeveloperLocationPushing 
         mutation: UInt64,
         cellularWithoutWiFi: Bool = false
     ) -> RouteLocationPushFailure? {
-        guard client.currentMutation() == mutation else { return .superseded }
+        guard !Task.isCancelled, client.currentMutation() == mutation else { return .superseded }
         switch outcome {
         case .superseded:
             return .superseded
@@ -321,7 +345,7 @@ final class RouteLocationSetupStore: ObservableObject, DeveloperLocationPushing 
             if failure == nil {
                 isSimulating = false
                 activity.simulationMayStillBeActive = false
-            } else if failure == .clearFailed {
+            } else {
                 activity.simulationMayStillBeActive = true
             }
             return failure
@@ -350,7 +374,7 @@ final class RouteLocationSetupStore: ObservableObject, DeveloperLocationPushing 
         }
     }
 
-    /// 取消上一次设备调用并持有新任务。父任务取消时，脱离继承链的 detached 任务也会停。
+    /// 取消待执行部分及重试；已进入同步 C 调用的任务仍需等返回，再由后续 clear 收敛。
     private func performDevice(
         _ operation: @escaping @Sendable () async throws -> IdeviceCommandOutcome
     ) async -> IdeviceCommandOutcome {

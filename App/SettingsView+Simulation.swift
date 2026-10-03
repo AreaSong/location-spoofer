@@ -12,7 +12,12 @@ extension SettingsView {
         Binding(
             get: { motionSimulation.isEnabled },
             set: { enabled in
-                proxy.applyMotionSimulation(enabled)
+                do {
+                    try proxy.applyMotionSimulation(enabled)
+                } catch {
+                    proxyOperationAlertTitle = "运动状态更新失败"
+                    proxyOperationError = error.localizedDescription
+                }
             }
         )
     }

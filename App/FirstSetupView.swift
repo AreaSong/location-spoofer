@@ -41,12 +41,20 @@ struct FirstSetupView: View {
     let onComplete: () -> Void
     let onPreview: () -> Void
 
-    @State var step: SetupStep
+    @StateObject var navigation: FirstSetupNavigation
+    var step: SetupStep {
+        get { navigation.step }
+        nonmutating set { navigation.step = newValue }
+    }
     @State var downloadedDone = false
     @State var installedDone = false
     @State var trustedDone = false
     @State var result: VerificationResult?
-    @State var isVerifying = false
+    @State private var isVerifyingEnvironment = false
+    var isVerifying: Bool {
+        get { isVerifyingEnvironment || navigation.isPreviewVerifying }
+        nonmutating set { isVerifyingEnvironment = newValue }
+    }
     @State var isPreparingMode = false
     @State var manualHint = ""
     @State var setupActionError = ""
@@ -71,12 +79,15 @@ struct FirstSetupView: View {
     init(
         setup: SetupCoordinator,
         onComplete: @escaping () -> Void,
-        onPreview: @escaping () -> Void
+        onPreview: @escaping () -> Void,
+        previewWait: @escaping FirstSetupNavigation.Wait = { try await Task.sleep(nanoseconds: $0) }
     ) {
         self.setup = setup
         self.onComplete = onComplete
         self.onPreview = onPreview
-        _step = State(initialValue: setup.setupStep)
+        _navigation = StateObject(wrappedValue: FirstSetupNavigation(
+            step: setup.setupStep, wait: previewWait, onComplete: onComplete
+        ))
         _showThirdPartyRepairReason = State(
             initialValue: setup.setupStep == .thirdPartyImport && !setup.message.isEmpty
         )
@@ -95,6 +106,8 @@ struct FirstSetupView: View {
 
     var body: some View {
         setupPage
+            .onAppear { navigation.appear() }
+            .onDisappear { navigation.disappear() }
     }
 
     var setupPage: some View {
@@ -127,7 +140,7 @@ struct FirstSetupView: View {
                     .onChange(of: step) { newStep in
                         showsVerificationResult = false
                         showsThirdPartyFailureLog = false
-                        if newStep == .thirdPartyImport {
+                        if newStep == .thirdPartyImport, !developerMode {
                             ThirdPartyModuleRuntime.prepareForImport()
                         }
                     }
@@ -192,7 +205,7 @@ struct FirstSetupView: View {
                     .ignoresSafeArea()
             }
             .onAppear {
-                if step == .thirdPartyImport {
+                if step == .thirdPartyImport, !developerMode {
                     ThirdPartyModuleRuntime.prepareForImport()
                 }
             }
@@ -253,6 +266,7 @@ struct FirstSetupView: View {
     }
 
     private var displayedVerificationResult: VerificationResult? {
+        if navigation.previewSucceeded { return .success }
         guard showsVerificationResult else { return nil }
         return result ?? setup.lastVerificationResult
     }
@@ -261,19 +275,8 @@ struct FirstSetupView: View {
     private func returnToPreviousStep() {
         result = nil
         setupActionError = ""
-        switch step {
-        case .mode:
-            break
-        case .proxy, .thirdPartyClient:
-            step = .mode
-        case .cert:
-            step = .proxy
-        case .thirdPartyImport:
-            thirdPartyTestFailure = nil
-            step = .thirdPartyClient
-        case .developerTunnel:
-            step = .mode
-        }
+        thirdPartyTestFailure = nil
+        navigation.returnToPreviousStep()
     }
 
 
@@ -316,7 +319,7 @@ struct FirstSetupView: View {
         } else if step == .proxy {
             Button {
                 if developerMode {
-                    finishDeveloperCheck { step = .cert }
+                    finishDeveloperCheck()
                 } else {
                     verifyAfterProxyConfirmation()
                 }
@@ -329,7 +332,7 @@ struct FirstSetupView: View {
             // 三个勾选只是进度提示；真正的门是下面的环境检测。
             Button {
                 if developerMode {
-                    finishDeveloperCheck { onComplete() }
+                    finishDeveloperCheck()
                 } else {
                     verifyAfterCertificateConfirmation()
                 }
@@ -340,7 +343,7 @@ struct FirstSetupView: View {
             .disabled(isVerifying)
         } else if step == .developerTunnel {
             Button {
-                onComplete()
+                if developerMode { navigation.completePreview() } else { onComplete() }
             } label: {
                 actionLabel("完成")
             }
@@ -356,7 +359,7 @@ struct FirstSetupView: View {
         } else {
             Button {
                 if developerMode {
-                    finishDeveloperCheck { onComplete() }
+                    finishDeveloperCheck()
                 } else {
                     verifyThirdPartyConnection()
                 }
@@ -371,20 +374,12 @@ struct FirstSetupView: View {
 
     var developerMode: Bool { previewArmed || UIPreview.isEnabled() }
 
-    /// 开发者模式只回放成功结果，不调用真实检测，也不写入引导完成状态。
-    func finishDeveloperCheck(_ advance: @escaping () -> Void) {
-        guard !isVerifying else { return }
-        isVerifying = true
+    /// 隔离预览只回放成功反馈，不调用真实验证或写入引导完成状态。
+    func finishDeveloperCheck() {
+        guard developerMode, !isVerifying else { return }
         result = nil
         showsVerificationResult = false
-        Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 350_000_000)
-            result = .success
-            showsVerificationResult = true
-            isVerifying = false
-            try? await Task.sleep(nanoseconds: 450_000_000)
-            advance()
-        }
+        navigation.startPreviewCheck()
     }
 
     private func actionLabel(_ title: String) -> some View {

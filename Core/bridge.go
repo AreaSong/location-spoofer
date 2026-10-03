@@ -12,9 +12,9 @@ import (
 	"encoding/binary"
 	"fmt"
 	"math"
-	"net/http"
 	"runtime/cgo"
 	"strconv"
+	"sync"
 )
 
 //export wloccore_version
@@ -64,38 +64,70 @@ func wloccore_startproxyv2(certData, keyData *C.char, lat, lon C.double, enabled
 		logEvent("startproxy failed: " + err.Error())
 		return 0
 	}
-	return C.uintptr_t(cgo.NewHandle(srv))
+	return C.uintptr_t(cgo.NewHandle(newProxyHandle(srv)))
 }
 
 //export wloccore_stopproxy
 func wloccore_stopproxy(h C.uintptr_t) C.int {
+	return C.int(stopProxyHandle(uintptr(h)))
+}
+
+type proxyHandle struct {
+	server      *proxyServer
+	cleanupOnce sync.Once
+	deleteOnce  sync.Once
+	released    chan struct{}
+}
+
+func newProxyHandle(server *proxyServer) *proxyHandle {
+	return &proxyHandle{server: server, released: make(chan struct{})}
+}
+
+var proxyHandleMu sync.Mutex
+
+func stopProxyHandle(h uintptr) int {
 	logEvent("stopproxy requested")
-	srv, handle, ok := proxyForHandle(h)
+	owned, ok := proxyForHandle(h)
 	if !ok {
 		logEvent("stopproxy failed: invalid handle")
 		return 1
 	}
-	handle.Delete()
-	if err := stopProxy(srv); err != nil {
-		logEvent("stopproxy failed: " + err.Error())
+	if err := stopProxy(owned.server); err != nil {
+		// 网络已关闭；Swift 可显示已停止。尚未退出的任务由 Core 保有 handle，
+		// 等待实际收尾后删除，不能依赖上层保留 handle 或再次调用 stop。
+		owned.cleanupOnce.Do(func() {
+			go func() { <-owned.server.done; owned.release(h) }()
+		})
+		logEvent("stopproxy network closed; cleanup pending: " + err.Error())
 		return 2
 	}
+	owned.release(h)
 	logEvent("stopproxy completed")
 	return 0
 }
 
-func proxyForHandle(h C.uintptr_t) (server *http.Server, handle cgo.Handle, ok bool) {
+func (h *proxyHandle) release(value uintptr) {
+	h.deleteOnce.Do(func() {
+		proxyHandleMu.Lock()
+		defer proxyHandleMu.Unlock()
+		cgo.Handle(value).Delete()
+		close(h.released)
+	})
+}
+
+func proxyForHandle(h uintptr) (owned *proxyHandle, ok bool) {
 	if h == 0 {
-		return nil, 0, false
+		return nil, false
 	}
+	proxyHandleMu.Lock()
+	defer proxyHandleMu.Unlock()
 	defer func() {
 		if recover() != nil {
-			server, handle, ok = nil, 0, false
+			owned, ok = nil, false
 		}
 	}()
-	handle = cgo.Handle(h)
-	server, ok = handle.Value().(*http.Server)
-	return server, handle, ok
+	owned, ok = cgo.Handle(h).Value().(*proxyHandle)
+	return owned, ok
 }
 
 //export wloccore_setpatchconfig

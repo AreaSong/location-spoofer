@@ -117,9 +117,9 @@ final class RandomRadiusStore: ObservableObject {
 @MainActor
 final class LocationAccuracyStore: ObservableObject {
     static let shared = LocationAccuracyStore()
-    static let minimumMeters = 5
-    static let maximumMeters = 100
-    static let defaultMeters = 25
+    static let minimumMeters = LocationAccuracy.minimumMeters
+    static let maximumMeters = LocationAccuracy.maximumMeters
+    static let defaultMeters = LocationAccuracy.defaultMeters
 
     private enum Key {
         static let meters = "locationAccuracy.meters"

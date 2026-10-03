@@ -2,7 +2,6 @@ package main
 
 import (
 	"bytes"
-	"context"
 	crand "crypto/rand"
 	"crypto/tls"
 	"encoding/pem"
@@ -141,11 +140,12 @@ func newProxy(cert *tls.Certificate) *goproxy.ProxyHttpServer {
 			// Global Wi-Fi proxy mode sends all HTTPS CONNECT traffic here. Logging
 			// unrelated passthrough hosts creates high-volume noise and can disclose
 			// browsing destinations; diagnostics only retain WLOC and verify traffic.
-			return goproxy.OkConnect, host
+			return nil, host
 		})
 	}
 
 	proxy.OnRequest().DoFunc(func(req *http.Request, ctx *goproxy.ProxyCtx) (*http.Request, *http.Response) {
+		prepareWlocRoundTrip(proxy, req, ctx)
 		// Do not buffer or log arbitrary global-proxy traffic. Keep requests streaming
 		// and do not persist unrelated request content in diagnostics.
 		return serveLocalRequests(req, ctx)
@@ -203,12 +203,12 @@ func patchWlocResponse(resp *http.Response, ctx *goproxy.ProxyCtx) *http.Respons
 	body, err := io.ReadAll(io.LimitReader(originalBody, maxPatchBodyBytes+1))
 	if err != nil {
 		logEvent("wloc response read failed: " + err.Error())
-		resp.Body = io.NopCloser(io.MultiReader(bytes.NewReader(body), originalBody))
+		resp.Body = &responseBody{Reader: io.MultiReader(bytes.NewReader(body), failedBodyReader{err}), source: originalBody}
 		return resp
 	}
 	if int64(len(body)) > maxPatchBodyBytes {
 		logEvent("wloc response passed through: body exceeds patch limit")
-		resp.Body = io.NopCloser(io.MultiReader(bytes.NewReader(body), originalBody))
+		resp.Body = &responseBody{Reader: io.MultiReader(bytes.NewReader(body), originalBody), source: originalBody}
 		return resp
 	}
 	originalBody.Close()
@@ -253,43 +253,25 @@ func randomUint32() uint32 {
 	return uint32(b[0])<<24 | uint32(b[1])<<16 | uint32(b[2])<<8 | uint32(b[3])
 }
 
-func startProxy(certPEM, keyPEM []byte, lat, lon float64, enabled bool, accuracy int, motionEnabled bool) (*http.Server, error) {
+func startProxy(certPEM, keyPEM []byte, lat, lon float64, enabled bool, accuracy int, motionEnabled bool) (*proxyServer, error) {
 	cert, err := parseCA(certPEM, keyPEM)
 	if err != nil {
 		return nil, err
 	}
 
+	listener, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", proxyPort))
+	if err != nil {
+		return nil, err
+	}
 	stateMu.Lock()
 	globalCACert = cert
 	currentLat, currentLon, currentEnabled, currentAccuracy = lat, lon, enabled, accuracy
 	currentMotionSimulationEnabled = motionEnabled
 	stateMu.Unlock()
 
-	listener, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", proxyPort))
-	if err != nil {
-		return nil, err
-	}
-	srv := &http.Server{Handler: newProxy(cert)}
-	go func() {
-		if err := srv.Serve(listener); err != nil && err != http.ErrServerClosed {
-			logEvent("proxy server error: " + err.Error())
-		}
-	}()
+	srv := serveProxy(listener, newProxy(cert), cert)
 	logEvent("proxy started on 127.0.0.1:8888")
 	return srv, nil
-}
-
-func stopProxy(srv *http.Server) error {
-	if srv == nil {
-		return nil
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	err := srv.Shutdown(ctx)
-	stateMu.Lock()
-	globalCACert = nil
-	stateMu.Unlock()
-	return err
 }
 
 func refreshVerifyToken() string {

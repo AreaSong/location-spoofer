@@ -4,7 +4,7 @@ import Foundation
 import IdeviceLocation
 #endif
 
-/// 一次设备调用的结果。`superseded` 表示更新的 set/clear 已经占住通道，这次不能改设备状态。
+/// 一次设备调用的结果。`superseded` 只表示未执行的操作已失效；已开始的同步调用仍可能产生副作用。
 enum IdeviceCommandOutcome: Equatable, Sendable {
     case finished(RouteLocationPushFailure?)
     case superseded
@@ -45,7 +45,40 @@ final class IdeviceLocationClient: IdeviceLocationPushing, @unchecked Sendable {
     static let hostname = "PaopaoLocation"
 
     private let queue = DispatchQueue(label: "com.paopaolabs.location-spoofer.idevice")
+    // 短锁只保护序号和句柄快照，绝不持锁调用设备或等待 queue。
+    private let stateLock = NSLock()
     private var mutation: UInt64 = 0
+    private var retainedSnapshot = false
+
+    /// 测试接缝仍在真实串行队列内执行，不替换调度模型。
+    struct DeviceOperations: Sendable {
+        var set: @Sendable (Double, Double) -> RouteLocationPushFailure?
+        var clear: @Sendable () -> RouteLocationPushFailure?
+        var abandon: @Sendable () -> Void
+        var retainsSimulation: @Sendable () -> Bool
+        var clearReconnecting: (@Sendable () -> RouteLocationPushFailure?)? = nil
+    }
+    private let operations: DeviceOperations?
+
+    init(operations: DeviceOperations? = nil) {
+        self.operations = operations
+    }
+
+    private func publishHandleSnapshot() {
+        let retained: Bool
+        if let operations {
+            retained = operations.retainsSimulation()
+        } else {
+            #if targetEnvironment(simulator)
+            retained = false
+            #else
+            retained = simulation != nil
+            #endif
+        }
+        stateLock.lock()
+        retainedSnapshot = retained
+        stateLock.unlock()
+    }
     #if !targetEnvironment(simulator)
     private var adapter: OpaquePointer?
     private var handshake: OpaquePointer?
@@ -54,14 +87,16 @@ final class IdeviceLocationClient: IdeviceLocationPushing, @unchecked Sendable {
     #endif
 
     func beginMutation() -> UInt64 {
-        queue.sync {
-            mutation &+= 1
-            return mutation
-        }
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        mutation &+= 1
+        return mutation
     }
 
     func currentMutation() -> UInt64 {
-        queue.sync { mutation }
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        return mutation
     }
 
     func set(
@@ -72,7 +107,8 @@ final class IdeviceLocationClient: IdeviceLocationPushing, @unchecked Sendable {
         mutation: UInt64
     ) -> IdeviceCommandOutcome {
         queue.sync {
-            guard mutation == self.mutation else { return .superseded }
+            guard mutation == currentMutation() else { return .superseded }
+            defer { publishHandleSnapshot() }
             return .finished(setLocked(
                 latitude: latitude,
                 longitude: longitude,
@@ -84,22 +120,27 @@ final class IdeviceLocationClient: IdeviceLocationPushing, @unchecked Sendable {
 
     func clear(mutation: UInt64) -> IdeviceCommandOutcome {
         queue.sync {
-            guard mutation == self.mutation else { return .superseded }
+            guard mutation == currentMutation() else { return .superseded }
+            defer { publishHandleSnapshot() }
             return .finished(clearLocked())
         }
     }
 
     var retainsSimulation: Bool {
-        #if targetEnvironment(simulator)
-        false
-        #else
-        queue.sync { simulation != nil }
-        #endif
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        return retainedSnapshot
     }
 
     func invalidate(mutation: UInt64) -> IdeviceCommandOutcome {
         queue.sync {
-            guard mutation == self.mutation else { return .superseded }
+            guard mutation == currentMutation() else { return .superseded }
+            defer { publishHandleSnapshot() }
+            if let operations {
+                let failure = operations.clear()
+                operations.abandon()
+                return .finished(failure)
+            }
             #if targetEnvironment(simulator)
             return .finished(nil)
             #else
@@ -116,7 +157,11 @@ final class IdeviceLocationClient: IdeviceLocationPushing, @unchecked Sendable {
         mutation: UInt64
     ) -> IdeviceCommandOutcome {
         queue.sync {
-            guard mutation == self.mutation else { return .superseded }
+            guard mutation == currentMutation() else { return .superseded }
+            defer { publishHandleSnapshot() }
+            if let operations {
+                return .finished((operations.clearReconnecting ?? operations.clear)())
+            }
             #if targetEnvironment(simulator)
             _ = pairingPath
             _ = deviceAddress
@@ -133,7 +178,12 @@ final class IdeviceLocationClient: IdeviceLocationPushing, @unchecked Sendable {
     }
 
     func abandonSession() {
-        queue.sync {
+        queue.async { [self] in
+            defer { publishHandleSnapshot() }
+            if let operations {
+                operations.abandon()
+                return
+            }
             #if !targetEnvironment(simulator)
             abandonSessionLocked()
             #endif
@@ -146,6 +196,7 @@ final class IdeviceLocationClient: IdeviceLocationPushing, @unchecked Sendable {
         pairingPath: String,
         deviceAddress: String
     ) -> RouteLocationPushFailure? {
+        if let operations { return operations.set(latitude, longitude) }
         #if targetEnvironment(simulator)
         _ = latitude
         _ = longitude
@@ -169,6 +220,7 @@ final class IdeviceLocationClient: IdeviceLocationPushing, @unchecked Sendable {
     }
 
     private func clearLocked() -> RouteLocationPushFailure? {
+        if let operations { return operations.clear() }
         #if targetEnvironment(simulator)
         return nil
         #else

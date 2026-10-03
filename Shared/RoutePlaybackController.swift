@@ -44,7 +44,10 @@ final class RoutePlaybackController: ObservableObject {
         didSet { clock.setStatusMessage(statusMessage) }
     }
 
+    var onLocationKept: (() -> Void)?
+    var onPlaybackIntent: (() -> Bool)?
     var applyCoordinate: ((CoordinatePair) async -> Bool)?
+    var now: () -> Date = { Date() }
     var tickIntervalNanoseconds: UInt64 = 1_000_000_000
     /// 开发者定位推送每次采样都写，不再等 8 米或 5 秒。
     var ignoresWriteGate = false
@@ -56,12 +59,24 @@ final class RoutePlaybackController: ObservableObject {
     private var elapsed: TimeInterval = 0
     private var playbackOrigin = Date()
     private var playbackTask: Task<Void, Never>?
-    /// 开启等待期间写入起点。退出时要取消，否则播放任务还没创建，旧任务仍会写坐标。
+    /// 起点激活属于路线生命周期；退出时撤销未开始部分，已开始部分交给收尾屏障。
     private var activationTask: Task<Void, Never>?
-    /// 起点写入已经发出。取消只能挡住还没开始的写入，已经发出的要等它结束再清定位。
+    /// 已进入激活协调边界，必须等结果返回；保留位置的退出不清除模拟。
     private var activationDidWrite = false
+    private var playbackDidWrite = false
+    /// 至多一个已开始的生产者留在这里收尾；新生产者必须先等它返回。
+    private var pendingWriteTask: Task<Void, Never>?
+    private var producerStartTask: Task<Void, Never>?
+    private var pendingProducerStart: (() -> Void)?
+    private(set) var producerStartID: UUID?
+    private var handoffTask: Task<Void, Never>?
+    private var pendingHandoff: (generation: UInt64, drain: Task<Void, Never>?, kept: (() -> Void)?)?
+    private var handoffGeneration: UInt64 = 0
+    private var handoffRequested = false
+    private var locationWasRequested = false
     /// 停止或重新开始播放时加一。挂起的写入返回后用它丢掉过期结果。
     private var playbackGeneration: UInt64 = 0
+    private(set) var submissionGeneration: UInt64 = 0
     private var pathGeneration: UInt64 = 0
     private var writeGate = RouteWriteGate()
     private let preferenceStore: RoutePlaybackPreferenceStore
@@ -155,6 +170,8 @@ final class RoutePlaybackController: ObservableObject {
     }
 
     func enter(start pair: CoordinatePair? = nil) {
+        invalidateHandoff()
+        locationWasRequested = false
         stopPlaybackTask()
         endRouteKeepAlive()
         stopActivationTask()
@@ -177,6 +194,8 @@ final class RoutePlaybackController: ObservableObject {
 
     @discardableResult
     func load(_ saved: SavedRoute) -> Task<Void, Never>? {
+        invalidateHandoff()
+        locationWasRequested = false
         stopPlaybackTask()
         endRouteKeepAlive()
         let pendingWrite = takePendingActivationWrite()
@@ -314,6 +333,8 @@ final class RoutePlaybackController: ObservableObject {
             statusMessage = "起点和终点太近，请再拉开一些。"
             return
         }
+        invalidateHandoff()
+        guard onPlaybackIntent?() ?? true else { return }
         headingForward = true
         elapsed = 0
         progress = 0
@@ -322,18 +343,21 @@ final class RoutePlaybackController: ObservableObject {
         statusMessage = "正在开启虚拟定位…"
     }
 
-    /// `requestPlay()` 之后调用。任务挂在控制器上，退出、取消等待和换路线都会取消它。
-    func beginActivation() {
+    /// `requestPlay()` 之后调用；控制器持有任务，换路线前先排空已开始的激活。
+    func beginActivation(using operation: (() async -> Bool)? = nil) {
         stopActivationTask()
         guard waitingForActivation, let pair = current ?? start else { return }
-        activationTask = Task { [weak self] in
-            await self?.runActivation(pair)
+        scheduleProducerStart { [weak self] in
+            self?.activationTask = Task { [weak self] in
+                await self?.runActivation(pair, operation: operation)
+            }
         }
     }
 
     func noteActivated() {
         guard waitingForActivation else { return }
         waitingForActivation = false
+        locationWasRequested = true
         startLoop()
     }
 
@@ -396,15 +420,19 @@ final class RoutePlaybackController: ObservableObject {
         interruption = .playing
         statusMessage = "路线已停止，定位仍保持。"
         captureSession(force: true)
+        requestLocationHandoff()
     }
 
     func resume() {
         guard phase == .paused, canPlay else { return }
+        invalidateHandoff()
+        guard onPlaybackIntent?() ?? true else { return }
         interruption = .playing
         startLoop()
     }
 
     func resetProgressForRestart() {
+        invalidateHandoff()
         stopPlaybackTask()
         endRouteKeepAlive()
         headingForward = true
@@ -426,7 +454,7 @@ final class RoutePlaybackController: ObservableObject {
         applyPendingRecovery()
     }
 
-    /// 返回已经发出、但还没结束的起点写入。调用方应等它完成后再把该点交给定点。
+    /// 停止生产，返回激活或播放写入的收尾任务；定点接管由同一个生命周期完成。
     @discardableResult
     func exit() -> Task<Void, Never>? {
         stopPlaybackTask()
@@ -452,6 +480,7 @@ final class RoutePlaybackController: ObservableObject {
         recoveredProgress = nil
         phase = .inactive
         clearSession()
+        requestLocationHandoff()
         return pendingWrite
     }
 
@@ -501,7 +530,7 @@ final class RoutePlaybackController: ObservableObject {
             totalMeters: path.totalMeters,
             speedMetersPerSecond: max(kmh / 3.6, 0.1)
         )
-        playbackOrigin = Date().addingTimeInterval(-elapsed)
+        playbackOrigin = now().addingTimeInterval(-elapsed)
     }
 
     func setOffsetMeters(_ value: Double) {
@@ -606,10 +635,12 @@ final class RoutePlaybackController: ObservableObject {
         recoveredProgress = nil
         phase = .playing
         statusMessage = playbackStatusMessage()
-        playbackOrigin = Date().addingTimeInterval(-elapsed)
+        playbackOrigin = now().addingTimeInterval(-elapsed)
         captureSession(force: true)
-        playbackTask = Task { [weak self] in
-            await self?.runLoop(generation: generation)
+        scheduleProducerStart { [weak self] in
+            self?.playbackTask = Task { [weak self] in
+                await self?.runLoop(generation: generation)
+            }
         }
     }
 
@@ -617,7 +648,7 @@ final class RoutePlaybackController: ObservableObject {
         while isPlaybackCurrent(generation), phase == .playing {
             guard let basePath = path, basePath.points.count >= 2 else { break }
             let activePath = headingForward ? basePath : basePath.reversed()
-            elapsed = Date().timeIntervalSince(playbackOrigin)
+            elapsed = now().timeIntervalSince(playbackOrigin)
             let tick = RoutePlayback.tick(
                 path: activePath,
                 speedMetersPerSecond: speedMetersPerSecond,
@@ -625,13 +656,16 @@ final class RoutePlaybackController: ObservableObject {
             )
             current = tick.coordinatePair
             progress = tick.progress
-            let now = Date()
+            let now = now()
             let forceWrite = tick.isFinished
             let due = ignoresWriteGate || writeGate.shouldWrite(tick.coordinatePair, at: now, force: forceWrite)
             if due {
+                playbackDidWrite = true
+                locationWasRequested = true
                 let applied = await applyCoordinate?(tick.coordinatePair) ?? false
                 // 写入挂起期间，这一轮可能已取消，或已被新播放替换。
                 guard isPlaybackCurrent(generation) else { return }
+                playbackDidWrite = false
                 if !applied {
                     notePushFailure()
                     return
@@ -645,9 +679,10 @@ final class RoutePlaybackController: ObservableObject {
                     statusMessage = finishedStatusMessage()
                     endRouteKeepAlive()
                     clearSession()
+                    requestLocationHandoff()
                     return
                 }
-                playbackOrigin = Date()
+                playbackOrigin = self.now()
                 elapsed = 0
                 progress = 0
                 statusMessage = playbackStatusMessage()
@@ -712,6 +747,7 @@ final class RoutePlaybackController: ObservableObject {
 
     private func applyPendingRecovery() {
         guard let session = pendingRecovery, path != nil else { return }
+        locationWasRequested = true
         progress = min(1, max(0, session.progress))
         elapsed = session.elapsed
         headingForward = session.headingForward
@@ -759,11 +795,15 @@ final class RoutePlaybackController: ObservableObject {
         )
     }
 
-    private func runActivation(_ pair: CoordinatePair) async {
+    private func runActivation(_ pair: CoordinatePair, operation: (() async -> Bool)?) async {
         guard !Task.isCancelled, waitingForActivation else { return }
+        let generation = handoffGeneration
         activationDidWrite = true
-        let applied = await applyCoordinate?(pair) ?? false
-        guard !Task.isCancelled, waitingForActivation else { return }
+        locationWasRequested = true
+        let applied: Bool
+        if let operation { applied = await operation() }
+        else { applied = await applyCoordinate?(pair) ?? false }
+        guard !Task.isCancelled, waitingForActivation, generation == handoffGeneration else { return }
         activationDidWrite = false
         if applied {
             noteActivated()
@@ -775,26 +815,85 @@ final class RoutePlaybackController: ObservableObject {
         }
     }
 
-    /// 写入还没发出时直接丢掉任务；已经发出则把任务交还调用方，等写入落地后再清理。
+    /// 不取消已开始的调用：取消会让下层丢掉成功收据，却无法撤销设备副作用。
     private func takePendingActivationWrite() -> Task<Void, Never>? {
-        let task = activationTask
-        let wrote = activationDidWrite
-        activationTask?.cancel()
+        submissionGeneration &+= 1
+        pendingProducerStart = nil
+        if activationDidWrite {
+            pendingWriteTask = activationTask
+        } else {
+            activationTask?.cancel()
+        }
         activationTask = nil
         activationDidWrite = false
-        return wrote ? task : nil
+        return pendingWriteTask
     }
 
     private func stopActivationTask() {
-        activationTask?.cancel()
-        activationTask = nil
-        activationDidWrite = false
+        _ = takePendingActivationWrite()
     }
 
     private func stopPlaybackTask() {
+        submissionGeneration &+= 1
+        pendingProducerStart = nil
         playbackGeneration &+= 1
-        playbackTask?.cancel()
+        if playbackDidWrite {
+            pendingWriteTask = playbackTask
+        } else {
+            playbackTask?.cancel()
+        }
         playbackTask = nil
+        playbackDidWrite = false
+    }
+
+    /// 快速暂停/重启只替换一个待启动意图，不为每次点击创建等待设备的任务。
+    private func scheduleProducerStart(_ start: @escaping () -> Void) {
+        guard let pending = pendingWriteTask else { start(); return }
+        pendingProducerStart = start
+        guard producerStartTask == nil else { return }
+        producerStartID = UUID()
+        producerStartTask = Task { [weak self] in
+            await pending.value
+            guard let self else { return }
+            self.pendingWriteTask = nil
+            self.producerStartTask = nil
+            self.producerStartID = nil
+            let next = self.pendingProducerStart
+            self.pendingProducerStart = nil
+            next?()
+        }
+    }
+
+    private func invalidateHandoff() {
+        handoffGeneration &+= 1
+        pendingHandoff = nil
+        handoffRequested = false
+    }
+
+    private func requestLocationHandoff() {
+        guard locationWasRequested, !handoffRequested else { return }
+        handoffRequested = true
+        pendingHandoff = (handoffGeneration, pendingWriteTask, onLocationKept)
+        guard handoffTask == nil else { return }
+        handoffTask = Task { [weak self] in
+            await self?.drainHandoff()
+        }
+    }
+
+    private func drainHandoff() async {
+        defer { handoffTask = nil }
+        while let request = pendingHandoff {
+            await request.drain?.value
+            guard pendingHandoff?.generation == request.generation else { continue }
+            pendingHandoff = nil
+            guard request.generation == handoffGeneration else { continue }
+            request.kept?()
+        }
+    }
+
+    /// 等待已请求的定点接管，不清除设备模拟；未请求接管时直接返回。
+    func waitForHandoff() async {
+        await handoffTask?.value
     }
 
     private func beginRouteKeepAlive() {

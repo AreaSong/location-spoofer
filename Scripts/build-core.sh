@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+export GOTOOLCHAIN=local
+
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CORE="$ROOT/Core"
 BUILD="$CORE/build"
@@ -36,10 +38,15 @@ assert_exported_symbol() {
   local arch="$2"
   local symbol="$3"
 
-  xcrun lipo -archs "$archive" | grep -qw "$arch"
-  xcrun nm -arch "$arch" "$archive" 2>/dev/null | grep -q " _${symbol}$"
+  # 完整消费输出，避免 grep -q 提前退出触发上游 SIGPIPE；pipefail 仍传播工具错误。
+  xcrun lipo -archs "$archive" | grep -w "$arch" >/dev/null
+  xcrun nm -arch "$arch" "$archive" | grep " T _${symbol}$" >/dev/null
 }
 
+if [ -L "$CORE" ] || [ -L "$BUILD" ]; then
+  echo "Core 生成目录不得为符号链接" >&2
+  exit 1
+fi
 rm -rf "$BUILD"
 mkdir -p "$BUILD/iphoneos" "$BUILD/iphonesimulator/slices"
 cd "$CORE"

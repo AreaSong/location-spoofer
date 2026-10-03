@@ -3,6 +3,7 @@ import Foundation
 enum SpoofSessionEffect: Equatable {
     case activationSucceeded
     case deactivationSucceeded
+    case locationApplyFailed(String)
         case offerCommunityContribution
         case localVerificationFailed(VerificationResult)
         case developerPushFailed(String)
@@ -37,6 +38,9 @@ final class SpoofSession: ObservableObject {
         var developerSpotWGS84: (Double, Double) -> (latitude: Double, longitude: Double)
         var pushDeveloper: (FavoriteLocation) async -> RouteLocationPushFailure?
         var clearDeveloper: () async -> RouteLocationPushFailure?
+        var resumeWrites: () -> Bool = { true }
+        var suspendWrites: () -> Void = {}
+        var localApplyFailureMessage: () -> String = { "位置更新失败，请重试" }
     }
 
     @Published private(set) var state: SpoofState
@@ -48,9 +52,14 @@ final class SpoofSession: ObservableObject {
     @Published private(set) var switchLongitude: Double?
     @Published private(set) var effectRevision: UInt64 = 0
 
+    @Published private(set) var writesSuspended = false
+    private(set) var writeGeneration: UInt64 = 0
+    private var modeCleanupRunning = false
     private var services: Services?
     private var operationID: UInt64 = 0
     private var operationTask: Task<Void, Never>?
+    private var movingWriteTask: Task<Bool, Never>?
+    private var movingWriteID: UInt64 = 0
     private var pendingEffects: [SpoofSessionEffect] = []
 
     init(
@@ -109,19 +118,28 @@ final class SpoofSession: ObservableObject {
         state = .idle
     }
 
-    func begin(target: FavoriteLocation) {
+    func begin(target: FavoriteLocation, isRouteActivation: Bool = false) {
         guard let services else { return }
         if services.isUseBlocked() { return }
+        do {
+            try LocationAccuracy.validatedCInt(target.accuracy)
+        } catch {
+            enqueue(.locationApplyFailed(error.localizedDescription))
+            return
+        }
         if services.routeIsPlaying() { services.pauseRoute() }
         guard state != .verifying, operationTask == nil else { return }
+        guard resumeWrites() else { return }
         let wasActive = state == .active
-        operationID &+= 1
+        if !isRouteActivation { operationID &+= 1 }
         let operationID = operationID
         let selectionRevision = services.selectionRevision()
         state = .verifying
+        let pendingWrite = movingWriteTask
         switch services.mode() {
         case .thirdParty:
             operationTask = Task {
+                await pendingWrite?.value
                 await self.saveThirdParty(
                     target,
                     operationID: operationID,
@@ -131,19 +149,22 @@ final class SpoofSession: ObservableObject {
             }
         case .developerTunnel:
             operationTask = Task {
+                await pendingWrite?.value
                 await self.pushDeveloperLocation(target, operationID: operationID, wasActive: wasActive)
             }
         case .localWiFi:
             operationTask = Task {
+                await pendingWrite?.value
+                guard self.accept(operationID) else { return }
                 await self.verifyLocal(target, operationID: operationID, selectionRevision: selectionRevision)
             }
         }
     }
 
     func stop() {
-        guard let services else { return }
-        services.pauseRoute()
-        invalidateOperation()
+        guard !modeCleanupRunning, !(writesSuspended && operationTask != nil),
+              let services else { return }
+        suspendWrites()
         switch services.mode() {
         case .thirdParty:
             state = .verifying
@@ -164,36 +185,132 @@ final class SpoofSession: ObservableObject {
         enqueue(.resetLocalDiagnosis, .deactivationSucceeded)
     }
 
-    func writeRoute(_ pair: CoordinatePair, offsetMeters: Double) async -> Bool {
-        guard let services, !services.isUseBlocked() else { return false }
-        if services.mode() == .thirdParty {
-            return await writeThirdPartyRoute(pair, offsetMeters: offsetMeters, services: services)
-        }
-        return writeLocalRoute(pair, offsetMeters: offsetMeters, services: services)
+    /// 新意图更换 operationID；writeGeneration 仍专门隔离清除/模式切换。
+    /// 已发送成功收据保持唯一真实坐标，但不能驱动旧生产者的地图、门控或错误。
+    @discardableResult
+    func beginMovement() -> Bool {
+        guard resumeWrites() else { return false }
+        invalidateOperation()
+        return true
     }
 
-    /// 真实走动写入当前点，不再套路线偏移或随机扰动。
-    func writeMoving(_ pair: CoordinatePair) async -> Bool {
-        guard let services, !services.isUseBlocked() else { return false }
-        switch services.mode() {
-        case .thirdParty:
-            return await writeThirdPartyRoute(pair, offsetMeters: 0, services: services)
-        case .developerTunnel:
-            return await writeDeveloperMoving(pair, services: services)
-        case .localWiFi:
-            return writeLocalRoute(pair, offsetMeters: 0, services: services)
+    var writtenCoordinate: CoordinatePair? {
+        guard let writtenLatitude, let writtenLongitude else { return nil }
+        return CoordinateConverter.coordinatePair(
+            lat: writtenLatitude, lon: writtenLongitude, mapCoordinateSystem: .wgs84
+        )
+    }
+
+    func waitForOperation() async {
+        await operationTask?.value
+    }
+
+    func writeRoute(
+        _ pair: CoordinatePair, offsetMeters: Double,
+        maySubmit: @escaping () -> Bool = { true },
+        onFailure: ((RouteLocationPushFailure) -> Void)? = nil
+    ) async -> Bool {
+        await writeMovement(pair, offsetMeters: offsetMeters, maySubmit: maySubmit, onFailure: onFailure ?? { _ in })
+    }
+
+    /// 真实走动不套随机偏移；调用方停止生产不会取消已发送的收据。
+    func writeMoving(_ pair: CoordinatePair, maySubmit: @escaping () -> Bool = { true }) async -> Bool {
+        await writeMovement(pair, offsetMeters: 0, maySubmit: maySubmit, onFailure: nil)
+    }
+
+    private func writeMovement(
+        _ pair: CoordinatePair, offsetMeters: Double,
+        maySubmit: @escaping () -> Bool, onFailure: ((RouteLocationPushFailure) -> Void)?
+    ) async -> Bool {
+        guard let services else { return false }
+        let generation = writeGeneration
+        let intent = operationID
+        let mode = services.mode()
+        guard accept(intent), acceptsWrite(generation: generation, mode: mode), maySubmit() else { return false }
+        // 前台查询不插队；已存在的查询先收尾，避免查询结果覆盖移动写入。
+        await operationTask?.value
+        // 路线、走动与显式换点共用此屏障。等待期间新意图会淘汰旧请求。
+        while let pending = movingWriteTask {
+            await pending.value
+            guard accept(intent), acceptsWrite(generation: generation, mode: mode), maySubmit() else { return false }
         }
+        guard accept(intent), acceptsWrite(generation: generation, mode: mode), maySubmit(), !services.isUseBlocked() else { return false }
+        movingWriteID &+= 1
+        let id = movingWriteID
+        let task = Task {
+            defer { if self.movingWriteID == id { self.movingWriteTask = nil } }
+            guard self.accept(intent), self.acceptsWrite(generation: generation, mode: mode), maySubmit() else { return false }
+            switch mode {
+            case .thirdParty:
+                return await self.writeThirdPartyRoute(pair, offsetMeters: offsetMeters, services: services)
+            case .developerTunnel:
+                let written = RoutePlayback.offset(pair, radiusMeters: offsetMeters)
+                return await self.writeDeveloperMoving(written, services: services, onFailure: onFailure)
+            case .localWiFi:
+                return self.writeLocalRoute(pair, offsetMeters: offsetMeters, services: services)
+            }
+        }
+        movingWriteTask = task
+        let applied = await withTaskCancellationHandler {
+            await task.value
+        } onCancel: {
+            task.cancel()
+        }
+        if movingWriteID == id { movingWriteTask = nil }
+        return applied && accept(intent) && acceptsWrite(generation: generation, mode: mode)
     }
 
     func refreshThirdParty() {
-        guard let services, services.mode() == .thirdParty, operationTask == nil else { return }
-        operationID &+= 1
+        guard let services, services.mode() == .thirdParty, operationTask == nil,
+              movingWriteTask == nil, !writesSuspended else { return }
         let operationID = operationID
         operationTask = Task { await self.queryThirdParty(operationID: operationID) }
     }
 
+    @discardableResult
+    func resumeWrites() -> Bool {
+        guard !modeCleanupRunning, let services, services.resumeWrites() else { return false }
+        writesSuspended = false
+        return true
+    }
+
+    func suspendWrites() {
+        writeGeneration &+= 1
+        writesSuspended = true
+        services?.pauseRoute()
+        invalidateOperation()
+        // 取消了验证任务就不能继续显示验证中；清理本身由独立状态表示。
+        if state == .verifying {
+            state = writtenLatitude == nil ? .idle : .active
+        }
+        services?.suspendWrites()
+    }
+
+    var writeMode: ProxyRuntimeMode? { services?.mode() }
+    var writeIntent: UInt64 { operationID }
+
+    func waitForMovementWrite() async {
+        await movingWriteTask?.value
+    }
+
+    func acceptsWrite(generation: UInt64, mode: ProxyRuntimeMode) -> Bool {
+        !Task.isCancelled && !writesSuspended && generation == writeGeneration && services?.mode() == mode
+    }
+
+    /// 设置页在第一次 await 前调用，失败也不重新启动旧生产者。
+    func beginModeCleanup() {
+        modeCleanupRunning = true
+        suspendWrites()
+    }
+
+    func endModeCleanup() {
+        modeCleanupRunning = false
+    }
+
     func cancelForModeChange() {
         guard let services else { return }
+        writeGeneration &+= 1
+        writesSuspended = true
         invalidateOperation()
         clearWrittenCoordinate()
         if services.mode() == .localWiFi {
@@ -214,7 +331,7 @@ final class SpoofSession: ObservableObject {
         operationID: UInt64,
         wasActive: Bool
     ) async {
-        guard let services else { return }
+        guard accept(operationID), !writesSuspended, let services else { return }
         let original = target.coordinatePair.wgs84
         let shifted = services.developerSpotWGS84(original.latitude, original.longitude)
         let pushed = FavoriteLocation(
@@ -274,7 +391,7 @@ final class SpoofSession: ObservableObject {
         wasActive: Bool,
         selectionRevision: UInt64
     ) async {
-        guard let services else { return }
+        guard accept(operationID), !writesSuspended, let services else { return }
         let radius: Double? = services.routeWaitsForActivation() ? 0 : nil
         do {
             let response = try await performSave(target, randomRadius: radius)
@@ -330,7 +447,8 @@ final class SpoofSession: ObservableObject {
 
     private func applyLocalVerification(_ target: FavoriteLocation, services: Services) {
         guard let written = services.applyVerified(target) else {
-            state = .idle
+            state = services.localSpoofEnabled() ? .active : .idle
+            enqueue(.locationApplyFailed(services.localApplyFailureMessage()))
             RuntimeLogger.info("APP", "定位", "验证结果", details: [
                 "success": "true",
                 "applied": "false",
@@ -394,9 +512,14 @@ final class SpoofSession: ObservableObject {
         offsetMeters: Double,
         services: Services
     ) async -> Bool {
+        let intent = operationID
+        let generation = writeGeneration
+        let mode = services.mode()
         let favorite = FavoriteLocation(name: "路线", coordinatePair: pair, accuracy: services.accuracyMeters())
         do {
             let response = try await performSave(favorite, randomRadius: offsetMeters)
+            guard acceptsWrite(generation: generation, mode: mode) else { return false }
+            // 所有新写入都排在此调用之后；即使生产者已换代，这仍是设备最新成功位置。
             let latitude = response.latitude ?? pair.wgs84.latitude
             let longitude = response.longitude ?? pair.wgs84.longitude
             remember(
@@ -405,9 +528,11 @@ final class SpoofSession: ObservableObject {
                 switchLatitude: latitude,
                 switchLongitude: longitude
             )
-            services.clearThirdPartyFailure()
+            if accept(intent) { services.clearThirdPartyFailure() }
             return true
         } catch {
+            guard accept(intent), acceptsWrite(generation: generation, mode: mode),
+                  !(error is CancellationError) else { return false }
             RuntimeLogger.error("APP", "ThirdPartyProxy", "路线写入第三方坐标失败", error: error, details: [
                 "当前客户端": services.thirdPartyClientName(),
                 "原因": ThirdPartyProxyError.diagnosis(for: error).title
@@ -436,16 +561,23 @@ final class SpoofSession: ObservableObject {
         return applied
     }
 
-    private func writeDeveloperMoving(_ pair: CoordinatePair, services: Services) async -> Bool {
+    private func writeDeveloperMoving(
+        _ pair: CoordinatePair, services: Services, onFailure: ((RouteLocationPushFailure) -> Void)?
+    ) async -> Bool {
+        let intent = operationID
+        let generation = writeGeneration
         let favorite = FavoriteLocation(
             name: "真实走动",
             coordinatePair: pair,
             accuracy: services.accuracyMeters()
         )
         let failure = await services.pushDeveloper(favorite)
+        guard acceptsWrite(generation: generation, mode: .developerTunnel) else { return false }
         if failure == .superseded { return false }
         if let failure {
-            enqueue(.developerPushFailed(failure.message))
+            guard accept(intent) else { return false }
+            if let onFailure { onFailure(failure) }
+            else { enqueue(.developerPushFailed(failure.message)) }
             return false
         }
         let wgs = pair.wgs84

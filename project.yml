@@ -47,8 +47,7 @@ targets:
   RouteLiveActivity:
     type: app-extension
     platform: iOS
-    deploymentTarget:
-      iOS: "16.2"
+    deploymentTarget: "16.2"
     sources:
       - path: LiveActivity
         excludes:

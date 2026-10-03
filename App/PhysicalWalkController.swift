@@ -17,6 +17,8 @@ final class PhysicalWalkController: ObservableObject {
     var ignoresWriteGate = false
     var strideMeters: () -> Double = { PhysicalWalkDisplacement.defaultStrideMeters }
     var applyCoordinate: ((CoordinatePair) async -> Bool)?
+    var onStop: (() async -> Void)?
+    var onStart: (() -> Bool)?
     var onFailure: ((String) -> Void)?
 
     private let sensor: PhysicalWalkSensing
@@ -24,8 +26,11 @@ final class PhysicalWalkController: ObservableObject {
     private let keepAlive: BackgroundKeepAlive
     private var engine: PhysicalWalkEngine?
     private var writeGate = RouteWriteGate()
-    private var generation: UInt64 = 0
+    private(set) var generation: UInt64 = 0
     private var writeTask: Task<Void, Never>?
+    private var settlementTask: Task<Void, Never>?
+    private var pendingSettlement: (generation: UInt64, drain: Task<Void, Never>?, settle: () async -> Void)?
+    private var pendingWrite: (pair: CoordinatePair, date: Date, generation: UInt64)?
     private var headingInstrument = PhysicalWalkHeadingInstrument.north
     private var didBindSensorZero = false
 
@@ -46,6 +51,8 @@ final class PhysicalWalkController: ObservableObject {
             return
         }
         generation &+= 1
+        pendingSettlement = nil
+        guard onStart?() ?? true else { return }
         let generation = generation
         engine = PhysicalWalkEngine(latitude: latitude, longitude: longitude)
         writeGate.reset()
@@ -68,10 +75,11 @@ final class PhysicalWalkController: ObservableObject {
         }
     }
 
-    func stop() {
+    /// 停止采样并丢弃未提交位置；已发送写入保留到返回，不清除模拟。
+    @discardableResult
+    func stop() -> Task<Void, Never>? {
         generation &+= 1
-        writeTask?.cancel()
-        writeTask = nil
+        pendingWrite = nil
         sensor.stop()
         engine = nil
         currentLatitude = nil
@@ -85,12 +93,29 @@ final class PhysicalWalkController: ObservableObject {
         if wasTracking {
             RuntimeLogger.info("APP", "真实走动", "停止跟踪")
         }
+        if wasTracking, let onStop {
+            pendingSettlement = (generation, writeTask, onStop)
+            if settlementTask == nil {
+                settlementTask = Task { await settleStoppedWalk() }
+            }
+        }
+        return settlementTask ?? writeTask
+    }
+
+    private func settleStoppedWalk() async {
+        defer { settlementTask = nil }
+        while let request = pendingSettlement {
+            await request.drain?.value
+            guard pendingSettlement?.generation == request.generation else { continue }
+            pendingSettlement = nil
+            await request.settle()
+        }
     }
 
     func ingest(sample: PhysicalWalkSample, at now: Date = Date()) async {
         guard isTracking else { return }
         if case .moved = apply(sample: sample) {
-            await considerWrite(at: now)
+            await enqueueWrite(at: now)?.value
         }
     }
 
@@ -177,9 +202,7 @@ final class PhysicalWalkController: ObservableObject {
         }
         guard let sample else { return }
         if case .moved = apply(sample: sample) {
-            writeTask = Task { [weak self] in
-                await self?.considerWrite(at: Date())
-            }
+            enqueueWrite(at: Date())
         }
     }
 
@@ -199,9 +222,7 @@ final class PhysicalWalkController: ObservableObject {
         publishActiveHeading()
         guard isTracking else { return }
         if case .moved = apply(sample: PhysicalWalkSample()) {
-            writeTask = Task { [weak self] in
-                await self?.considerWrite(at: Date())
-            }
+            enqueueWrite(at: Date())
         }
     }
 
@@ -282,18 +303,31 @@ final class PhysicalWalkController: ObservableObject {
         onFailure?(message)
     }
 
-    private func considerWrite(at now: Date) async {
-        guard isTracking, let engine else { return }
+    /// 引擎逐笔累计位移；IO 只保留一个在途任务和一个最新位置。
+    @discardableResult
+    private func enqueueWrite(at now: Date) -> Task<Void, Never>? {
+        guard isTracking, let engine else { return nil }
         let pair = CoordinateConverter.coordinatePair(
-            lat: engine.latitude,
-            lon: engine.longitude,
-            mapCoordinateSystem: .wgs84
+            lat: engine.latitude, lon: engine.longitude, mapCoordinateSystem: .wgs84
         )
-        guard ignoresWriteGate || writeGate.shouldWrite(pair, at: now, force: false) else { return }
-        let applied = await applyCoordinate?(pair) ?? false
-        guard isTracking else { return }
-        if applied {
-            writeGate.markWritten(pair, at: now)
+        pendingWrite = (pair, now, generation)
+        guard writeTask == nil else { return nil }
+        let task = Task { await drainSamples() }
+        writeTask = task
+        return task
+    }
+
+    private func drainSamples() async {
+        defer { writeTask = nil }
+        while let sample = pendingWrite {
+            pendingWrite = nil
+            guard isTracking, sample.generation == generation else { continue }
+            guard ignoresWriteGate || writeGate.shouldWrite(sample.pair, at: sample.date, force: false) else { continue }
+            let apply = applyCoordinate
+            let applied = await apply?(sample.pair) ?? false
+            // 停走只结束生产；旧收据不能更新重启后的门控。
+            guard isTracking, sample.generation == generation else { continue }
+            if applied { writeGate.markWritten(sample.pair, at: sample.date) }
         }
     }
 

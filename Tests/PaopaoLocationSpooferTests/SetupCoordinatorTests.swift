@@ -3,6 +3,29 @@ import XCTest
 
 @MainActor
 final class SetupCoordinatorTests: XCTestCase {
+    func testHistoricalAccuracyFailureSurvivesStartupVerificationAndPresentation() async {
+        let suite = "SetupAccuracy.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let proxy = ProxyManager(loadSettings: {
+            WlocSettings(longitude: 1, latitude: 2, accuracy: Int.max, enabled: true)
+        }, motionSimulation: MotionSimulationStore(defaults: defaults)) { _, _, _, _, _ in
+            XCTFail("非法精度不应写入 C 接口")
+        }
+        let coordinator = SetupCoordinator(proxy: proxy)
+        let reason = LocationAccuracy.ValidationError.outOfRange(Int.max).localizedDescription
+        let result = await coordinator.runVerificationTest()
+        XCTAssertEqual(result, .coordinateWriteFailed(reason))
+        XCTAssertFalse(proxy.isRunning)
+
+        LocationRuntimeFailureStore.shared.clear()
+        defer { LocationRuntimeFailureStore.shared.clear() }
+        coordinator.applyVerificationResult(result, presentSetup: false)
+        XCTAssertEqual(coordinator.message, reason)
+        XCTAssertEqual(LocationRuntimeFailureStore.shared.failure, .appModeEnvironment(reason))
+        XCTAssertFalse(coordinator.needsSetup)
+    }
+
     func testSuccessfulVerificationDismissesSetup() {
         let coordinator = SetupCoordinator()
         coordinator.requestSetup()

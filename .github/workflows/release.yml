@@ -1,58 +1,217 @@
-name: Build and Release IPA
+name: CI and Release IPA
 
 on:
+  pull_request:
+    branches: [main]
   push:
-    tags:
-      - 'v*'
+    branches: [main]
+    tags: ['v*']
+
+permissions: {}
+
+# PR/main 的新提交取消同一 ref 的旧检查；不同 tag 互不取消。
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref_type != 'tag' }}
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  GOTOOLCHAIN: local
+  GOFLAGS: -mod=readonly
+  GO_VERSION: '1.23.12'
+  PYTHONDONTWRITEBYTECODE: '1'
 
 jobs:
-  build:
-    runs-on: macos-latest
+  preflight:
+    name: Release notes preflight
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Validate archived release notes before builds
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          if [[ ! "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]; then
+            echo '::error::版本 tag 格式无效'
+            exit 1
+          fi
+          NOTES_FILE="docs/releases/${RELEASE_TAG}.md"
+          if [ ! -s "$NOTES_FILE" ] || ! grep -Fxq "# ${RELEASE_TAG}" "$NOTES_FILE"; then
+            echo "::error::缺少有效版本归档 $NOTES_FILE；打 tag 前请生成、检查并提交归档。"
+            exit 1
+          fi
+
+  go:
+    name: Go tests, race and vet
+    needs: preflight
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: false
+      - name: Test current Core source
+        run: |
+          mkdir -p build
+          go version
+          make test-go 2>&1 | tee build/ci-go.log
+          git diff --exit-code -- Core/go.mod Core/go.sum
+      - name: Retain failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: go-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}
+          path: build/ci-go.log
+          retention-days: 5
+
+  scripts:
+    name: Shell, documentation and script behavior
+    needs: preflight
+    # 合成 IPA 测试使用 macOS ditto；这里不编译 Xcode 工程。
+    runs-on: macos-26
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+          package-manager-cache: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+      - name: Run repository script checks once
+        run: |
+          mkdir -p build
+          node --version
+          python3 --version
+          make test-scripts 2>&1 | tee build/ci-scripts.log
+      - name: Retain failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: scripts-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}
+          path: build/ci-scripts.log
+          retention-days: 5
+
+  apple:
+    name: Unsigned IPA and Swift tests
+    needs: preflight
+    runs-on: macos-26
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    env:
+      # 官方 macos-26 (arm64) 镜像清单已核实此路径，缺失时直接失败。
+      DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
+    outputs:
+      ipa-artifact-id: ${{ steps.ipa.outputs.artifact-id }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+      - name: Restore XcodeGen 2.46.0 in runner temporary directory
+        run: |
+          curl --fail --location --retry 3 --connect-timeout 20 --max-time 180 \
+            https://github.com/yonaskolb/XcodeGen/releases/download/2.46.0/xcodegen.zip \
+            --output "$RUNNER_TEMP/xcodegen.zip"
+          echo "4d9e34b62172d645eed6457cac13fc222569974098ef4ee9c3368bedf0196806  $RUNNER_TEMP/xcodegen.zip" | shasum -a 256 -c -
+          ditto -x -k "$RUNNER_TEMP/xcodegen.zip" "$RUNNER_TEMP/xcodegen-unpacked"
+          echo "$RUNNER_TEMP/xcodegen-unpacked/xcodegen/bin" >> "$GITHUB_PATH"
+      - name: Build and test through the official entry point
+        run: |
+          mkdir -p build
+          xcodebuild -version
+          xcrun --sdk iphoneos --show-sdk-version
+          go version
+          python3 --version
+          xcodegen --version
+          ./build.sh --test 2>&1 | tee build/ci-apple.log
+          git diff --exit-code -- Core/go.mod Core/go.sum
+      - name: Prepare existing release filenames
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          mv dist/PaopaoLocationSpoofer-unsigned.ipa dist/Location-Spoofer-unsigned.ipa
+          cp "docs/releases/${RELEASE_TAG}.md" dist/release_notes.md
+      - name: Retain tested release inputs
+        if: startsWith(github.ref, 'refs/tags/v')
+        id: ipa
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: unsigned-ipa-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            dist/Location-Spoofer-unsigned.ipa
+            dist/release_notes.md
+          if-no-files-found: error
+          retention-days: 5
+          compression-level: 0
+      - name: Retain failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: apple-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            build/ci-apple.log
+            build/SimulatorTests.xcresult
+          retention-days: 5
+
+  release:
+    name: Publish tested unsigned IPA
+    needs: [preflight, go, scripts, apple]
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
     permissions:
       contents: write
-
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Xcode
-        uses: maxim-lobanov/setup-xcode@v1
-        with:
-          xcode-version: latest-stable
-
-      - name: Setup Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: '1.23'
-
-      - name: Install XcodeGen
-        run: brew install xcodegen
-
-      - name: Build unsigned IPA
-        run: ./build.sh
-
-      - name: Rename IPA for release
-        run: mv dist/PaopaoLocationSpoofer-unsigned.ipa dist/Location-Spoofer-unsigned.ipa
-
-      - name: Validate archived release notes
-        run: |
-          VERSION="${{ github.ref_name }}"
-          NOTES_FILE="docs/releases/${VERSION}.md"
-          if [ ! -s "$NOTES_FILE" ]; then
-            echo "::error::缺少版本归档 $NOTES_FILE。请在打 tag 前运行 ./Scripts/generate-release-notes.sh $VERSION 并提交。"
-            exit 1
-          fi
-          if ! grep -Fq "# ${VERSION}" "$NOTES_FILE"; then
-            echo "::error::$NOTES_FILE 的标题必须包含 # ${VERSION}"
-            exit 1
-          fi
-          cp "$NOTES_FILE" /tmp/release_notes.md
-
-      - name: Create Release
-        uses: softprops/action-gh-release@v2
-        with:
-          name: "${{ github.ref_name }}"
-          body_path: /tmp/release_notes.md
-          files: dist/Location-Spoofer-unsigned.ipa
+      - name: Require the tested artifact ID
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          IPA_ARTIFACT_ID: ${{ needs.apple.outputs.ipa-artifact-id }}
+        run: test -n "$IPA_ARTIFACT_ID" && [[ "$IPA_ARTIFACT_ID" =~ ^[0-9]+$ ]]
+      # 仅下载本次 apple job 返回的不可变 artifact ID，不检出或执行仓库代码。
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          artifact-ids: ${{ needs.apple.outputs.ipa-artifact-id }}
+          path: release-input
+          merge-multiple: true
+          digest-mismatch: error
+      - name: Check release inputs
+        run: |
+          test -s release-input/Location-Spoofer-unsigned.ipa
+          test -s release-input/release_notes.md
+      - name: Create Release
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: ${{ github.ref_name }}
+          body_path: release-input/release_notes.md
+          files: release-input/Location-Spoofer-unsigned.ipa
+          fail_on_unmatched_files: true
+          token: ${{ github.token }}

@@ -12,8 +12,22 @@ final class ProxyManager: ObservableObject {
     private let certificateStore = CertificateAuthorityStore()
     private var proxyHandle: UInt = 0
     private var coordinateRevision: UInt64 = 0
+    private let loadSettings: () -> WlocSettings?
+    private let motionSimulation: MotionSimulationStore
+    private let writePatch: (Double, Double, Bool, CInt, Bool) -> Void
 
-    private init() { RuntimeLogger.info("APP", "Proxy", "初始化") }
+    init(
+        loadSettings: @escaping () -> WlocSettings? = { WlocSettingsStore.load() },
+        motionSimulation: MotionSimulationStore? = nil,
+        writePatch: @escaping (Double, Double, Bool, CInt, Bool) -> Void = { lat, lon, enabled, accuracy, motion in
+            wloccore_setpatchconfig(lat, lon, enabled ? 1 : 0, accuracy, motion ? 1 : 0)
+        }
+    ) {
+        self.loadSettings = loadSettings
+        self.motionSimulation = motionSimulation ?? .shared
+        self.writePatch = writePatch
+        RuntimeLogger.info("APP", "Proxy", "初始化")
+    }
 
     func start() async throws {
         if isRunning {
@@ -22,13 +36,13 @@ final class ProxyManager: ObservableObject {
         }
         RuntimeLogger.info("APP", "Proxy.start", "启动代理 127.0.0.1:8888")
         do {
+            let settings = loadSettings()
+            let accuracy = try LocationAccuracy.validatedCInt(settings?.accuracy ?? 25)
             let authority = try certificateStore.ensure()
-            let settings = WlocSettingsStore.load()
             let lat = settings.flatMap { $0.enabled ? $0.latitude : nil } ?? 0
             let lon = settings.flatMap { $0.enabled ? $0.longitude : nil } ?? 0
             let enabled = (settings?.enabled ?? false) ? CInt(1) : CInt(0)
-            let accuracy = CInt(settings?.accuracy ?? 25)
-            let motionEnabled = MotionSimulationStore.shared.isEnabled ? CInt(1) : CInt(0)
+            let motionEnabled = motionSimulation.isEnabled ? CInt(1) : CInt(0)
             if enabled != 0 {
                 RuntimeLogger.info("APP", "坐标转换", "启动代理: 恢复上次 WGS-84 定位")
             }
@@ -68,15 +82,10 @@ final class ProxyManager: ObservableObject {
     }
 
     @discardableResult
-    func setCoords(lat: Double, lon: Double, enabled: Bool, accuracy: Int = 25) -> UInt64 {
+    func setCoords(lat: Double, lon: Double, enabled: Bool, accuracy: Int = 25) throws -> UInt64 {
+        let cAccuracy = try LocationAccuracy.validatedCInt(accuracy)
+        writePatch(lat, lon, enabled, cAccuracy, motionSimulation.isEnabled)
         coordinateRevision &+= 1
-        wloccore_setpatchconfig(
-            CDouble(lat),
-            CDouble(lon),
-            enabled ? 1 : 0,
-            CInt(accuracy),
-            MotionSimulationStore.shared.isEnabled ? 1 : 0
-        )
         RuntimeLogger.info("APP", "Proxy.coords", "写入坐标", details: [
             "revision": String(coordinateRevision),
             "enabled": String(enabled),
@@ -103,7 +112,7 @@ final class ProxyManager: ObservableObject {
         enabled: Bool,
         accuracy: Int = 25,
         expectedRevision: UInt64
-    ) -> UInt64? {
+    ) throws -> UInt64? {
         guard coordinateRevision == expectedRevision else {
             RuntimeLogger.info("APP", "Proxy.coords", "跳过过期坐标写入", details: [
                 "expectedRevision": String(expectedRevision),
@@ -111,11 +120,11 @@ final class ProxyManager: ObservableObject {
             ])
             return nil
         }
-        return setCoords(lat: lat, lon: lon, enabled: enabled, accuracy: accuracy)
+        return try setCoords(lat: lat, lon: lon, enabled: enabled, accuracy: accuracy)
     }
 
     @discardableResult
-    func restoreCoords(_ snapshot: ProxyCoordinateSnapshot, ifUnchangedSince revision: UInt64) -> Bool {
+    func restoreCoords(_ snapshot: ProxyCoordinateSnapshot, ifUnchangedSince revision: UInt64) throws -> Bool {
         guard coordinateRevision == revision else {
             RuntimeLogger.info("APP", "Proxy.coords", "跳过旧验证坐标恢复", details: [
                 "verificationRevision": String(revision),
@@ -123,7 +132,7 @@ final class ProxyManager: ObservableObject {
             ])
             return false
         }
-        setCoords(
+        try setCoords(
             lat: snapshot.latitude,
             lon: snapshot.longitude,
             enabled: snapshot.enabled,
@@ -137,16 +146,17 @@ final class ProxyManager: ObservableObject {
         return (Double(r.r0), Double(r.r1), r.r2 != 0)
     }
 
-    func applyMotionSimulation(_ enabled: Bool) {
-        MotionSimulationStore.shared.setEnabled(enabled)
-        let settings = WlocSettingsStore.load()
-        wloccore_setpatchconfig(
-            CDouble(settings?.latitude ?? 0),
-            CDouble(settings?.longitude ?? 0),
-            settings?.enabled == true ? 1 : 0,
-            CInt(settings?.accuracy ?? 25),
-            enabled ? 1 : 0
+    func applyMotionSimulation(_ enabled: Bool) throws {
+        let settings = loadSettings()
+        let accuracy = try LocationAccuracy.validatedCInt(settings?.accuracy ?? 25)
+        writePatch(
+            settings?.latitude ?? 0,
+            settings?.longitude ?? 0,
+            settings?.enabled == true,
+            accuracy,
+            enabled
         )
+        motionSimulation.setEnabled(enabled)
         RuntimeLogger.info("APP", "Proxy.motion", "运动状态模拟设置已更新", details: [
             "enabled": String(enabled)
         ])

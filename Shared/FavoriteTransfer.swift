@@ -51,17 +51,22 @@ enum FavoriteTransfer {
     }
 
     static func encode(_ favorites: [FavoriteLocation]) throws -> Data {
+        let formatter = makeDateFormatter(fractional: true)
         let document = Document(
             format: format,
             version: version,
-            favorites: favorites.map(item(from:))
+            favorites: favorites.map { item(from: $0, formatter: formatter) }
         )
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         return try encoder.encode(document)
     }
 
-    static func decode(_ data: Data) throws -> [FavoriteLocation] {
+    static func decode(
+        _ data: Data,
+        checkpoint: () throws -> Void = {}
+    ) throws -> [FavoriteLocation] {
+        try checkpoint()
         let decoder = JSONDecoder()
         let document: Document
         do {
@@ -69,13 +74,19 @@ enum FavoriteTransfer {
         } catch {
             throw TransferError.invalidJSON
         }
+        try checkpoint()
         guard document.format == format, document.version == version else {
             throw TransferError.unsupportedFormat
         }
         guard !document.favorites.isEmpty else {
             throw TransferError.empty
         }
-        return try document.favorites.map(favorite(from:))
+        let formatter = makeDateFormatter(fractional: true)
+        let fallback = makeDateFormatter(fractional: false)
+        return try document.favorites.map {
+            try checkpoint()
+            return try favorite(from: $0, formatter: formatter, fallback: fallback)
+        }
     }
 
     static func decode(text: String) throws -> [FavoriteLocation] {
@@ -86,11 +97,11 @@ enum FavoriteTransfer {
         return try decode(data)
     }
 
-    private static func item(from favorite: FavoriteLocation) -> Item {
+    private static func item(from favorite: FavoriteLocation, formatter: ISO8601DateFormatter) -> Item {
         Item(
             name: favorite.name,
             accuracy: favorite.accuracy,
-            createdAt: dateFormatter.string(from: favorite.createdAt),
+            createdAt: formatter.string(from: favorite.createdAt),
             wgs84: Coordinate(
                 latitude: favorite.coordinatePair.wgs84.latitude,
                 longitude: favorite.coordinatePair.wgs84.longitude
@@ -102,7 +113,10 @@ enum FavoriteTransfer {
         )
     }
 
-    private static func favorite(from item: Item) throws -> FavoriteLocation {
+    private static func favorite(
+        from item: Item, formatter: ISO8601DateFormatter, fallback: ISO8601DateFormatter
+    ) throws -> FavoriteLocation {
+        try LocationAccuracy.validatedCInt(item.accuracy)
         guard let wgs84 = item.wgs84,
               let gcj02 = item.gcj02,
               isValidLatitude(wgs84.latitude),
@@ -111,8 +125,8 @@ enum FavoriteTransfer {
               isValidLongitude(gcj02.longitude) else {
             throw TransferError.missingCoordinates
         }
-        let createdAt = dateFormatter.date(from: item.createdAt)
-            ?? fallbackDateFormatter.date(from: item.createdAt)
+        let createdAt = formatter.date(from: item.createdAt)
+            ?? fallback.date(from: item.createdAt)
             ?? Date()
         let name = item.name.trimmingCharacters(in: .whitespacesAndNewlines)
         return FavoriteLocation(
@@ -134,15 +148,59 @@ enum FavoriteTransfer {
         value >= -180 && value <= 180
     }
 
-    private static let dateFormatter: ISO8601DateFormatter = {
+    private static func makeDateFormatter(fractional: Bool) -> ISO8601DateFormatter {
         let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        formatter.formatOptions = fractional
+            ? [.withInternetDateTime, .withFractionalSeconds] : [.withInternetDateTime]
         return formatter
-    }()
+    }
 
-    private static let fallbackDateFormatter: ISO8601DateFormatter = {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime]
-        return formatter
-    }()
+    /// 只能通过整批预检构造；提交方无需重新执行批内查重。
+    struct Prepared {
+        let favorites: [FavoriteLocation]
+        let skippedDuplicates: Int
+
+        fileprivate init(favorites: [FavoriteLocation], skippedDuplicates: Int) {
+            self.favorites = favorites
+            self.skippedDuplicates = skippedDuplicates
+        }
+    }
+
+    static func prepare(
+        _ incoming: [FavoriteLocation], checkpoint: () throws -> Void = {}
+    ) throws -> Prepared {
+        for item in incoming {
+            try checkpoint()
+            try LocationAccuracy.validatedCInt(item.accuracy)
+            let pair = item.coordinatePair
+            guard isValidLatitude(pair.wgs84.latitude), isValidLongitude(pair.wgs84.longitude),
+                  isValidLatitude(pair.gcj02.latitude), isValidLongitude(pair.gcj02.longitude) else {
+                throw TransferError.missingCoordinates
+            }
+        }
+        var unique: [FavoriteLocation] = []
+        for item in incoming {
+            try checkpoint()
+            var match: Int?
+            for index in unique.indices {
+                // 大批量线性扫描也能响应取消，不改变 firstIndex 的顺序语义。
+                if index % 256 == 0 { try checkpoint() }
+                if isSameWGS84(unique[index], item) { match = index; break }
+            }
+            if let index = match {
+                unique[index].name = item.name
+                unique[index].coordinatePair = item.coordinatePair
+                unique[index].accuracy = item.accuracy
+            } else {
+                unique.append(item)
+            }
+        }
+        try checkpoint()
+        return Prepared(favorites: unique, skippedDuplicates: incoming.count - unique.count)
+    }
+
+    static func isSameWGS84(_ lhs: FavoriteLocation, _ rhs: FavoriteLocation) -> Bool {
+        abs(lhs.coordinatePair.wgs84.latitude - rhs.coordinatePair.wgs84.latitude) < 0.000001
+            && abs(lhs.coordinatePair.wgs84.longitude - rhs.coordinatePair.wgs84.longitude) < 0.000001
+    }
 }
