@@ -34,6 +34,10 @@ extension SettingsView {
             proxyOperationError = message
             return
         }
+        // 先保留在途请求的清理义务，避免 suspend 后的旧查询在 Task 开始前收尾并丢失证据。
+        let thirdPartyNeedsCleanup = thirdPartyProxy.needsCoordinateCleanup(
+            hasInitializedThirdParty: runtimeMode.isInitialized(.thirdParty)
+        )
         modeOperationRunning = true
         session.beginModeCleanup()
         Task { @MainActor in
@@ -42,7 +46,11 @@ extension SettingsView {
                 session.endModeCleanup()
             }
             let currentMode = runtimeMode.mode
-            let cleanup = RuntimeModeSwitchCleanup.required(from: currentMode, to: newMode)
+            let cleanup = RuntimeModeSwitchCleanup.required(
+                from: currentMode,
+                to: newMode,
+                thirdPartyNeedsCleanup: thirdPartyNeedsCleanup
+            )
             if cleanup.contains(.developerSimulation) {
                 if let failure = await RouteLocationSetupStore.shared.clear() {
                     presentDeveloperSimulationClearBlocked(failure)

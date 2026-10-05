@@ -2,6 +2,24 @@ import XCTest
 @testable import PaopaoLocationSpoofer
 
 final class RuntimeModeSwitchCleanupTests: XCTestCase {
+    func testUnusedThirdPartyCanReturnToDeveloperTunnelWithoutClear() {
+        XCTAssertTrue(RuntimeModeSwitchCleanup.required(
+            from: .thirdParty, to: .developerTunnel, thirdPartyNeedsCleanup: false
+        ).isEmpty)
+        XCTAssertTrue(RuntimeModeSwitchCleanup.mustSucceed(
+            from: .thirdParty, to: .developerTunnel, thirdPartyNeedsCleanup: false
+        ).isEmpty)
+    }
+
+    func testAppModeStillRequiresClearEvenWhenThirdPartyWasUnused() {
+        XCTAssertEqual(RuntimeModeSwitchCleanup.required(
+            from: .thirdParty, to: .localWiFi, thirdPartyNeedsCleanup: false
+        ), [.thirdPartyWLOC])
+        XCTAssertEqual(RuntimeModeSwitchCleanup.required(
+            from: .developerTunnel, to: .localWiFi, thirdPartyNeedsCleanup: false
+        ), [.developerSimulation, .thirdPartyWLOC])
+    }
+
     func testLeavingThirdPartyClearsSavedWLOC() {
         XCTAssertEqual(
             RuntimeModeSwitchCleanup.required(from: .thirdParty, to: .developerTunnel),

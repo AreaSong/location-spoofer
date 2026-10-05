@@ -9,14 +9,16 @@ enum RuntimeModePersistedLocation: Equatable {
 }
 
 enum RuntimeModeSwitchCleanup {
-    /// 切模式前要尝试清掉的持久定位。APP 模式即使不是从第三方切过来，也要清 WLOC，避免模块继续拦截。
+    /// 未初始化且没有坐标写入或待完成请求时，可直接从第三方返回开发者模式。
+    /// APP 模式即使不是从第三方切过来，也要清 WLOC，避免模块继续拦截。
     static func required(
         from current: ProxyRuntimeMode,
-        to next: ProxyRuntimeMode
+        to next: ProxyRuntimeMode,
+        thirdPartyNeedsCleanup: Bool = true
     ) -> Set<RuntimeModePersistedLocation> {
         guard current != next else { return [] }
         var required: Set<RuntimeModePersistedLocation> = []
-        if current == .thirdParty || next == .localWiFi {
+        if (current == .thirdParty && thirdPartyNeedsCleanup) || next == .localWiFi {
             required.insert(.thirdPartyWLOC)
         }
         if current == .developerTunnel {
@@ -28,8 +30,9 @@ enum RuntimeModeSwitchCleanup {
     /// 清理失败一律保持原模式，避免旧持久坐标跨模式残留。
     static func mustSucceed(
         from current: ProxyRuntimeMode,
-        to next: ProxyRuntimeMode
+        to next: ProxyRuntimeMode,
+        thirdPartyNeedsCleanup: Bool = true
     ) -> Set<RuntimeModePersistedLocation> {
-        required(from: current, to: next)
+        required(from: current, to: next, thirdPartyNeedsCleanup: thirdPartyNeedsCleanup)
     }
 }

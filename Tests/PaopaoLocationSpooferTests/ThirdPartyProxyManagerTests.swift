@@ -3,9 +3,18 @@ import XCTest
 
 @MainActor
 final class ThirdPartyProxyManagerTests: XCTestCase {
+    private var testDefaults: UserDefaults!
+
+    override func setUp() async throws {
+        let suiteName = "ThirdPartyProxyManagerTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        testDefaults = defaults
+        addTeardownBlock { defaults.removePersistentDomain(forName: suiteName) }
+    }
+
     func testQueryDistinguishesConnectedWithoutCoordinate() async throws {
         let requester = FakeThirdPartyRequester(body: #"{"success":false,"error":"无已保存的坐标"}"#)
-        let manager = ThirdPartyProxyManager(requester: requester)
+        let manager = ThirdPartyProxyManager(requester: requester, defaults: testDefaults)
 
         let response = try await manager.query()
 
@@ -26,7 +35,7 @@ final class ThirdPartyProxyManagerTests: XCTestCase {
         let body = String(format: #"{"success":true,"longitude":%.8f,"latitude":%.8f,"accuracy":20}"#,
                           locale: Locale(identifier: "en_US_POSIX"), wgs84.longitude, wgs84.latitude)
         let requester = FakeThirdPartyRequester(body: body)
-        let manager = ThirdPartyProxyManager(requester: requester, randomRadiusMeters: { 0 })
+        let manager = ThirdPartyProxyManager(requester: requester, randomRadiusMeters: { 0 }, defaults: testDefaults)
 
         _ = try await manager.save(favorite)
 
@@ -53,7 +62,7 @@ final class ThirdPartyProxyManagerTests: XCTestCase {
         let body = String(format: #"{"success":true,"longitude":%.8f,"latitude":%.8f,"accuracy":15}"#,
                           locale: Locale(identifier: "en_US_POSIX"), wgs84.longitude, wgs84.latitude)
         let requester = FakeThirdPartyRequester(body: body)
-        let manager = ThirdPartyProxyManager(requester: requester, randomRadiusMeters: { 50 })
+        let manager = ThirdPartyProxyManager(requester: requester, randomRadiusMeters: { 50 }, defaults: testDefaults)
 
         _ = try await manager.save(favorite)
 
@@ -75,7 +84,7 @@ final class ThirdPartyProxyManagerTests: XCTestCase {
         let body = String(format: #"{"success":true,"longitude":%.8f,"latitude":%.8f,"accuracy":15}"#,
                           locale: Locale(identifier: "en_US_POSIX"), wgs84.longitude, wgs84.latitude)
         let requester = FakeThirdPartyRequester(body: body)
-        let manager = ThirdPartyProxyManager(requester: requester, randomRadiusMeters: { 50 })
+        let manager = ThirdPartyProxyManager(requester: requester, randomRadiusMeters: { 50 }, defaults: testDefaults)
 
         _ = try await manager.save(favorite, randomRadius: 0)
 
@@ -87,7 +96,7 @@ final class ThirdPartyProxyManagerTests: XCTestCase {
 
     func testConnectionUsesLegacySaveQueryEndpoint() async throws {
         let requester = FakeThirdPartyRequester(body: #"{"success":false,"error":"无已保存的坐标"}"#)
-        let manager = ThirdPartyProxyManager(requester: requester)
+        let manager = ThirdPartyProxyManager(requester: requester, defaults: testDefaults)
 
         let response = try await manager.query()
 
@@ -112,7 +121,7 @@ final class ThirdPartyProxyManagerTests: XCTestCase {
             wgs84.latitude
         )
         let requester = FakeThirdPartyRequester(body: body)
-        let manager = ThirdPartyProxyManager(requester: requester, randomRadiusMeters: { 0 })
+        let manager = ThirdPartyProxyManager(requester: requester, randomRadiusMeters: { 0 }, defaults: testDefaults)
 
         let response = try await manager.save(favorite)
 
@@ -134,7 +143,7 @@ final class ThirdPartyProxyManagerTests: XCTestCase {
 
     func testBrokenSaveQueryFailsWithoutCheckingVersion() async {
         let requester = FakeThirdPartyRequester(body: "not-json")
-        let manager = ThirdPartyProxyManager(requester: requester)
+        let manager = ThirdPartyProxyManager(requester: requester, defaults: testDefaults)
 
         do {
             _ = try await manager.query()
@@ -147,7 +156,7 @@ final class ThirdPartyProxyManagerTests: XCTestCase {
 
     func testSaveRejectsCoordinateMismatchWithoutMarkingActive() async {
         let requester = FakeThirdPartyRequester(body: #"{"success":true,"longitude":1,"latitude":2,"accuracy":25}"#)
-        let manager = ThirdPartyProxyManager(requester: requester)
+        let manager = ThirdPartyProxyManager(requester: requester, defaults: testDefaults)
         let favorite = FavoriteLocation(name: "深圳湾", latitude: 22.494, longitude: 113.951, accuracy: 25)
 
         do {
@@ -161,7 +170,7 @@ final class ThirdPartyProxyManagerTests: XCTestCase {
     }
 
     func testMalformedResponseIsNotTreatedAsSuccess() async {
-        let manager = ThirdPartyProxyManager(requester: FakeThirdPartyRequester(body: "not-json"))
+        let manager = ThirdPartyProxyManager(requester: FakeThirdPartyRequester(body: "not-json"), defaults: testDefaults)
         do {
             _ = try await manager.query()
             XCTFail("expected interception failure")
@@ -172,7 +181,7 @@ final class ThirdPartyProxyManagerTests: XCTestCase {
 
     func testNonHTTP200IsTreatedAsModuleNotIntercepted() async {
         let requester = FakeThirdPartyRequester(body: #"{"success":true}"#, statusCode: 404)
-        let manager = ThirdPartyProxyManager(requester: requester)
+        let manager = ThirdPartyProxyManager(requester: requester, defaults: testDefaults)
 
         do {
             _ = try await manager.query()
@@ -185,7 +194,7 @@ final class ThirdPartyProxyManagerTests: XCTestCase {
 
     func testCertificateTrustErrorIsClassified() async {
         let requester = FakeThirdPartyRequester(error: URLError(.serverCertificateUntrusted))
-        let manager = ThirdPartyProxyManager(requester: requester)
+        let manager = ThirdPartyProxyManager(requester: requester, defaults: testDefaults)
 
         do {
             _ = try await manager.query()
@@ -199,7 +208,7 @@ final class ThirdPartyProxyManagerTests: XCTestCase {
 
     func testTimeoutIsClassifiedAsProxyNotConnected() async {
         let requester = FakeThirdPartyRequester(error: URLError(.timedOut))
-        let manager = ThirdPartyProxyManager(requester: requester)
+        let manager = ThirdPartyProxyManager(requester: requester, defaults: testDefaults)
 
         do {
             _ = try await manager.query()
@@ -279,7 +288,7 @@ final class ThirdPartyProxyManagerTests: XCTestCase {
             ],
             delayNanoseconds: 80_000_000
         )
-        let manager = ThirdPartyProxyManager(requester: requester, randomRadiusMeters: { 0 })
+        let manager = ThirdPartyProxyManager(requester: requester, randomRadiusMeters: { 0 }, defaults: testDefaults)
 
         async let query = manager.query()
         try await Task.sleep(nanoseconds: 20_000_000)
@@ -312,7 +321,7 @@ final class ThirdPartyProxyManagerTests: XCTestCase {
     }
 }
 
-private final class FakeThirdPartyRequester: ThirdPartyProxyRequesting {
+final class FakeThirdPartyRequester: ThirdPartyProxyRequesting {
     private var remainingBodies: [Data]
     private let statusCode: Int
     private let transportError: Error?
@@ -361,7 +370,7 @@ private final class FakeThirdPartyRequester: ThirdPartyProxyRequesting {
     }
 }
 
-private actor ControlledThirdPartyRequester: ThirdPartyProxyRequesting {
+actor ControlledThirdPartyRequester: ThirdPartyProxyRequesting {
     private var continuation: CheckedContinuation<Void, Never>?
     private var requests: [String] = []
     let entered: XCTestExpectation
@@ -401,7 +410,7 @@ extension ThirdPartyProxyManagerTests {
     func testStopDropsQueuedSaveAndDrainsStartedSaveBeforeClear() async throws {
         let entered = expectation(description: "第一个请求已开始")
         let requester = ControlledThirdPartyRequester(entered: entered)
-        let manager = ThirdPartyProxyManager(requester: requester, randomRadiusMeters: { 0 })
+        let manager = ThirdPartyProxyManager(requester: requester, randomRadiusMeters: { 0 }, defaults: testDefaults)
         let favorite = FavoriteLocation(name: "mock", latitude: 1, longitude: 1, accuracy: 5, mapCoordinateSystem: .wgs84)
         let first = Task { try await manager.save(favorite) }
         await fulfillment(of: [entered], timeout: 2)
@@ -431,7 +440,7 @@ extension ThirdPartyProxyManagerTests {
     func testFailedClearKeepsWritesSuspendedUntilExplicitRestart() async throws {
         let entered = expectation(description: "清除请求已开始")
         let requester = ControlledThirdPartyRequester(entered: entered, failClear: true)
-        let manager = ThirdPartyProxyManager(requester: requester)
+        let manager = ThirdPartyProxyManager(requester: requester, defaults: testDefaults)
         let clear = Task { try await manager.clear() }
         await fulfillment(of: [entered], timeout: 2)
         XCTAssertFalse(manager.resumeWrites())

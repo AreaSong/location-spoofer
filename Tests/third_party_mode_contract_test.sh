@@ -200,5 +200,13 @@ grep -q 'func mustSucceed' "$ROOT/Shared/RuntimeModeSwitchCleanup.swift" \
   || fail "mode cleanup must define mandatory persisted-location cleanup"
 grep -q 'presentThirdPartyCoordinateClearBlocked(destination: newMode, error: error)' "$ROOT/App/SettingsView+AppMode.swift" \
   || fail "mode switch must report and retain the current mode if third-party clear fails"
+grep -Fq 'thirdPartyNeedsCleanup: thirdPartyNeedsCleanup' "$ROOT/App/SettingsView+AppMode.swift" \
+  || fail "mode switch must consult third-party coordinate state before requiring cleanup"
+grep -Fq 'hasInitializedThirdParty: runtimeMode.isInitialized(.thirdParty)' "$ROOT/App/SettingsView+AppMode.swift" \
+  || fail "previously configured clients must retain the mandatory cleanup safeguard"
+snapshot_line="$(grep -n 'let thirdPartyNeedsCleanup = thirdPartyProxy.needsCoordinateCleanup' "$ROOT/App/SettingsView+AppMode.swift" | cut -d: -f1)"
+suspend_line="$(grep -n 'session.beginModeCleanup()' "$ROOT/App/SettingsView+AppMode.swift" | cut -d: -f1)"
+test "$snapshot_line" -lt "$suspend_line" \
+  || fail "mode switch must capture in-flight cleanup obligations before suspending old requests"
 
 echo "PASS: third-party proxy mode contract"
