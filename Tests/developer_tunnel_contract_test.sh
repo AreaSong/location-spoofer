@@ -72,7 +72,7 @@ grep -q 'homeRuntimeStatusTone' "$MAP" || fail "the runtime status row must carr
 grep -q 'showsRoutePanel' "$MAP" || fail "switching back to 定点 must collapse the route panel without clearing the route"
 grep -q 'showsSpotHelp: spoofState != .idle && !routeKeepsRunningWhileSpotShown' "$MAP" \
   || fail "developer-tunnel playback must hide spot help while idle or a route keeps running"
-grep -q 'struct RunningRouteSpotNotice' "$MAP" || fail "developer-tunnel playback must show a running-route notice on the spot card"
+grep -q 'if routeKeepsRunningWhileSpotShown { return "查看路线" }' "$MAP" || fail "developer-tunnel playback must expose a return-to-route action on the spot card"
 grep -q '退出会停止播放，虚拟定位留在当前点' "$MAP" || fail "exiting a playing route must ask for confirmation"
 grep -q '再试一次' "$MAP" || fail "a failed developer tunnel push must offer retry"
 grep -q 'recoverDeveloperTunnelIfNeeded' "$MAP" || fail "returning to the foreground must try to recover an active tunnel session"

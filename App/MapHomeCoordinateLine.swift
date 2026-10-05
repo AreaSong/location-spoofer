@@ -13,7 +13,7 @@ struct MapHomeCoordinateLine: View {
     }
 
     var body: some View {
-        HStack(spacing: 8) {
+        VStack(alignment: .leading, spacing: 4) {
             systemSwitcher
             coordinateCopy
         }
@@ -115,119 +115,37 @@ struct MapHomeCoordinateLine: View {
     }
 }
 
-/// 搜索栏下方：左边坐标，右边朝向。点坐标可复制并切换坐标系，点朝向可开关走动并改方向。
-struct MapHomeTopInfoBar: View {
+/// 地点详情与真实走动共用底部展开区，不再占据地图顶部。
+struct MapHomeLocationDetails: View {
     let pair: CoordinatePair
     let mapSystem: CoordinateConverter.MapCoordinateSystem
     @ObservedObject var walkStore: PhysicalWalkStore
     @ObservedObject var walkController: PhysicalWalkController
     let spoofActive: Bool
     @State private var showsCoordinates = false
-    @State private var showsHeading = false
+    @State private var showsWalk = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 8) {
-                coordinateButton
-                headingChip
-            }
-            .padding(.leading, 14)
-            .padding(.trailing, 8)
-            .frame(minHeight: 44)
-
-            if showsCoordinates {
+            DisclosureGroup(isExpanded: $showsCoordinates) {
                 MapHomeCoordinateLine(pair: pair, mapSystem: mapSystem)
-                    .padding(.horizontal, 10)
-                    .padding(.bottom, 8)
+            } label: {
+                Label("选点坐标", systemImage: "location.viewfinder")
+                    .font(.subheadline)
+                    .frame(minHeight: 44)
             }
-            if showsHeading {
-                PhysicalWalkHeadingControls(
-                    store: walkStore,
-                    controller: walkController,
-                    spoofActive: spoofActive
-                )
-                .padding(.horizontal, 10)
-                .padding(.bottom, 8)
+            DisclosureGroup(isExpanded: $showsWalk) {
+                PhysicalWalkHeadingControls(store: walkStore, controller: walkController, spoofActive: spoofActive)
+            } label: {
+                HStack {
+                    Label("真实走动", systemImage: "figure.walk")
+                    Spacer(minLength: 8)
+                    Text(walkStore.isEnabled ? "已开启" : "已关闭")
+                        .foregroundStyle(.secondary)
+                }
+                .font(.subheadline)
+                .frame(minHeight: 44)
             }
         }
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .strokeBorder(.white.opacity(0.18), lineWidth: 0.5)
-        )
-        .shadow(color: .black.opacity(0.08), radius: 12, y: 4)
-        .onAppear { showsHeading = needsHeadingSetup }
-        .onChange(of: needsHeadingSetup) { showsHeading = $0 }
-    }
-
-    private var needsHeadingSetup: Bool {
-        PhysicalWalkHeadingPicker.shouldRevealControls(
-            isEnabled: walkStore.isEnabled,
-            status: walkController.status,
-            hasResolvedHeading: walkController.activeHeadingDegrees != nil,
-            followsCompass: walkController.headingMode == .followCompass
-        )
-    }
-
-    private var coordinateButton: some View {
-        Button(action: toggleCoordinates) {
-            HStack(spacing: 6) {
-                Text(mapSystem.rawValue)
-                    .font(.caption2.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: true, vertical: false)
-                Text(MapHomeCoordinateLine.compactLine(pair: pair, mapSystem: mapSystem))
-                    .font(.caption.monospacedDigit())
-                    .foregroundStyle(.primary)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.72)
-                Image(systemName: showsCoordinates ? "chevron.up" : "chevron.down")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .frame(minHeight: 44)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel("坐标 \(MapHomeCoordinateLine.compactLine(pair: pair, mapSystem: mapSystem))")
-        .accessibilityHint(showsCoordinates ? "收起坐标详情" : "展开坐标详情")
-    }
-
-    private var headingChip: some View {
-        Button(action: toggleHeading) {
-            HStack(spacing: 6) {
-                Text("朝向")
-                    .font(.caption2.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                Text(headingSummary)
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.primary)
-                    .lineLimit(1)
-                Image(systemName: showsHeading ? "chevron.up" : "chevron.down")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
-            }
-            .padding(.horizontal, 10)
-            .frame(minHeight: 32)
-            .background(Color.secondary.opacity(0.12), in: Capsule())
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel("朝向 \(headingSummary)")
-        .accessibilityHint(showsHeading ? "收起走动与方向" : "展开走动与方向")
-    }
-
-    private var headingSummary: String {
-        PhysicalWalkHeadingLock.labeledDegrees(walkController.activeHeadingDegrees)
-    }
-
-    private func toggleCoordinates() {
-        showsCoordinates.toggle()
-        if showsCoordinates { showsHeading = false }
-    }
-
-    private func toggleHeading() {
-        showsHeading.toggle()
-        if showsHeading { showsCoordinates = false }
     }
 }

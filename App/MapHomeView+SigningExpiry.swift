@@ -1,97 +1,60 @@
 import SwiftUI
 
 extension MapHomeView {
-    @ViewBuilder
-    var signingExpiryHomeNotice: some View {
-        if let expiration = signingExpiryStatus.expirationDate,
-           case .remaining = signingExpiryStatus.kind {
-            TimelineView(.periodic(from: .now, by: 60)) { context in
-                signingExpiryNotice(expiration: expiration, now: context.date)
-            }
-            .padding(.leading, AppLayout.mapZoomControlClearance)
+    var homeSettingsButton: some View {
+        TimelineView(.periodic(from: .now, by: 60)) { context in
+            HomeSettingsButton(
+                status: SigningExpiry.evaluate(expirationDate: signingExpiryStatus.expirationDate, now: context.date),
+                now: context.date,
+                onOpen: { activeSheet = .settings }
+            )
         }
     }
+}
 
-    @ViewBuilder
-    func signingExpiryNotice(expiration: Date, now: Date) -> some View {
-        let status = SigningExpiry.evaluate(expirationDate: expiration, now: now)
-        let countdown = SigningExpiryCountdown.text(until: expiration, now: now)
-        let showsBanner = status.showsMapBanner
-            && !signingExpiryBanner.isBannerDismissed(expirationDate: expiration, now: now)
-        if case .remaining = status.kind, let countdown {
-            if showsBanner {
-                signingExpiryBannerView(
-                    countdown: countdown,
-                    detail: "到期后需要重新签名安装。",
-                    expiration: expiration,
-                    now: now
-                )
-            } else {
-                signingExpiryCountdownChip(countdown, urgent: status.showsMapBanner)
-            }
-        }
-    }
+/// 签名仅在设置入口作轻量提示；完整时间、重签说明与过期门禁继续使用原有来源。
+struct HomeSettingsButton: View {
+    let status: SigningExpiryStatus
+    let now: Date
+    let onOpen: () -> Void
 
-    func signingExpiryCountdownChip(_ text: String, urgent: Bool) -> some View {
-        HStack {
-            Button {
-                showSigningResignSheet = true
-            } label: {
-                Label(text, systemImage: "clock")
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(urgent ? Color.orange : Color.primary)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.85)
-                    .padding(.horizontal, 14)
-                    .frame(minHeight: 44)
-            }
-            .buttonStyle(.plain)
-            .accessibilityHint("打开重新签名说明")
-            .background(.regularMaterial, in: Capsule())
-            .shadow(color: .black.opacity(0.13), radius: 9, y: 4)
-            Spacer(minLength: 0)
-        }
-    }
-
-    func signingExpiryBannerView(
-        countdown: String,
-        detail: String,
-        expiration: Date,
-        now: Date
-    ) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Button {
-                showSigningResignSheet = true
-            } label: {
-                VStack(alignment: .leading, spacing: 4) {
-                    Label(countdown, systemImage: "clock")
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(.orange)
+    var body: some View {
+        Button(action: onOpen) {
+            VStack(spacing: 2) {
+                Image(systemName: "gearshape")
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundStyle(.primary)
+                if let text = compactText {
+                    Text(text)
+                        // 固定小标注不挤压图标；完整内容通过设置页与无障碍值提供。
+                        .font(.system(size: 12, weight: .medium, design: .monospaced))
+                        .foregroundStyle(status.showsMapBanner ? Color.orange : Color.secondary)
                         .lineLimit(1)
-                        .minimumScaleFactor(0.85)
-                    Text(detail)
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
-            .buttonStyle(.plain)
-            .accessibilityHint("打开重新签名说明")
-            HStack {
-                Button("如何重签") {
-                    showSigningResignSheet = true
-                }
-                .font(.footnote.weight(.semibold))
-                .frame(minHeight: 44)
-                Button("今天不再提示") {
-                    signingExpiryBanner.dismissBanner(expirationDate: expiration, now: now)
-                }
-                .font(.footnote.weight(.semibold))
-                .frame(minHeight: 44)
-            }
+            .frame(width: 52, height: 52)
+            .background(.regularMaterial, in: Circle())
+            .contentShape(Circle())
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(12)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: AppRadius.control, style: .continuous))
+        .buttonStyle(.plain)
+        .accessibilityLabel("设置")
+        .accessibilityValue(status.expirationDate.flatMap { SigningExpiryCountdown.text(until: $0, now: now) }
+                            ?? status.settingsMessage ?? "")
+        .accessibilityHint("查看设置与签名详情")
+        .accessibilityIdentifier("home.settings")
+    }
+
+    private var compactText: String? {
+        switch status.kind {
+        case .unknown, .longLived: return nil
+        case .expired: return "已到期"
+        case .remaining:
+            guard let expiration = status.expirationDate else { return nil }
+            let parts = Calendar.current.dateComponents([.day, .hour, .minute], from: now, to: expiration)
+            if let days = parts.day, days > 0 { return "\(days)天" }
+            if let hours = parts.hour, hours > 0 { return "\(hours)小时" }
+            if let minutes = parts.minute, minutes > 0 { return "\(minutes)分" }
+            return "即将到期"
+        }
     }
 }

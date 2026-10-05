@@ -25,15 +25,17 @@ grep -q 'ExpirationDate' "$EXPIRY" \
 grep -q 'freeSigningWindowDays = 7' "$EXPIRY" \
   || fail "free Apple ID window must stay 7 days"
 grep -q 'mapBannerDays = 2' "$EXPIRY" \
-  || fail "the map banner must stay limited to the last two days"
+  || fail "the urgent signing indicator must stay limited to the last two days"
 grep -q '免费签名' "$EXPIRY" \
   || fail "free-signing reminder copy must exist"
 grep -q 'signingExpiryStatus.settingsMessage' "$SETTINGS" \
   || fail "Settings must surface the free-signing reminder"
-grep -q '今天不再提示' "$MAP" \
-  || fail "the map banner must be dismissible for the current day"
-grep -q 'mapZoomControlClearance' "$MAP" \
-  || fail "the signing countdown must clear the map zoom controls"
+grep -q 'HomeSettingsButton' "$MAP" \
+  || fail "signing time must be integrated into the settings entry"
+! grep -q 'signingExpiryHomeNotice' "$ROOT/App/MapHomeView.swift" \
+  || fail "signing time must not occupy a separate home banner"
+grep -q 'status.showsMapBanner ? Color.orange' "$ROOT/App/MapHomeView+SigningExpiry.swift" \
+  || fail "near-expiry signing time must remain visually distinguishable"
 grep -q 'resignInstructions' "$EXPIRY" \
   || fail "expiry must include resign instructions"
 grep -q 'SigningResignGuideView' "$MAP" "$SETTINGS" \

@@ -399,7 +399,7 @@ extension MapHomeView {
 
     var homePeekDisabled: Bool {
         if routeKeepsRunningWhileSpotShown { return false }
-        return showsRoutePanelActive ? routePeekDisabled : spoofState == .verifying
+        return showsRoutePanelActive ? routePeekDisabled : (spoofState == .verifying || spotStopPending || spotSwitchPending)
     }
 
     var homePeekOpensDetail: Bool {
@@ -461,7 +461,7 @@ extension MapHomeView {
         }
     }
 
-    /// 面板收起时在“走路”切换条上提示路线还在。
+    /// 在“路线”切换项上提示后台路线状态。
     var routeChipSubtitle: String? {
         switch route.phase {
         case .inactive: return nil
@@ -473,59 +473,11 @@ extension MapHomeView {
     }
 
     var routeCard: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            RoutePlaybackPanel(
-                route: route,
-                clock: route.clock,
-                currentPair: currentSelectionPair,
-                onExit: requestExitRoute,
-                onSave: promptSaveRoute,
-                onOpenSaved: openSavedRoutes,
-                onRestart: { playRoute(fromStart: true) },
-                embedded: true
-            )
-            routePlaybackSpoofControls
-        }
-    }
-
-    @ViewBuilder
-    var routePlaybackSpoofControls: some View {
-        if spoofState != .idle {
-            HStack(spacing: 10) {
-                Button(action: handleMainButtonTap) {
-                    HStack(spacing: 6) {
-                        if spoofState == .verifying {
-                            ProgressView().tint(.white)
-                        }
-                        Text(routePlaybackButtonTitle)
-                    }
-                    .frame(maxWidth: needsSwitchButton ? nil : .infinity)
-                    .frame(minWidth: needsSwitchButton ? 56 : nil)
-                    .padding(.horizontal, needsSwitchButton ? 12 : 0)
-                }
-                .buttonStyle(PrimaryActionStyle(tint: buttonColor, compact: true))
-                .disabled(spoofState == .verifying)
-
-                if needsSwitchButton {
-                    Button(action: { beginLocationOperation() }) {
-                        Label("切换到此处", systemImage: "arrow.triangle.swap")
-                            .font(.subheadline.weight(.semibold))
-                            .lineLimit(1)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 8)
-                            .padding(.horizontal, 12)
-                    }
-                    .background(.blue, in: RoundedRectangle(cornerRadius: AppRadius.control))
-                    .foregroundStyle(.white)
-                }
-            }
-        }
-    }
-
-    private var routePlaybackButtonTitle: String {
-        if spoofState == .active, needsSwitchButton { return "关闭" }
-        if spoofState == .active { return "停止虚拟定位" }
-        return buttonTitle
+        RoutePlaybackPanel(
+            route: route, clock: route.clock, currentPair: currentSelectionPair,
+            onExit: requestExitRoute, onSave: promptSaveRoute, onOpenSaved: openSavedRoutes,
+            onRestart: { playRoute(fromStart: true) }, embedded: true
+        )
     }
 
     func playRoute(fromStart: Bool = false) {
@@ -658,9 +610,9 @@ struct HomePeekCaption: View {
     var body: some View {
         if let text = caption {
             Text(text)
-                .font(.caption2.weight(.medium))
+                .font(.caption.weight(.medium))
                 .foregroundStyle(.secondary)
-                .lineLimit(1)
+                .lineLimit(2)
         }
     }
 
@@ -674,10 +626,12 @@ struct HomePeekCaption: View {
         switch route.phase {
         case .playing, .paused:
             _ = clock.progress
-            return RoutePlayback.formattedRemaining(
+            let remaining = RoutePlayback.formattedRemaining(
                 meters: route.remainingMeters,
                 speedMetersPerSecond: route.speedMetersPerSecond
             )
+            let speed = RoutePlayback.formattedSpeed(kilometersPerHour: route.speedKilometersPerHour)
+            return "\(speed) · \(remaining)"
         case .finished:
             return "已走完"
         case .preparing:

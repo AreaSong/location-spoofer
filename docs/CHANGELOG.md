@@ -2,6 +2,10 @@
 
 各版本发布说明见 `docs/releases/` 目录。
 
+## 待发布
+
+- [v1.1.1.0](releases/v1.1.1.0.md) — 2026-10-05（本地候选包，尚未打 tag）
+
 ## 已发布
 
 - [v1.1.0.1](https://github.com/AreaSong/location-spoofer/releases/tag/v1.1.0.1) — 2026-10-03

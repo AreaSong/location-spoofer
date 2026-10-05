@@ -58,7 +58,7 @@ extension MapHomeView {
     }
 
     var spotPeekTitle: String {
-        if routeKeepsRunningWhileSpotShown { return "路线仍在运行" }
+        if routeKeepsRunningWhileSpotShown { return "查看路线" }
         if needsSwitchButton { return "切换到此处" }
         if needsTunnelBeforeStart { return "连接隧道" }
         if runtimeMode.mode == .thirdParty {
@@ -85,7 +85,7 @@ extension MapHomeView {
         switch spoofState {
         case .idle: return .blue
         case .verifying: return .gray
-        case .active: return .green
+        case .active: return Color(uiColor: .darkGray)
         }
     }
 

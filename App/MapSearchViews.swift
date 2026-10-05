@@ -7,7 +7,11 @@ struct MapSearchField: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            TextField("搜索地点、坐标或地图链接", text: $search.text)
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 17))
+                .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
+            TextField("搜索地点或坐标", text: $search.text)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
                 .submitLabel(.search)
@@ -15,27 +19,19 @@ struct MapSearchField: View {
                 .onSubmit(onSubmit)
                 .accessibilityLabel("搜索地点、坐标或地图链接")
                 .accessibilityIdentifier("mapSearch.input")
-            Button { search.clear() } label: {
-                Image(systemName: "xmark.circle.fill")
-                    .font(.system(size: 20))
-                    .foregroundStyle(.secondary)
-                    .frame(width: 44, height: 44)
-                    .contentShape(Rectangle())
+                .frame(minWidth: 0, maxWidth: .infinity)
+            if !search.text.isEmpty || search.isSearching {
+                Button { search.clear() } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 20))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(search.isSearching ? "取消搜索并清除输入" : "清除搜索")
+                .accessibilityIdentifier("mapSearch.clear")
             }
-            .buttonStyle(.plain)
-            .disabled(search.text.isEmpty && !search.isSearching)
-            .accessibilityLabel(search.isSearching ? "取消搜索并清除输入" : "清除搜索")
-            .accessibilityIdentifier("mapSearch.clear")
-            Button(action: onSubmit) {
-                Image(systemName: "arrow.right.circle.fill")
-                    .font(.system(size: 20))
-                    .frame(width: 44, height: 44)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .disabled(search.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-            .accessibilityLabel("提交搜索")
-            .accessibilityIdentifier("mapSearch.submit")
         }
         .padding(.leading, 14)
         .padding(.trailing, 4)
@@ -43,6 +39,7 @@ struct MapSearchField: View {
         .frame(minHeight: 48)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: AppRadius.control, style: .continuous))
         .shadow(color: .black.opacity(0.13), radius: 9, y: 4)
+        .accessibilityAction(named: "搜索") { onSubmit() }
     }
 }
 

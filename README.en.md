@@ -16,7 +16,7 @@ responses in a controlled test environment.
 [![iOS 15+](https://img.shields.io/badge/iOS-15%2B-111111?logo=apple)](project.yml)
 [![Swift 5.9](https://img.shields.io/badge/Swift-5.9-F05138)](project.yml)
 [![Go 1.23+](https://img.shields.io/badge/Go-1.23%2B-00ADD8?logo=go)](Core/go.mod)
-[![Version](https://img.shields.io/badge/version-v1.1.0.1-2563EB)](docs/CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-v1.1.1.0-2563EB)](docs/CHANGELOG.md)
 
 [Features](#feature-overview) ·
 [How It Works](#how-it-works) ·
@@ -61,8 +61,8 @@ collection services.
   - Supports place search, pasted map links, typed latitude/longitude, map taps, center-point dragging, and zooming;
   - A pending search can be cleared or replaced. Editing cancels the old query and hides its results without starting a new network request. Results scroll; tap “完成” to finish editing and restore map controls.
   - The lower-right control cycles Standard, Satellite, and Hybrid map layers;
-  - A collapsible strip under the search bar with coordinates on the left and walk heading on the right; expand it to switch domestic and international coordinates
-    and copy each one separately, or to change walking direction and the step-fallback stride;
+  - Search, Logs, and Settings share one row, with a compact signing countdown inside Settings. The bottom card separates Spot and Route actions; expand details to switch Recents/Favorites, copy domestic/international coordinates, or configure physical walking;
+  - Switching to a new spot keeps Stop available. Running or paused routes keep End Route visible; exiting still requires confirmation and leaves the simulated location at the current point;
   - Keeps the latest 10 discrete selections (tap, search, favorite, or realtime fix). Panning the map updates the current
     center only and does not write history;
   - Favorites support a searchable list, sort by time or name, and clipboard/file backup. Matching WGS-84 coordinates
@@ -76,7 +76,7 @@ collection services.
   - App Mode, Third-party Proxy Mode, and Developer Tunnel Mode can offset a spot before writing so a test point is not
     always identical. Reported accuracy applies to App Mode and Third-party Proxy Mode only;
   - Motion simulation is available only in App Mode;
-  - Optional physical walking: off by default and toggled in the heading strip; from launch or after spot spoofing, a blue-dot puck shows the current location and heading and uses calibrated true-north heading by default; the fan projects with map rotation and pitch. Movement waits for a valid heading and skips step increments received while heading is unavailable. Slowly rotate the phone and resume walking once heading returns. Pedometer callbacks are cumulative batches; delayed batches still use the heading at receipt. Custom heading (“初始指向”) is off by default; turn it on to set the initial heading with the slider and ±15° and zero the phone attitude, then rotating the phone turns the fan. The step-fallback stride is adjustable. Last custom values persist but are not applied on a successful connect. With walking on, steps move along the live fan; it is mutually exclusive with automatic route playback;
+  - Optional physical walking: off by default and toggled in Spot details under “真实走动”; from launch or after spot spoofing, a blue-dot puck shows the current location and heading and uses calibrated true-north heading by default; the fan projects with map rotation and pitch. Movement waits for a valid heading and skips step increments received while heading is unavailable. Slowly rotate the phone and resume walking once heading returns. Pedometer callbacks are cumulative batches; delayed batches still use the heading at receipt. Custom heading (“初始指向”) is off by default; turn it on to set the initial heading with the slider and ±15° and zero the phone attitude, then rotating the phone turns the fan. The step-fallback stride is adjustable. Last custom values persist but are not applied on a successful connect. With walking on, steps move along the live fan; it is mutually exclusive with automatic route playback;
   - Does not require changes to the target app.
 
 - **Route playback**

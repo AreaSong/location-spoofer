@@ -107,28 +107,25 @@ grep -q '地图坐标类型已变化' "$MAP_HOME" || fail "map-type changes must
 grep -q '图钉已按新类型重设' "$MAP_HOME" || fail "map-type change log must report pin reprojection"
 grep -q 'struct MapHomeCoordinateLine' "$ROOT/App/MapHomeCoordinateLine.swift" \
   || fail "current selection must share one switchable coordinate row"
-grep -q 'struct MapHomeTopInfoBar' "$ROOT/App/MapHomeCoordinateLine.swift" \
-  || fail "map home must keep a collapsible coordinate strip under search"
+grep -q 'struct MapHomeLocationDetails' "$ROOT/App/MapHomeCoordinateLine.swift" \
+  || fail "map home must expose coordinates in the location details"
 grep -q 'struct MapChromeIconButton' "$ROOT/App/AppStyle.swift" \
   || fail "map chrome icon buttons must be a dedicated control, not a Menu overlay"
 grep -q 'MapChromeIconButton(systemImage: "list.bullet.rectangle", accessibilityLabel: "日志")' "$MAP_HOME_MAIN" \
   || fail "logs must open from a direct top-right button"
-grep -q 'MapChromeIconButton(systemImage: "gearshape", accessibilityLabel: "设置")' "$MAP_HOME_MAIN" \
+grep -q 'homeSettingsButton' "$MAP_HOME_MAIN" \
   || fail "settings must open from a direct top-right button"
-if awk '/var topControls: some View/{flag=1} flag{print; if (/MapHomeTopInfoBar/) exit}' "$MAP_HOME_MAIN" | grep -q 'Menu {'; then
+if awk '/var topControls: some View/{flag=1} flag{print; if (/func bottomControls/) exit}' "$MAP_HOME_MAIN" | grep -q 'Menu {'; then
   fail "home logs and settings must not sit in a Menu over the map"
 fi
-grep -q 'headingChip' "$ROOT/App/MapHomeCoordinateLine.swift" \
-  || fail "walk heading must sit in the trailing chip of the search-bar info strip"
-if grep -q 'placeName' "$ROOT/App/MapHomeCoordinateLine.swift"; then
-  fail "the search-bar info strip must not use the place name as the trailing chip"
-fi
-grep -q 'quickActions' "$ROOT/App/MapHomeBottomCard.swift" \
-  || fail "collapsed bottom card must keep walk shortcuts outside the expanded lists"
+grep -q 'Label("真实走动"' "$ROOT/App/MapHomeCoordinateLine.swift" \
+  || fail "physical walking must have a named entry in location details"
+grep -q 'secondaryButton' "$ROOT/App/MapHomeBottomCard.swift" \
+  || fail "collapsed bottom card must keep stop and route-exit controls visible"
 grep -q 'Toggle("初始指向"' "$ROOT/App/MapHomeView+PhysicalWalk.swift" \
   || fail "custom heading must be a dedicated toggle, defaulting off"
 grep -q 'Toggle("真实走动"' "$ROOT/App/MapHomeView+PhysicalWalk.swift" \
-  || fail "physical walk toggle must sit in the heading angle row"
+  || fail "physical walk settings must retain the explicit enable toggle"
 grep -q 'isCustomHeadingEnabled' "$ROOT/Shared/PhysicalWalkStore.swift" \
   || fail "custom heading on/off must persist separately from physical walking"
 grep -q 'latestMapHeadingDegrees' "$ROOT/App/PhysicalWalkSensors.swift" \
@@ -282,7 +279,7 @@ grep -q 'static let limit = 10' "$ROOT/Shared/RecentSelectionStore.swift" || fai
 grep -q 'rememberDiscreteSelection' "$MAP_HOME" || fail "discrete map selections must record recent history"
 ! grep -A20 'onUserCenterChanged:' "$MAP_HOME" | grep -q 'rememberDiscreteSelection' \
   || fail "panning the map must not record recent selection history"
-grep -q 'Text("最近")' "$MAP_HOME" || fail "map home must show a recent-selection chip row"
+grep -q 'tab("最近"' "$MAP_HOME" || fail "map home must expose the recent-selection tab"
 grep -q '代理正常' "$MAP_HOME" || fail "map home must show keep-alive healthy status"
 grep -q '保活中断' "$MAP_HOME" || fail "map home must show keep-alive interruption"
 grep -q '代理未运行' "$MAP_HOME" || fail "map home must show proxy stopped status"
@@ -301,7 +298,7 @@ grep -q 'if route.phase == .preparing { return false }' "$MAP_HOME" \
 grep -q 'if route.start == nil || route.end == nil { return "先设起点和终点" }' "$MAP_HOME" \
   || fail "collapsed walking caption must not say 先设起点和终点 after both pins are set"
 grep -q 'Button("已存路线")' "$ROOT/App/RoutePlaybackPanel.swift" || fail "route panel must expose saved routes"
-grep -q 'struct RunningRouteSpotNotice' "$MAP_HOME" || fail "spot card must use a distinct running-route notice while playback continues"
+grep -q 'if routeKeepsRunningWhileSpotShown { return "查看路线" }' "$MAP_HOME" || fail "spot card must return to the running route instead of starting a spot operation"
 grep -q 'showsSpotHelp: spoofState != .idle && !routeKeepsRunningWhileSpotShown' "$MAP_HOME" \
   || fail "idle and running-route states must hide the spot help control"
 grep -q 'if routeKeepsRunningWhileSpotShown { return .orange }' "$MAP_HOME" || fail "spot peek must use the running-route color while playback continues"
@@ -309,10 +306,9 @@ if grep -A6 'Text("回到走路")' "$MAP_HOME" | grep -q 'CapsuleChipStyle'; the
   fail "回到走路 must not reuse the help chip style"
 fi
 grep -A2 'if showsRoute {' "$ROOT/App/MapHomeBottomCard.swift" | grep -q 'routePanel' \
-  || fail "the walking panel must layout outside the spot height cap"
-if grep -A2 'if showsRoute {' "$ROOT/App/MapHomeBottomCard.swift" | grep -q 'ScrollView'; then
-  fail "the walking panel must not be clipped by the spot-card height cap"
-fi
+  || fail "expanded route details must render the route panel"
+grep -q 'private var expandedDetail' "$ROOT/App/MapHomeBottomCard.swift" \
+  || fail "expanded tools must be scrollable separately from persistent actions"
 ! grep -q 'Label("走路"' "$MAP_HOME" || fail "route walking must not have a second entry in the top menu"
 grep -q 'route.enter()' "$MAP_HOME" || fail "opening a route must not use the current real or spoofed location as the start"
 grep -q 'route.load(saved)' "$MAP_HOME" || fail "saved routes must restore into the playback controller"

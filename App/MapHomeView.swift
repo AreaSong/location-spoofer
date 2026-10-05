@@ -101,6 +101,7 @@ struct MapHomeView: View {
     @State var showSigningResignSheet = false
     @State var showRouteLocationSetup = false
     @State var showsRoutePanel = false
+    @State var isHomeDetailsExpanded = false
     @State var showExitRouteConfirm = false
     @State var developerLocationError = ""
     @State var lastDeveloperTunnelRecoveryAt: Date?
@@ -269,9 +270,6 @@ struct MapHomeView: View {
             GeometryReader { geo in
                 VStack(spacing: 10) {
                     topControls
-                    if locationUseBlock == nil {
-                        signingExpiryHomeNotice
-                    }
                     if let block = locationUseBlock {
                         locationUnavailableOverlay(block)
                             .onAppear { pauseRouteIfLocationBlocked() }
@@ -286,7 +284,7 @@ struct MapHomeView: View {
                         // 右下角按钮
                         HStack {
                             Spacer()
-                            VStack(spacing: 12) {
+                            HStack(spacing: 12) {
                                 Button {
                                     mapStyle.cycle()
                                 } label: {
@@ -331,7 +329,8 @@ struct MapHomeView: View {
                         }
                         .padding(.trailing, 16)
                         .padding(.bottom, 8)
-                        bottomControls(expandedMaxHeight: geo.size.height * AppLayout.bottomCardExpandedHeightFraction)
+                        bottomControls(expandedMaxHeight: geo.size.height * AppLayout.bottomCardExpandedHeightFraction,
+                                       availableHeight: max(160, geo.size.height - 160))
                     }
                 }
                 .padding(.horizontal, 16)
@@ -742,105 +741,80 @@ struct MapHomeView: View {
     }
 
     var topControls: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        HStack(spacing: 8) {
             MapSearchField(search: search, focus: $searchFocused, onSubmit: doSearch)
-            HStack(spacing: 10) {
-                if searchFocused {
-                    Spacer()
-                    Button("完成") { searchFocused = false }
-                        .frame(minWidth: 44, minHeight: 44)
-                        .accessibilityLabel("结束搜索输入")
-                } else {
-                    Spacer(minLength: 0)
-                    MapChromeIconButton(systemImage: "list.bullet.rectangle", accessibilityLabel: "日志") {
-                        activeSheet = .logs
-                    }
-                    MapChromeIconButton(systemImage: "gearshape", accessibilityLabel: "设置") {
-                        activeSheet = .settings
-                    }
+            if searchFocused {
+                Button("完成") { searchFocused = false }
+                    .frame(minWidth: 44, minHeight: 48)
+                    .accessibilityLabel("结束搜索输入")
+            } else {
+                MapChromeIconButton(systemImage: "list.bullet.rectangle", accessibilityLabel: "日志") {
+                    activeSheet = .logs
                 }
-            }
-            if !searchFocused {
-                MapHomeTopInfoBar(
-                    pair: displayedCoordinatePair,
-                    mapSystem: displayedMapCoordinateSystem,
-                    walkStore: physicalWalkStore,
-                    walkController: physicalWalk,
-                    spoofActive: spoofState == .active
-                )
+                homeSettingsButton
             }
         }
     }
 
-    // 底部：模式切换、主按钮；最近与收藏点开后出现
-    func bottomControls(expandedMaxHeight: CGFloat) -> some View {
+    func bottomControls(expandedMaxHeight: CGFloat, availableHeight: CGFloat) -> some View {
         MapHomeBottomCard(
-            displayName: mapState.displayName ?? "当前选点",
+            displayName: homeDisplayName,
+            selectionStatus: homeSelectionStatus,
             spoofState: spoofState,
             isFavoriteSelected: favorites.selectedFavoriteID != nil,
             favoriteSaveDisabled: favoriteSaveTask != nil,
             runtimeStatusText: homeRuntimeStatusText,
             runtimeStatusTone: homeRuntimeStatusTone,
-            needsSwitchButton: needsSwitchButton,
-            buttonTitle: buttonTitle,
-            buttonSystemImage: buttonSystemImage,
-            buttonColor: buttonColor,
             showsRoute: showsRoutePanelActive,
             routeChipSubtitle: routeChipSubtitle,
-            spotChipSubtitle: PhysicalWalkStatusCopy.chipSubtitle(
-                isEnabled: physicalWalkStore.isEnabled,
-                isTracking: physicalWalk.isTracking
-            ),
-            showsRouteProgress: showsRouteProgress,
-            peekTitle: homePeekTitle,
-            peekAccessibilityLabel: homePeekAccessibilityLabel,
-            peekSystemImage: showsRoutePanelActive ? nil : (routeKeepsRunningWhileSpotShown ? "figure.walk" : buttonSystemImage),
-            peekColor: homePeekColor,
-            peekDisabled: homePeekDisabled,
-            peekOpensDetail: homePeekOpensDetail,
-            showsSpotHelp: spoofState != .idle && !routeKeepsRunningWhileSpotShown,
+            showsRouteProgress: showsRoutePanelActive && showsRouteProgress,
+            primaryTitle: homePeekTitle,
+            primaryAccessibilityLabel: homePeekAccessibilityLabel,
+            primarySystemImage: showsRoutePanelActive ? nil : buttonSystemImage,
+            primaryColor: homePeekColor,
+            primaryDisabled: homePeekDisabled,
+            secondaryTitle: homeSecondaryAction?.title,
+            secondaryDisabled: homeSecondaryAction == .stopLocation && (spotStopPending || spotSwitchPending || spoofState == .verifying),
+            showsSpotHelp: spoofState != .idle && !routeKeepsRunningWhileSpotShown && !showsRoutePanelActive,
             expandedMaxHeight: expandedMaxHeight,
+            availableHeight: availableHeight,
+            isExpanded: $isHomeDetailsExpanded,
             playbackClock: route.clock,
-            quickActions: {
-                if routeKeepsRunningWhileSpotShown {
-                    RunningRouteSpotNotice(
-                        isPaused: route.phase == .paused,
-                        isWaiting: route.waitingForActivation,
-                        onReturnToRoute: { showsRoutePanel = true }
+            spotContent: {
+                VStack(alignment: .leading, spacing: 12) {
+                    MapHomeSelectionChips(
+                        hasRecents: !recentSelections.items.isEmpty,
+                        favoritesEmpty: favorites.favorites.isEmpty,
+                        recentChips: {
+                            ForEach(recentSelections.items) { item in
+                                recentChip(item)
+                            }
+                        },
+                        favoriteChips: {
+                            ForEach(favorites.displayedFavorites) { favorite in
+                                favoriteChip(favorite)
+                            }
+                        },
+                        allFavoritesButton: { allFavoritesButton },
+                        onClearRecents: { recentSelections.removeAll() }
+                    )
+                    MapHomeLocationDetails(
+                        pair: currentSelectionPair,
+                        mapSystem: displayedMapCoordinateSystem,
+                        walkStore: physicalWalkStore,
+                        walkController: physicalWalk,
+                        spoofActive: spoofState == .active
                     )
                 }
             },
-            spotContent: {
-                MapHomeSelectionChips(
-                    hasRecents: !recentSelections.items.isEmpty,
-                    favoritesEmpty: favorites.favorites.isEmpty,
-                    recentChips: {
-                        ForEach(recentSelections.items) { item in
-                            recentChip(item)
-                        }
-                    },
-                    favoriteChips: {
-                        ForEach(favorites.displayedFavorites) { favorite in
-                            favoriteChip(favorite)
-                        }
-                    },
-                    allFavoritesButton: { allFavoritesButton },
-                    onClearRecents: { recentSelections.removeAll() }
-                )
-            },
             routePanel: { routeCard },
-            peekCaption: {
+            caption: {
                 HomePeekCaption(
-                    route: route,
-                    clock: route.clock,
-                    showsRoute: showsRoutePanelActive,
+                    route: route, clock: route.clock, showsRoute: showsRoutePanelActive,
                     physicalWalkText: physicalWalkPeekText
                 )
             },
-            onShowSpot: {
-                // 切回定点只收起面板，路线、图钉和播放状态都保留。
-                showsRoutePanel = false
-            },
+            onShowSpot: { showsRoutePanel = false },
             onShowRoute: {
                 enterRoute()
                 showsRoutePanel = true
@@ -855,14 +829,13 @@ struct MapHomeView: View {
             onToggleFavorite: {
                 if favorites.selectedFavoriteID != nil {
                     favorites.select(nil)
-                    return
+                } else {
+                    saveCurrentSelectionAsFavorite()
                 }
-                saveCurrentSelectionAsFavorite()
             },
             onOpenSettings: { activeSheet = .settings },
-            onMainTap: handleMainButtonTap,
-            onSwitchHere: { beginLocationOperation() },
-            onPeekTap: handlePeekTap
+            onPrimaryTap: handlePeekTap,
+            onSecondaryTap: handleHomeSecondaryTap
         )
     }
 

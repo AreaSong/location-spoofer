@@ -56,6 +56,7 @@ struct RoutePlaybackPanel: View {
     let onRestart: () -> Void
     var embedded = false
     @State private var showsSpeedOffset = false
+    @State private var showsUtilities = false
     @State private var customSpeed = false
     @State private var customOffset = false
 
@@ -96,7 +97,13 @@ struct RoutePlaybackPanel: View {
             if showsSpeedOffset {
                 speedOffsetSection
             }
-            utilityRow
+            if route.phase != .playing {
+                DisclosureGroup("路线管理", isExpanded: $showsUtilities) {
+                    utilityRow
+                }
+                .font(.subheadline)
+                .frame(minHeight: 44)
+            }
             if let exceptionStatus {
                 Text(exceptionStatus)
                     .font(.caption)
@@ -178,7 +185,7 @@ struct RoutePlaybackPanel: View {
                 Text(routeSummary)
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                    .lineLimit(1)
+                    .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 0)
                 Image(systemName: showsSpeedOffset ? "chevron.up" : "chevron.down")
                     .font(.caption.weight(.semibold))
@@ -251,7 +258,7 @@ struct RoutePlaybackPanel: View {
     }
 
     private var utilityRow: some View {
-        HStack(spacing: 8) {
+        VStack(alignment: .leading, spacing: 8) {
             if route.phase != .playing {
                 if route.canReverse {
                     Button("倒着走") { route.reverseDirection() }
@@ -264,8 +271,10 @@ struct RoutePlaybackPanel: View {
                 Button("已存路线") { onOpenSaved() }
                     .buttonStyle(CapsuleChipStyle())
             }
-            Button("退出路线") { onExit() }
-                .buttonStyle(CapsuleChipStyle(tint: .red))
+            if route.phase == .preparing || route.phase == .finished {
+                Button("退出路线") { onExit() }
+                    .buttonStyle(CapsuleChipStyle(tint: .red))
+            }
             Spacer(minLength: 0)
         }
     }

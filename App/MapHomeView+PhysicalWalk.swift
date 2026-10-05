@@ -123,48 +123,45 @@ struct PhysicalWalkHeadingControls: View {
     let spoofActive: Bool
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Toggle("初始指向", isOn: customHeadingBinding)
-                .font(.caption.weight(.semibold))
-            HStack(spacing: 8) {
-                Button("−15°") {
-                    nudgeInitialHeading(by: -15)
-                }
-                .buttonStyle(CapsuleChipStyle())
-                .disabled(!store.isCustomHeadingEnabled)
-                .accessibilityLabel("初始朝向减少 15 度")
-                Text(PhysicalWalkHeadingLock.labeledDegrees(controller.activeHeadingDegrees))
-                    .font(.caption.monospacedDigit().weight(.semibold))
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.8)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                Toggle("真实走动", isOn: enabledBinding)
-                    .font(.caption.weight(.semibold))
-                    .fixedSize()
-                Button("+15°") {
-                    nudgeInitialHeading(by: 15)
-                }
-                .buttonStyle(CapsuleChipStyle())
-                .disabled(!store.isCustomHeadingEnabled)
-                .accessibilityLabel("初始朝向增加 15 度")
-            }
-            Slider(value: headingBinding, in: 0...359, step: 1)
-                .disabled(!store.isCustomHeadingEnabled)
-                .accessibilityLabel("初始朝向")
-            VStack(alignment: .leading, spacing: 4) {
-                Text(String(format: "计步兜底步长 %.2f 米", store.strideMeters))
-                    .font(.caption.weight(.semibold))
-                Slider(
-                    value: strideBinding,
-                    in: PhysicalWalkDisplacement.minimumStrideMeters...PhysicalWalkDisplacement.maximumStrideMeters,
-                    step: 0.02
-                )
-                .accessibilityLabel("计步兜底步长")
-                Text("计步器没有距离时，按这个步长把步数换成米。")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
+        VStack(alignment: .leading, spacing: 12) {
+            Toggle("真实走动", isOn: enabledBinding)
+                .font(.subheadline)
             walkHint
+            if store.isEnabled {
+                Toggle("初始指向", isOn: customHeadingBinding)
+                    .font(.subheadline)
+                headingAdjustment
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(String(format: "计步兜底步长 %.2f 米", store.strideMeters))
+                        .font(.caption.weight(.semibold))
+                    Slider(value: strideBinding,
+                           in: PhysicalWalkDisplacement.minimumStrideMeters...PhysicalWalkDisplacement.maximumStrideMeters,
+                           step: 0.02)
+                        .accessibilityLabel("计步兜底步长")
+                    Text("计步器没有距离时，按这个步长把步数换成米。")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+            }
+        }
+    }
+
+    private var headingAdjustment: some View {
+        VStack(spacing: 8) {
+            Text(PhysicalWalkHeadingLock.labeledDegrees(controller.activeHeadingDegrees))
+                .font(.subheadline.monospacedDigit())
+                .frame(maxWidth: .infinity, alignment: .leading)
+            if store.isCustomHeadingEnabled {
+                HStack(spacing: 12) {
+                    Button("−15°") { nudgeInitialHeading(by: -15) }
+                        .frame(minWidth: 44, minHeight: 44)
+                        .accessibilityLabel("初始朝向减少 15 度")
+                    Slider(value: headingBinding, in: 0...359, step: 1)
+                        .accessibilityLabel("初始朝向")
+                    Button("+15°") { nudgeInitialHeading(by: 15) }
+                        .frame(minWidth: 44, minHeight: 44)
+                        .accessibilityLabel("初始朝向增加 15 度")
+                }
+            }
         }
     }
 
