@@ -202,12 +202,14 @@ grep -q 'presentThirdPartyCoordinateClearBlocked(destination: newMode, error: er
   || fail "mode switch must report and retain the current mode if third-party clear fails"
 grep -Fq 'thirdPartyNeedsCleanup: thirdPartyNeedsCleanup' "$ROOT/App/SettingsView+AppMode.swift" \
   || fail "mode switch must consult third-party coordinate state before requiring cleanup"
-grep -Fq 'hasInitializedThirdParty: runtimeMode.isInitialized(.thirdParty)' "$ROOT/App/SettingsView+AppMode.swift" \
-  || fail "previously configured clients must retain the mandatory cleanup safeguard"
-snapshot_line="$(grep -n 'let thirdPartyNeedsCleanup = thirdPartyProxy.needsCoordinateCleanup' "$ROOT/App/SettingsView+AppMode.swift" | cut -d: -f1)"
+! grep -q 'hasInitializedThirdParty' "$ROOT/App/SettingsView+AppMode.swift" "$MANAGER" \
+  || fail "initialization history must not be treated as coordinate evidence"
+prepare_line="$(grep -n 'let thirdPartyNeedsCleanup = await thirdPartyProxy.prepareForModeSwitch()' "$ROOT/App/SettingsView+AppMode.swift" | cut -d: -f1)"
 suspend_line="$(grep -n 'session.beginModeCleanup()' "$ROOT/App/SettingsView+AppMode.swift" | cut -d: -f1)"
-test "$snapshot_line" -lt "$suspend_line" \
-  || fail "mode switch must capture in-flight cleanup obligations before suspending old requests"
+test "$suspend_line" -lt "$prepare_line" \
+  || fail "mode switch must suspend producers before draining requests and checking evidence"
+grep -Fq 'switchAfterConfirmingUnusedLegacyCoordinates(recovery)' "$SETTINGS" \
+  || fail "unverified legacy cleanup flags must offer a never-synced recovery action"
 grep -Fq 'Button("重试清理")' "$SETTINGS" \
   || fail "third-party cleanup failures must offer retry"
 grep -Fq 'Button(ThirdPartyModeSwitchRecovery.continueTitle)' "$SETTINGS" \

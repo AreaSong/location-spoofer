@@ -174,15 +174,14 @@ final class ThirdPartyProxyManager: ObservableObject {
     private var requestWaiters: [CheckedContinuation<Void, Never>] = []
     private let requester: any ThirdPartyProxyRequesting
     private let randomRadiusMeters: () -> Double
-    private let defaults: UserDefaults
-    private static let pendingCoordinateCleanupKey = "thirdPartyPendingCoordinateCleanup"
+    private let coordinateCleanup: ThirdPartyCoordinateCleanup
 
     init(
         requester: (any ThirdPartyProxyRequesting)? = nil,
         randomRadiusMeters: (() -> Double)? = nil,
         defaults: UserDefaults = AppGroup.defaults
     ) {
-        self.defaults = defaults
+        coordinateCleanup = ThirdPartyCoordinateCleanup(defaults: defaults)
         self.randomRadiusMeters = randomRadiusMeters ?? {
             RandomRadiusStore.shared.effectiveRadiusMeters
         }
@@ -210,10 +209,24 @@ final class ThirdPartyProxyManager: ObservableObject {
         writeGeneration &+= 1
     }
 
-    func needsCoordinateCleanup(hasInitializedThirdParty: Bool) -> Bool {
-        // 已配置过的客户端可能保有旧坐标；连接失败或 App 重启都不能证明坐标已清空。
-        hasInitializedThirdParty || isRequesting || activeSettings != nil
-            || defaults.bool(forKey: Self.pendingCoordinateCleanupKey)
+    var coordinateCleanupState: ThirdPartyCoordinateCleanupState { coordinateCleanup.state }
+
+    func needsCoordinateCleanup() -> Bool {
+        coordinateCleanupState != .none
+    }
+
+    /// 等已发出的请求收尾，再按实际回读判断；在途查询本身不产生清理义务。
+    func prepareForModeSwitch() async -> Bool {
+        suspendWrites()
+        clearingCount += 1
+        defer { clearingCount -= 1 }
+        await enqueueRequest()
+        defer { dequeueRequest() }
+        return needsCoordinateCleanup()
+    }
+
+    func confirmUnusedLegacyCleanup() {
+        coordinateCleanup.confirmUnusedLegacyRecord()
     }
 
     func query() async throws -> ThirdPartyProxySettingsResponse {
@@ -221,7 +234,6 @@ final class ThirdPartyProxyManager: ObservableObject {
         let response = try await perform(action: .query)
         guard generation == writeGeneration else { throw CancellationError() }
         let active = try validatedQueryState(response)
-        if active { defaults.set(true, forKey: Self.pendingCoordinateCleanupKey) }
         if active {
             activeSettings = response
             connectionState = .connected(active: true)
@@ -266,15 +278,12 @@ final class ThirdPartyProxyManager: ObservableObject {
 
     func clear() async throws {
         suspendWrites()
-        // 一旦开始清理，失败后的重试也必须保留义务，包括被取消的在途查询发现旧坐标的情况。
-        defaults.set(true, forKey: Self.pendingCoordinateCleanupKey)
         clearingCount += 1
         defer { clearingCount -= 1 }
         let response = try await perform(action: .clear)
         guard response.success else {
             throw ThirdPartyProxyError.rejected(response.error ?? "第三方代理清除坐标失败")
         }
-        defaults.set(false, forKey: Self.pendingCoordinateCleanupKey)
         activeSettings = nil
         connectionState = .connected(active: false)
         RuntimeLogger.info("APP", "ThirdPartyProxy", "第三方代理坐标已清除")
@@ -296,6 +305,19 @@ final class ThirdPartyProxyManager: ObservableObject {
         case query
         case save(latitude: Double, longitude: Double, accuracy: Int, randomRadius: Double)
         case clear
+    }
+
+    private func recordCleanupEvidence(action: Action, response: ThirdPartyProxySettingsResponse) {
+        switch action {
+        case .query:
+            if let active = try? validatedQueryState(response) {
+                coordinateCleanup.record(active ? .possibleCoordinates : .none)
+            }
+        case .clear:
+            if response.success { coordinateCleanup.record(.none) }
+        case .save:
+            break
+        }
     }
 
     private func enqueueRequest() async {
@@ -351,7 +373,7 @@ final class ThirdPartyProxyManager: ObservableObject {
 
         if case .save = action {
             // 请求超时或回读失败时，客户端仍可能已经保存；必须在发送前留下待清理记录。
-            defaults.set(true, forKey: Self.pendingCoordinateCleanupKey)
+            coordinateCleanup.record(.possibleCoordinates)
         }
         do {
             // 调用方取消只作废结果，不取消已经发出的请求。
@@ -365,6 +387,8 @@ final class ThirdPartyProxyManager: ObservableObject {
                 throw ThirdPartyProxyError.moduleNotIntercepted
             }
 
+            // 在释放串行槽之前保存副作用证据；调用方取消只丢弃 UI 结果，不能丢掉真实回读。
+            recordCleanupEvidence(action: action, response: response)
             return response
         } catch let error as ThirdPartyProxyError {
             guard generation == writeGeneration else { throw CancellationError() }

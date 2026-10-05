@@ -13,12 +13,21 @@ struct ThirdPartyModeSwitchRecovery: Equatable {
     let source: ProxyRuntimeMode
     let destination: ProxyRuntimeMode
     let diagnosis: String
+    var isLegacyUnverified = false
 
     static let title = "切换前请停用第三方代理"
     static let continueTitle = "已停用，继续切换"
+    static let unusedLegacyTitle = "从未同步，直接切换"
+
+    var alertTitle: String {
+        isLegacyUnverified ? "确认第三方定位使用记录" : Self.title
+    }
 
     var message: String {
-        "第三方坐标尚未清除。\(diagnosis)\n\n如需继续切换到\(destination.displayName)，请先在第三方客户端停用 WLOC 模块或关闭代理/VPN。确认停用后可继续切换；以后重新启用第三方代理前，请先清除旧坐标。"
+        if isLegacyUnverified {
+            return "旧版留下了待清理标记，但无法确认是否写入过坐标。\n\n若从未向第三方同步过坐标，可直接切换到\(destination.displayName)并移除旧标记；否则请重试清理，或先停用第三方模块/代理再继续。重新启用第三方代理前仍需清除旧坐标。"
+        }
+        return "第三方可能仍有未清除的坐标。\(diagnosis)\n\n如需继续切换到\(destination.displayName)，请先在第三方客户端停用 WLOC 模块或关闭代理/VPN。确认停用后可继续切换；以后重新启用第三方代理前，请先清除旧坐标。"
     }
 
     func applies(from current: ProxyRuntimeMode, to next: ProxyRuntimeMode) -> Bool {
@@ -27,8 +36,7 @@ struct ThirdPartyModeSwitchRecovery: Equatable {
 }
 
 enum RuntimeModeSwitchCleanup {
-    /// 未初始化且没有坐标写入或待完成请求时，可直接从第三方返回开发者模式。
-    /// APP 模式即使不是从第三方切过来，也要清 WLOC，避免模块继续拦截。
+    /// APP 和开发者模式使用相同的坐标证据；无写入或已有坐标时不要求第三方清理。
     static func required(
         from current: ProxyRuntimeMode,
         to next: ProxyRuntimeMode,
@@ -38,7 +46,7 @@ enum RuntimeModeSwitchCleanup {
         guard current != next else { return [] }
         var required: Set<RuntimeModePersistedLocation> = []
         let thirdPartyDisabled = recovery?.applies(from: current, to: next) == true
-        if ((current == .thirdParty && thirdPartyNeedsCleanup) || next == .localWiFi) && !thirdPartyDisabled {
+        if next != .thirdParty && thirdPartyNeedsCleanup && !thirdPartyDisabled {
             required.insert(.thirdPartyWLOC)
         }
         if current == .developerTunnel {

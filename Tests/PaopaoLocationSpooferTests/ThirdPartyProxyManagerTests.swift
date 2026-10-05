@@ -375,10 +375,12 @@ actor ControlledThirdPartyRequester: ThirdPartyProxyRequesting {
     private var requests: [String] = []
     let entered: XCTestExpectation
     let failClear: Bool
+    let queryBody: String?
 
-    init(entered: XCTestExpectation, failClear: Bool = false) {
+    init(entered: XCTestExpectation, failClear: Bool = false, queryBody: String? = nil) {
         self.entered = entered
         self.failClear = failClear
+        self.queryBody = queryBody
     }
 
     func release() { continuation?.resume(); continuation = nil }
@@ -399,6 +401,8 @@ actor ControlledThirdPartyRequester: ThirdPartyProxyRequesting {
         let body: String
         if action == "clear" {
             body = failClear ? #"{"success":false,"error":"mock failure"}"# : #"{"success":true}"#
+        } else if action == "query", let queryBody {
+            body = queryBody
         } else {
             body = "{\"success\":true,\"latitude\":\(values["lat"] ?? "1"),\"longitude\":\(values["lon"] ?? "1")}"
         }

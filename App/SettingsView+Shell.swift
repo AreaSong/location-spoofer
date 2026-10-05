@@ -277,10 +277,15 @@ extension SettingsView {
         .alert(item: $updateCheckResult) { result in
             updateCheckAlert(for: result)
         }
-        .alert(ThirdPartyModeSwitchRecovery.title, isPresented: Binding(
+        .alert(thirdPartyClearRecovery?.alertTitle ?? ThirdPartyModeSwitchRecovery.title, isPresented: Binding(
             get: { thirdPartyClearRecovery != nil },
             set: { if !$0 { thirdPartyClearRecovery = nil } }
         ), presenting: thirdPartyClearRecovery) { recovery in
+            if recovery.isLegacyUnverified {
+                Button(ThirdPartyModeSwitchRecovery.unusedLegacyTitle) {
+                    switchAfterConfirmingUnusedLegacyCoordinates(recovery)
+                }
+            }
             Button("重试清理") {
                 guard recovery.applies(from: runtimeMode.mode, to: recovery.destination) else { return }
                 switchRuntimeMode(to: recovery.destination)

@@ -39,10 +39,6 @@ extension SettingsView {
             proxyOperationError = message
             return
         }
-        // 先保留在途请求的清理义务，避免 suspend 后的旧查询在 Task 开始前收尾并丢失证据。
-        let thirdPartyNeedsCleanup = thirdPartyProxy.needsCoordinateCleanup(
-            hasInitializedThirdParty: runtimeMode.isInitialized(.thirdParty)
-        )
         modeOperationRunning = true
         session.beginModeCleanup()
         Task { @MainActor in
@@ -50,6 +46,7 @@ extension SettingsView {
                 modeOperationRunning = false
                 session.endModeCleanup()
             }
+            let thirdPartyNeedsCleanup = await thirdPartyProxy.prepareForModeSwitch()
             let currentMode = runtimeMode.mode
             let cleanup = RuntimeModeSwitchCleanup.required(
                 from: currentMode,
@@ -142,8 +139,18 @@ extension SettingsView {
         ])
         proxyOperationError = ""
         thirdPartyClearRecovery = ThirdPartyModeSwitchRecovery(
-            source: runtimeMode.mode, destination: destination, diagnosis: diagnosis.summary
+            source: runtimeMode.mode, destination: destination, diagnosis: diagnosis.summary,
+            isLegacyUnverified: thirdPartyProxy.coordinateCleanupState == .legacyUnverified
         )
+    }
+
+    func switchAfterConfirmingUnusedLegacyCoordinates(_ recovery: ThirdPartyModeSwitchRecovery) {
+        guard recovery.isLegacyUnverified,
+              recovery.applies(from: runtimeMode.mode, to: recovery.destination),
+              !modeOperationRunning else { return }
+        thirdPartyProxy.confirmUnusedLegacyCleanup()
+        // 重新走正常判断。弹窗期间若查到或写入了坐标，旧标记确认不能覆盖新证据。
+        switchRuntimeMode(to: recovery.destination)
     }
 
     func presentDeveloperSimulationClearBlocked(_ failure: RouteLocationPushFailure) {

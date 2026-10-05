@@ -11,13 +11,13 @@ final class RuntimeModeSwitchCleanupTests: XCTestCase {
         ).isEmpty)
     }
 
-    func testAppModeStillRequiresClearEvenWhenThirdPartyWasUnused() {
+    func testAppModeDoesNotRequireClearWhenThirdPartyWasUnused() {
         XCTAssertEqual(RuntimeModeSwitchCleanup.required(
             from: .thirdParty, to: .localWiFi, thirdPartyNeedsCleanup: false
-        ), [.thirdPartyWLOC])
+        ), [])
         XCTAssertEqual(RuntimeModeSwitchCleanup.required(
             from: .developerTunnel, to: .localWiFi, thirdPartyNeedsCleanup: false
-        ), [.developerSimulation, .thirdPartyWLOC])
+        ), [.developerSimulation])
     }
 
     func testLeavingThirdPartyClearsSavedWLOC() {
@@ -44,8 +44,14 @@ final class RuntimeModeSwitchCleanupTests: XCTestCase {
 
     func testAppModeToDeveloperTunnelDoesNotRequireThirdPartyClear() {
         XCTAssertTrue(
-            RuntimeModeSwitchCleanup.required(from: .localWiFi, to: .developerTunnel).isEmpty
+            RuntimeModeSwitchCleanup.required(from: .localWiFi, to: .developerTunnel, thirdPartyNeedsCleanup: false).isEmpty
         )
+    }
+
+    func testKnownCoordinatesStillRequireCleanupBetweenAppAndDeveloperModes() {
+        XCTAssertEqual(RuntimeModeSwitchCleanup.required(
+            from: .localWiFi, to: .developerTunnel, thirdPartyNeedsCleanup: true
+        ), [.thirdPartyWLOC])
     }
 
     func testSameModeRequiresNothing() {

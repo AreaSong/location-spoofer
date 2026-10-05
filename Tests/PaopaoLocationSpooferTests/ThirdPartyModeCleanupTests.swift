@@ -25,9 +25,7 @@ final class ThirdPartyModeCleanupTests: XCTestCase {
 
         let cleanup = RuntimeModeSwitchCleanup.required(
             from: mode.mode, to: .developerTunnel,
-            thirdPartyNeedsCleanup: manager.needsCoordinateCleanup(
-                hasInitializedThirdParty: mode.isInitialized(.thirdParty)
-            )
+            thirdPartyNeedsCleanup: await manager.prepareForModeSwitch()
         )
         if cleanup.contains(.thirdPartyWLOC) { try await manager.clear() }
         mode.setMode(.developerTunnel, disablesPreview: false)
@@ -42,14 +40,15 @@ final class ThirdPartyModeCleanupTests: XCTestCase {
             requester: FakeThirdPartyRequester(error: URLError(.timedOut)), defaults: defaults
         )
         do { _ = try await manager.query(); XCTFail("应报告检测失败") } catch {}
-        XCTAssertFalse(manager.needsCoordinateCleanup(hasInitializedThirdParty: false))
+        XCTAssertFalse(manager.needsCoordinateCleanup())
     }
 
-    func testInitializedClientStillRequiresClearWithoutNewTrackingKey() {
+    func testInitializedClientWithoutCoordinateEvidenceDoesNotRequireClear() {
         let manager = ThirdPartyProxyManager(
             requester: FakeThirdPartyRequester(body: "not-json"), defaults: defaults
         )
-        XCTAssertTrue(manager.needsCoordinateCleanup(hasInitializedThirdParty: true))
+        defaults.set(true, forKey: "thirdPartyRuntimeModeInitialized")
+        XCTAssertFalse(manager.needsCoordinateCleanup())
     }
 
     func testTimedOutSavePersistsCleanupObligationAcrossRestartAndQueryFailure() async {
@@ -60,7 +59,7 @@ final class ThirdPartyModeCleanupTests: XCTestCase {
 
         let restored = ThirdPartyProxyManager(requester: requester, defaults: defaults)
         do { _ = try await restored.query(); XCTFail("应报告检测失败") } catch {}
-        XCTAssertTrue(restored.needsCoordinateCleanup(hasInitializedThirdParty: false))
+        XCTAssertTrue(restored.needsCoordinateCleanup())
     }
 
     func testCoordinateMismatchStillRequiresClear() async {
@@ -70,7 +69,7 @@ final class ThirdPartyModeCleanupTests: XCTestCase {
         )
         do { _ = try await manager.save(favorite); XCTFail("应拒绝不一致回读") } catch {}
         XCTAssertNil(manager.activeSettings)
-        XCTAssertTrue(manager.needsCoordinateCleanup(hasInitializedThirdParty: false))
+        XCTAssertTrue(manager.needsCoordinateCleanup())
     }
 
     func testQueryOfExistingCoordinatesPersistsCleanupObligation() async throws {
@@ -78,7 +77,7 @@ final class ThirdPartyModeCleanupTests: XCTestCase {
         let manager = ThirdPartyProxyManager(requester: requester, defaults: defaults)
         _ = try await manager.query()
         let restored = ThirdPartyProxyManager(requester: requester, defaults: defaults)
-        XCTAssertTrue(restored.needsCoordinateCleanup(hasInitializedThirdParty: false))
+        XCTAssertTrue(restored.needsCoordinateCleanup())
     }
 
     func testFailedClearKeepsObligationAndSuccessfulClearRemovesIt() async throws {
@@ -90,12 +89,11 @@ final class ThirdPartyModeCleanupTests: XCTestCase {
         let manager = ThirdPartyProxyManager(requester: requester, defaults: defaults)
         _ = try await manager.save(favorite)
         do { try await manager.clear(); XCTFail("应报告清理失败") } catch {}
-        XCTAssertTrue(manager.needsCoordinateCleanup(hasInitializedThirdParty: false))
+        XCTAssertTrue(manager.needsCoordinateCleanup())
 
         try await manager.clear()
         let restored = ThirdPartyProxyManager(requester: requester, defaults: defaults)
-        XCTAssertFalse(restored.needsCoordinateCleanup(hasInitializedThirdParty: false))
-        XCTAssertTrue(restored.needsCoordinateCleanup(hasInitializedThirdParty: true))
+        XCTAssertFalse(restored.needsCoordinateCleanup())
     }
 
     func testSuspendedSaveNeverSentDoesNotCreateCleanupObligation() async {
@@ -104,7 +102,7 @@ final class ThirdPartyModeCleanupTests: XCTestCase {
         manager.suspendWrites()
         do { _ = try await manager.save(favorite); XCTFail("应拒绝暂停后的写入") } catch {}
         XCTAssertTrue(requester.requestedURLs.isEmpty)
-        XCTAssertFalse(manager.needsCoordinateCleanup(hasInitializedThirdParty: false))
+        XCTAssertFalse(manager.needsCoordinateCleanup())
     }
 
     func testInFlightSaveIsTrackedBeforeResponseAndSurvivesCancellation() async throws {
@@ -113,50 +111,50 @@ final class ThirdPartyModeCleanupTests: XCTestCase {
         let manager = ThirdPartyProxyManager(requester: requester, defaults: defaults)
         let save = Task { try await manager.save(favorite) }
         await fulfillment(of: [entered], timeout: 2)
-        XCTAssertTrue(manager.needsCoordinateCleanup(hasInitializedThirdParty: false))
+        XCTAssertTrue(manager.needsCoordinateCleanup())
         let restored = ThirdPartyProxyManager(requester: requester, defaults: defaults)
-        XCTAssertTrue(restored.needsCoordinateCleanup(hasInitializedThirdParty: false))
+        XCTAssertTrue(restored.needsCoordinateCleanup())
 
         manager.suspendWrites()
         save.cancel()
         await requester.release()
         do { _ = try await save.value; XCTFail("应丢弃旧写入结果") } catch is CancellationError {}
-        XCTAssertTrue(manager.needsCoordinateCleanup(hasInitializedThirdParty: false))
+        XCTAssertTrue(manager.needsCoordinateCleanup())
         try await manager.clear()
-        XCTAssertFalse(manager.needsCoordinateCleanup(hasInitializedThirdParty: false))
+        XCTAssertFalse(manager.needsCoordinateCleanup())
     }
 
-    func testInFlightQueryConservativelyRequiresCleanup() async throws {
+    func testInFlightQueryRecordsCoordinatesEvenWhenItsUIResultIsCancelled() async throws {
         let entered = expectation(description: "查询请求已发送")
         let requester = ControlledThirdPartyRequester(entered: entered)
         let manager = ThirdPartyProxyManager(requester: requester, defaults: defaults)
         let query = Task { try await manager.query() }
         await fulfillment(of: [entered], timeout: 2)
-        XCTAssertTrue(manager.needsCoordinateCleanup(hasInitializedThirdParty: false))
+        XCTAssertFalse(manager.needsCoordinateCleanup())
         manager.suspendWrites()
         await requester.release()
         do { _ = try await query.value; XCTFail("应丢弃旧查询结果") } catch is CancellationError {}
+        XCTAssertTrue(manager.needsCoordinateCleanup())
     }
 
-    func testCleanupSnapshotSurvivesQueryFinishingBetweenSuspensionAndSwitchTask() async throws {
+    func testModeSwitchWaitsForActualQueryEvidence() async throws {
         let entered = expectation(description: "查询请求已发送")
         let requester = ControlledThirdPartyRequester(entered: entered)
         let manager = ThirdPartyProxyManager(requester: requester, defaults: defaults)
         let query = Task { try await manager.query() }
         await fulfillment(of: [entered], timeout: 2)
-        let needsCleanup = manager.needsCoordinateCleanup(hasInitializedThirdParty: false)
-        manager.suspendWrites()
+        let preparing = expectation(description: "切换判断已开始等待")
+        let prepare = Task { preparing.fulfill(); return await manager.prepareForModeSwitch() }
+        await fulfillment(of: [preparing], timeout: 2)
+        XCTAssertFalse(manager.needsCoordinateCleanup())
         await requester.release()
         do { _ = try await query.value; XCTFail("应丢弃旧查询结果") } catch is CancellationError {}
-        XCTAssertFalse(manager.isRequesting)
-        XCTAssertNil(manager.activeSettings)
-
-        XCTAssertEqual(RuntimeModeSwitchCleanup.required(
-            from: .thirdParty, to: .developerTunnel, thirdPartyNeedsCleanup: needsCleanup
-        ), [.thirdPartyWLOC])
+        let needsCleanup = await prepare.value
+        XCTAssertTrue(needsCleanup)
         try await manager.clear()
         let actions = await requester.actions()
         XCTAssertEqual(actions, ["query", "clear"])
+        XCTAssertFalse(manager.needsCoordinateCleanup())
     }
 
     func testCancelledQueryThenFailedClearCannotBypassCleanupOnRetry() async throws {
@@ -165,7 +163,7 @@ final class ThirdPartyModeCleanupTests: XCTestCase {
         let manager = ThirdPartyProxyManager(requester: requester, defaults: defaults)
         let query = Task { try await manager.query() }
         await fulfillment(of: [entered], timeout: 2)
-        XCTAssertTrue(manager.needsCoordinateCleanup(hasInitializedThirdParty: false))
+        XCTAssertFalse(manager.needsCoordinateCleanup())
         let submitted = expectation(description: "清理已排队")
         let clear = Task { submitted.fulfill(); try await manager.clear() }
         await fulfillment(of: [submitted], timeout: 2)
@@ -174,10 +172,10 @@ final class ThirdPartyModeCleanupTests: XCTestCase {
         do { try await clear.value; XCTFail("应报告清理失败") } catch is ThirdPartyProxyError {}
 
         let restored = ThirdPartyProxyManager(requester: requester, defaults: defaults)
-        XCTAssertTrue(restored.needsCoordinateCleanup(hasInitializedThirdParty: false))
+        XCTAssertTrue(restored.needsCoordinateCleanup())
         XCTAssertEqual(RuntimeModeSwitchCleanup.required(
             from: .thirdParty, to: .developerTunnel,
-            thirdPartyNeedsCleanup: restored.needsCoordinateCleanup(hasInitializedThirdParty: false)
+            thirdPartyNeedsCleanup: restored.needsCoordinateCleanup()
         ), [.thirdPartyWLOC])
     }
 }
