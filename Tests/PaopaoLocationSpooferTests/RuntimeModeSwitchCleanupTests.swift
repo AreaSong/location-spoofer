@@ -67,4 +67,37 @@ final class RuntimeModeSwitchCleanupTests: XCTestCase {
             [.thirdPartyWLOC]
         )
     }
+
+    func testUserConfirmedDisabledThirdPartyCanLeaveForEitherMode() {
+        for destination in [ProxyRuntimeMode.localWiFi, .developerTunnel] {
+            let recovery = ThirdPartyModeSwitchRecovery(
+                source: .thirdParty, destination: destination, diagnosis: "模块未接管请求"
+            )
+            XCTAssertTrue(RuntimeModeSwitchCleanup.required(
+                from: .thirdParty, to: destination, confirmedThirdPartyDisabled: recovery
+            ).isEmpty)
+        }
+    }
+
+    func testConfirmationCannotBypassDeveloperSimulationClear() {
+        let recovery = ThirdPartyModeSwitchRecovery(
+            source: .developerTunnel, destination: .localWiFi, diagnosis: "模块未接管请求"
+        )
+        XCTAssertEqual(RuntimeModeSwitchCleanup.mustSucceed(
+            from: .developerTunnel, to: .localWiFi, confirmedThirdPartyDisabled: recovery
+        ), [.developerSimulation])
+    }
+
+    func testConfirmationDoesNotApplyToDifferentSourceOrDestination() {
+        let recovery = ThirdPartyModeSwitchRecovery(
+            source: .thirdParty, destination: .developerTunnel, diagnosis: "模块未接管请求"
+        )
+        XCTAssertEqual(RuntimeModeSwitchCleanup.required(
+            from: .thirdParty, to: .localWiFi, confirmedThirdPartyDisabled: recovery
+        ), [.thirdPartyWLOC])
+        XCTAssertEqual(RuntimeModeSwitchCleanup.required(
+            from: .developerTunnel, to: .localWiFi, confirmedThirdPartyDisabled: recovery
+        ), [.developerSimulation, .thirdPartyWLOC])
+        XCTAssertFalse(recovery.applies(from: .localWiFi, to: .developerTunnel))
+    }
 }

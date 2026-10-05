@@ -277,6 +277,21 @@ extension SettingsView {
         .alert(item: $updateCheckResult) { result in
             updateCheckAlert(for: result)
         }
+        .alert(ThirdPartyModeSwitchRecovery.title, isPresented: Binding(
+            get: { thirdPartyClearRecovery != nil },
+            set: { if !$0 { thirdPartyClearRecovery = nil } }
+        ), presenting: thirdPartyClearRecovery) { recovery in
+            Button("重试清理") {
+                guard recovery.applies(from: runtimeMode.mode, to: recovery.destination) else { return }
+                switchRuntimeMode(to: recovery.destination)
+            }
+            Button(ThirdPartyModeSwitchRecovery.continueTitle) {
+                switchRuntimeMode(to: recovery.destination, confirmedThirdPartyDisabled: recovery)
+            }
+            Button("取消", role: .cancel) {}
+        } message: { recovery in
+            Text(recovery.message)
+        }
         .confirmationDialog(
             "重置证书？",
             isPresented: $showCertificateResetConfirmation,

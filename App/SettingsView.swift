@@ -46,6 +46,7 @@ struct SettingsView: View {
     @State var proxyOperationError = ""
     @State var proxyOperationAlertTitle = "代理操作失败"
     @State var modeOperationRunning = false
+    @State var thirdPartyClearRecovery: ThirdPartyModeSwitchRecovery?
     @State var showCertificateResetConfirmation = false
     @State var githubDestination: SafariDestination?
     @State var isCheckingForUpdates = false

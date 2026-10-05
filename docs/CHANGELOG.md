@@ -4,10 +4,11 @@
 
 ## 待发布
 
-- [v1.1.1.0](releases/v1.1.1.0.md) — 2026-10-05（本地候选包，尚未打 tag）
+- [v1.1.1.1](releases/v1.1.1.1.md) — 2026-10-05（本地候选包，尚未打 tag）
 
 ## 已发布
 
+- [v1.1.1.0](releases/v1.1.1.0.md) — 2026-10-05
 - [v1.1.0.1](https://github.com/AreaSong/location-spoofer/releases/tag/v1.1.0.1) — 2026-10-03
 - [v1.1.0.0](https://github.com/AreaSong/location-spoofer/releases/tag/v1.1.0.0) — 2026-09-28
 - [v1.0.9](https://github.com/AreaSong/location-spoofer/releases/tag/v1.0.9) — 2026-09-28

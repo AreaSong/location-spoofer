@@ -16,7 +16,7 @@ responses in a controlled test environment.
 [![iOS 15+](https://img.shields.io/badge/iOS-15%2B-111111?logo=apple)](project.yml)
 [![Swift 5.9](https://img.shields.io/badge/Swift-5.9-F05138)](project.yml)
 [![Go 1.23+](https://img.shields.io/badge/Go-1.23%2B-00ADD8?logo=go)](Core/go.mod)
-[![Version](https://img.shields.io/badge/version-v1.1.1.0-2563EB)](docs/CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-v1.1.1.1-2563EB)](docs/CHANGELOG.md)
 
 [Features](#feature-overview) ·
 [How It Works](#how-it-works) ·
@@ -174,7 +174,7 @@ In this mode:
 - Modules and scripts are served from this app by default (`127.0.0.1:18766`); keep the app open while importing or updating;
 - The third-party client owns coordinate persistence;
 - Wi-Fi, 4G, and 5G support depends on the client;
-- The configuration may remain active after Location Spoofer closes. Leaving Third-party Proxy Mode, and switching to APP Mode, first clears the saved WLOC coordinates; if clearing fails, the current mode stays. If third-party setup has never completed and there are no recorded coordinate writes or pending requests, simply selecting Third-party Proxy Mode does not prevent returning to Developer Tunnel Mode. A sent write that times out or fails readback may still have been saved, and its pending cleanup state survives an app restart. Leaving Developer Tunnel Mode first turns off system location simulation; if that fails, Developer Tunnel Mode stays.
+- The configuration may remain active after Location Spoofer closes. Leaving Third-party Proxy Mode, and switching to APP Mode, first clears the saved WLOC coordinates; if clearing fails, the current mode initially stays and the app offers Retry Cleanup, Disabled — Continue Switching, and Cancel. To continue, first disable the WLOC module or disconnect the proxy/VPN in the third-party client, then confirm. This does not erase the client’s old coordinates or the app’s pending cleanup record; clear the old coordinates before re-enabling the third-party proxy. If third-party setup has never completed and there are no recorded coordinate writes or pending requests, simply selecting Third-party Proxy Mode does not prevent returning to Developer Tunnel Mode. A sent write that times out or fails readback may still have been saved, and its pending cleanup state survives an app restart. Leaving Developer Tunnel Mode first turns off system location simulation; if that fails, Developer Tunnel Mode stays.
 
 #### Configuration API and Client Integration
 

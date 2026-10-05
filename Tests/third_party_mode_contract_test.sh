@@ -193,8 +193,8 @@ grep -q '关闭系统定位服务' "$ROOT/App/TipViews.swift" \
 grep -q '还不跳点再重启手机' "$ROOT/App/TipViews.swift" \
   || fail "iOS 26 third-party activation must keep reboot as a fallback"
 grep -q 'if spoofState == .active' "$MAP" || fail "manual help must follow the shared spoof state"
-grep -q 'MARKETING_VERSION: "1.1.1.0"' "$ROOT/project.yml" || fail "marketing version must be 1.1.1.0"
-grep -q 'CURRENT_PROJECT_VERSION: "13"' "$ROOT/project.yml" || fail "build version must be 13"
+grep -q 'MARKETING_VERSION: "1.1.1.1"' "$ROOT/project.yml" || fail "marketing version must be 1.1.1.1"
+grep -q 'CURRENT_PROJECT_VERSION: "14"' "$ROOT/project.yml" || fail "build version must be 14"
 
 grep -q 'func mustSucceed' "$ROOT/Shared/RuntimeModeSwitchCleanup.swift" \
   || fail "mode cleanup must define mandatory persisted-location cleanup"
@@ -208,5 +208,13 @@ snapshot_line="$(grep -n 'let thirdPartyNeedsCleanup = thirdPartyProxy.needsCoor
 suspend_line="$(grep -n 'session.beginModeCleanup()' "$ROOT/App/SettingsView+AppMode.swift" | cut -d: -f1)"
 test "$snapshot_line" -lt "$suspend_line" \
   || fail "mode switch must capture in-flight cleanup obligations before suspending old requests"
+grep -Fq 'Button("重试清理")' "$SETTINGS" \
+  || fail "third-party cleanup failures must offer retry"
+grep -Fq 'Button(ThirdPartyModeSwitchRecovery.continueTitle)' "$SETTINGS" \
+  || fail "third-party cleanup failures must offer an explicit disabled-client recovery action"
+grep -Fq 'switchRuntimeMode(to: recovery.destination, confirmedThirdPartyDisabled: recovery)' "$SETTINGS" \
+  || fail "confirmed recovery must reach the normal mode switching workflow"
+grep -Fq 'if let recovery, !recovery.applies(from: runtimeMode.mode, to: newMode) { return }' "$ROOT/App/SettingsView+AppMode.swift" \
+  || fail "stale recovery actions must not switch another source or destination"
 
 echo "PASS: third-party proxy mode contract"

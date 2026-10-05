@@ -27,8 +27,13 @@ extension SettingsView {
         AppModeNetworkRequirement.blockedMessage(net.appModeNetworkStatus)
     }
 
-    func switchRuntimeMode(to newMode: ProxyRuntimeMode) {
+    func switchRuntimeMode(
+        to newMode: ProxyRuntimeMode,
+        confirmedThirdPartyDisabled recovery: ThirdPartyModeSwitchRecovery? = nil
+    ) {
         guard newMode != runtimeMode.mode, !modeOperationRunning else { return }
+        if let recovery, !recovery.applies(from: runtimeMode.mode, to: newMode) { return }
+        thirdPartyClearRecovery = nil
         if newMode == .localWiFi, let message = appModeNetworkBlockedMessage {
             proxyOperationAlertTitle = AppModeNetworkRequirement.title
             proxyOperationError = message
@@ -49,7 +54,8 @@ extension SettingsView {
             let cleanup = RuntimeModeSwitchCleanup.required(
                 from: currentMode,
                 to: newMode,
-                thirdPartyNeedsCleanup: thirdPartyNeedsCleanup
+                thirdPartyNeedsCleanup: thirdPartyNeedsCleanup,
+                confirmedThirdPartyDisabled: recovery
             )
             if cleanup.contains(.developerSimulation) {
                 if let failure = await RouteLocationSetupStore.shared.clear() {
@@ -65,79 +71,79 @@ extension SettingsView {
                     return
                 }
             }
-            switch newMode {
-            case .thirdParty:
-                if actions.virtualLocationEnabled { actions.clear() }
-                proxy.stop()
-                setup.completeSetup()
-                runtimeMode.setMode(.thirdParty)
-                ThirdPartyModuleRuntime.syncServerWithDistribution()
-                if runtimeMode.isInitialized(.thirdParty) {
-                    do {
-                        _ = try await thirdPartyProxy.query()
-                        runtimeFailure.clearThirdParty()
-                        proxyOperationAlertTitle = "模式已切换"
-                        proxyOperationError = "第三方代理模式检测通过。请关闭 Wi-Fi 中的 127.0.0.1:8888 手动代理，避免双重拦截。"
-                    } catch {
-                        presentThirdPartyUnavailable(for: error)
-                    }
-                } else {
-                    setup.requestThirdPartyOnboarding()
-                    dismiss()
-                }
-            case .developerTunnel:
-                if actions.virtualLocationEnabled { actions.clear() }
-                proxy.stop()
-                ThirdPartyModuleRuntime.shutdown()
-                runtimeMode.setMode(.developerTunnel)
-                if runtimeMode.isInitialized(.developerTunnel) {
+            if recovery != nil {
+                RuntimeLogger.warning("APP", "Mode", "用户确认已停用第三方代理，保留待清理记录并继续切换", details: [
+                    "目标模式": newMode.displayName
+                ])
+            }
+            await applyRuntimeMode(newMode)
+        }
+    }
+
+    private func applyRuntimeMode(_ newMode: ProxyRuntimeMode) async {
+        switch newMode {
+        case .thirdParty:
+            if actions.virtualLocationEnabled { actions.clear() }
+            proxy.stop()
+            setup.completeSetup()
+            runtimeMode.setMode(.thirdParty)
+            ThirdPartyModuleRuntime.syncServerWithDistribution()
+            if runtimeMode.isInitialized(.thirdParty) {
+                do {
+                    _ = try await thirdPartyProxy.query()
+                    runtimeFailure.clearThirdParty()
                     proxyOperationAlertTitle = "模式已切换"
-                    let message = "已切换到开发者隧道模式。请确认 LocalDevVPN 隧道已连接，并已导入配对文件。"
-                    proxyOperationError = message
-                } else {
-                    setup.requestDeveloperOnboarding()
-                    dismiss()
+                    proxyOperationError = "第三方代理模式检测通过。请关闭 Wi-Fi 中的 127.0.0.1:8888 手动代理，避免双重拦截。"
+                } catch {
+                    presentThirdPartyUnavailable(for: error)
                 }
-            case .localWiFi:
-                ThirdPartyModuleRuntime.shutdown()
-                runtimeMode.setMode(.localWiFi)
-                await setup.prepareLocalServices()
-                if runtimeMode.isInitialized(.localWiFi) {
-                    let result = await setup.runVerificationTest()
-                    setup.applyVerificationResult(result, presentSetup: false)
-                    if result.isSuccess {
-                        proxyOperationAlertTitle = "模式已切换"
-                        proxyOperationError = "APP 模式环境检测通过。请停用第三方 WLOC 模块或代理连接，避免双重拦截。"
-                    }
-                } else {
-                    setup.requestSetup()
-                    dismiss()
+            } else {
+                setup.requestThirdPartyOnboarding()
+                dismiss()
+            }
+        case .developerTunnel:
+            if actions.virtualLocationEnabled { actions.clear() }
+            proxy.stop()
+            ThirdPartyModuleRuntime.shutdown()
+            runtimeMode.setMode(.developerTunnel)
+            if runtimeMode.isInitialized(.developerTunnel) {
+                proxyOperationAlertTitle = "模式已切换"
+                let message = "已切换到开发者隧道模式。请确认 LocalDevVPN 隧道已连接，并已导入配对文件。"
+                proxyOperationError = message
+            } else {
+                setup.requestDeveloperOnboarding()
+                dismiss()
+            }
+        case .localWiFi:
+            ThirdPartyModuleRuntime.shutdown()
+            runtimeMode.setMode(.localWiFi)
+            await setup.prepareLocalServices()
+            if runtimeMode.isInitialized(.localWiFi) {
+                let result = await setup.runVerificationTest()
+                setup.applyVerificationResult(result, presentSetup: false)
+                if result.isSuccess {
+                    proxyOperationAlertTitle = "模式已切换"
+                    proxyOperationError = "APP 模式环境检测通过。请停用第三方 WLOC 模块或代理连接，避免双重拦截。"
                 }
+            } else {
+                setup.requestSetup()
+                dismiss()
             }
         }
     }
 
     func presentThirdPartyCoordinateClearBlocked(destination: ProxyRuntimeMode, error: Error) {
         let diagnosis = ThirdPartyProxyError.diagnosis(for: error)
-        let followUp: String
-        switch destination {
-        case .localWiFi:
-            followUp = "请处理后重试，避免旧坐标与 APP 模式同时拦截。"
-        case .developerTunnel:
-            followUp = "请处理后重试，避免第三方客户端中的旧坐标在开发者隧道模式下继续生效。"
-        case .thirdParty:
-            followUp = "请处理后重试。"
-        }
         RuntimeLogger.warning("APP", "Mode", "切换模式前无法清除第三方坐标", details: [
             "目标模式": destination.displayName,
             "错误": error.localizedDescription,
             "原因": diagnosis.title,
             "处理建议": ThirdPartyProxyError.recoverySuggestion(for: error)
         ])
-        proxyOperationAlertTitle = destination == .localWiFi
-            ? "未能切换到 APP 模式"
-            : "未能切换到\(destination.displayName)"
-        proxyOperationError = "无法清除第三方客户端坐标，已保持当前模式。\(diagnosis.summary) \(followUp)"
+        proxyOperationError = ""
+        thirdPartyClearRecovery = ThirdPartyModeSwitchRecovery(
+            source: runtimeMode.mode, destination: destination, diagnosis: diagnosis.summary
+        )
     }
 
     func presentDeveloperSimulationClearBlocked(_ failure: RouteLocationPushFailure) {
