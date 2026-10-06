@@ -192,7 +192,7 @@ struct RoutePlaybackPanel: View {
     }
 
     private func operation(_ title: String, symbol: String, value: String? = nil, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
+        Button { action(); onSelection() } label: {
             HStack {
                 Label(title, systemImage: symbol)
                 Spacer(minLength: 4)

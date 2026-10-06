@@ -102,6 +102,7 @@ struct MapHomeView: View {
     @State var showRouteLocationSetup = false
     @State var showsRoutePanel = false
     @State var homePopup: HomePopup?
+    @State var homeTopHeaderHeight: CGFloat = 156
     @State var showsClearHomeRecents = false
     @State var showExitRouteConfirm = false
     @State var developerLocationError = ""
@@ -285,6 +286,7 @@ struct MapHomeView: View {
             )
 
         }
+        .ignoresSafeArea(.keyboard)
         .navigationBarHidden(true)
         .onChange(of: showsRoutePanelActive) { _ in homePopup = nil }
         .onChange(of: searchFocused) { focused in if focused { homePopup = nil } }
@@ -735,6 +737,7 @@ struct MapHomeView: View {
                 }
             },
             onHelp: {
+                homePopup = nil
                 if spoofState == .active {
                     activeTip = .activation
                 } else {
@@ -742,6 +745,7 @@ struct MapHomeView: View {
                 }
             },
             onToggleFavorite: {
+                homePopup = nil
                 if favorites.selectedFavoriteID != nil {
                     favorites.select(nil)
                 } else {
@@ -749,8 +753,8 @@ struct MapHomeView: View {
                 }
             },
             onOpenSettings: { activeSheet = .settings },
-            onPrimaryTap: handlePeekTap,
-            onSecondaryTap: handleHomeSecondaryTap
+            onPrimaryTap: { homePopup = nil; handlePeekTap() },
+            onSecondaryTap: { homePopup = nil; handleHomeSecondaryTap() }
         )
     }
 

@@ -2,29 +2,56 @@ import SwiftUI
 import UIKit
 
 extension MapHomeView {
+    @ViewBuilder
     func homeTopArea(availableHeight: CGFloat) -> some View {
-        HomeFittingScrollView(maxHeight: availableHeight) {
-            VStack(alignment: .leading, spacing: 6) {
+        if searchFocused || search.isSearching || !search.results.isEmpty || !search.error.isEmpty {
+            VStack(spacing: 6) {
                 topControls
                 if let block = locationUseBlock {
-                    locationUnavailableOverlay(block)
+                    HomeFittingScrollView(maxHeight: 80) { locationUnavailableOverlay(block) }
                         .onAppear { pauseRouteIfLocationBlocked() }
                 }
-                if searchFocused || search.isSearching || !search.results.isEmpty || !search.error.isEmpty {
-                    searchResultList
-                } else {
-                    homeCoordinateSummary
-                    homeModeAndEntries
-                    if let popup = homePopup, popup.isTop {
-                        HomePopupSurface(title: popup.title, onClose: { homePopup = nil }) {
-                            homeTopPopup(popup)
-                        }
+                searchResultList
+            }
+            .frame(maxHeight: availableHeight, alignment: .top)
+            .accessibilityIdentifier("home.topArea")
+        } else {
+            let popup = homePopup.flatMap { $0.isTop ? $0 : nil }
+            let headerLimit = MapHomeOverlayRegions.topHeaderLimit(availableHeight: availableHeight,
+                                                                  measuredHeight: homeTopHeaderHeight, showsPopup: popup != nil)
+            VStack(spacing: 6) {
+                if headerLimit > 0 {
+                    HomeFittingScrollView(maxHeight: headerLimit) {
+                        homeTopHeader
+                            .background {
+                                GeometryReader { geometry in
+                                    Color.clear.preference(key: HomeTopHeaderHeightKey.self, value: geometry.size.height)
+                                }
+                            }
+                    }
+                    .onPreferenceChange(HomeTopHeaderHeightKey.self) { if $0 > 0 { homeTopHeaderHeight = $0 } }
+                }
+                if let popup {
+                    HomePopupSurface(title: popup.title, onClose: { homePopup = nil },
+                                     maxHeight: availableHeight - headerLimit - (headerLimit > 0 ? 6 : 0)) {
+                        homeTopPopup(popup)
                     }
                 }
             }
+            .accessibilityIdentifier("home.topArea")
         }
-        .frame(maxHeight: availableHeight, alignment: .top)
-        .accessibilityIdentifier("home.topArea")
+    }
+
+    private var homeTopHeader: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            topControls
+            if let block = locationUseBlock {
+                locationUnavailableOverlay(block)
+                    .onAppear { pauseRouteIfLocationBlocked() }
+            }
+            homeCoordinateSummary
+            homeModeAndEntries
+        }
     }
 
     private var homeCoordinateSummary: some View {
@@ -43,13 +70,14 @@ extension MapHomeView {
 
     private var homeMapTools: some View {
         HStack(spacing: 0) {
-            Button { mapStyle.cycle() } label: { Image(systemName: mapStyle.style.symbolName).frame(width: 44, height: 44) }
+            Button { homePopup = nil; mapStyle.cycle() } label: { Image(systemName: mapStyle.style.symbolName).frame(width: 44, height: 44) }
                 .accessibilityLabel("地图图层").accessibilityValue(mapStyle.style.title)
             Button {
+                homePopup = nil
                 if let url = URL(string: "maps://app") { UIApplication.shared.open(url) }
             } label: { Image(systemName: "map.fill").frame(width: 44, height: 44) }
                 .accessibilityLabel("打开系统地图")
-            Button { requestRealtimeLocation() } label: {
+            Button { homePopup = nil; requestRealtimeLocation() } label: {
                 Group {
                     if realtime.isRequesting { ProgressView() } else { Image(systemName: "location.fill") }
                 }.frame(width: 44, height: 44)
@@ -241,4 +269,9 @@ extension MapHomeView {
             section: section, onSelection: { homePopup = nil }
         )
     }
+}
+
+private enum HomeTopHeaderHeightKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
 }

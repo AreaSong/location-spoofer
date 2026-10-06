@@ -119,7 +119,7 @@ struct MapViewRepresentable: UIViewRepresentable {
         map.addSubview(zoomStack)
         NSLayoutConstraint.activate([
             zoomStack.leadingAnchor.constraint(equalTo: map.safeAreaLayoutGuide.leadingAnchor, constant: 16),
-            zoomStack.topAnchor.constraint(equalTo: map.safeAreaLayoutGuide.topAnchor, constant: 130),
+            zoomStack.centerYAnchor.constraint(equalTo: map.centerYAnchor),
         ])
 
         let tap = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handleTap(_:)))

@@ -6,7 +6,7 @@ import XCTest
 @MainActor
 final class HomeLayoutRenderingTests: XCTestCase {
     func testRegionsProtectCenterAndRespectSafeArea() {
-        for size in [CGSize(width: 375, height: 667), CGSize(width: 393, height: 852), CGSize(width: 667, height: 375)] {
+        for size in [CGSize(width: 320, height: 568), CGSize(width: 375, height: 667), CGSize(width: 393, height: 852), CGSize(width: 667, height: 375)] {
             let safe = EdgeInsets(top: 59, leading: 0, bottom: 34, trailing: 0)
             let regions = MapHomeOverlayRegions(size: size, safeArea: safe)
             for panel in [regions.top, regions.bottom] {
@@ -23,8 +23,55 @@ final class HomeLayoutRenderingTests: XCTestCase {
         }
     }
 
+    func testBoundedPopupKeepsLargeHeaderInsideItsHeight() {
+        for typeSize in [DynamicTypeSize.large, .accessibility5] {
+            let bounds = HomeLayoutBounds()
+            let popup = HomePopupSurface(title: "收藏地点", onClose: {}, maxHeight: 180) {
+                ForEach(0..<20) { index in Text("地点 \(index)").frame(minHeight: 44) }
+            }
+            .environment(\.dynamicTypeSize, typeSize)
+            .background {
+                GeometryReader { geometry in
+                    Color.clear.onAppear { bounds.frames["popup"] = geometry.frame(in: .global) }
+                        .onChange(of: geometry.frame(in: .global)) { bounds.frames["popup"] = $0 }
+                }
+            }
+            let host = UIHostingController(rootView: VStack { popup; Spacer() })
+            let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 375, height: 667))
+            window.rootViewController = host
+            window.makeKeyAndVisible()
+            host.view.frame = window.bounds
+            host.view.layoutIfNeeded()
+            RunLoop.main.run(until: Date().addingTimeInterval(0.2))
+            XCTAssertLessThanOrEqual(bounds.frames["popup"]?.height ?? .infinity, 180)
+            let scrollViews = descendants(of: host.view).compactMap { $0 as? UIScrollView }
+            let scroll = scrollViews.first { $0.contentSize.height > $0.bounds.height + 44 }
+            XCTAssertNotNil(scroll, "Long popup must expose a scrollable range")
+            if let scroll {
+                XCTAssertGreaterThanOrEqual(scroll.bounds.height, 44, "At least one option must remain reachable")
+                scroll.setContentOffset(CGPoint(x: 0, y: scroll.contentSize.height - scroll.bounds.height), animated: false)
+                XCTAssertGreaterThan(scroll.contentOffset.y, 44)
+            }
+            window.isHidden = true
+        }
+    }
+
+    private func descendants(of view: UIView) -> [UIView] {
+        view.subviews.flatMap { [$0] + descendants(of: $0) }
+    }
+
+    func testSmallScreenPopupReplacesHeaderInsteadOfLosingItsContent() {
+        let regions = MapHomeOverlayRegions(size: CGSize(width: 320, height: 568), safeArea: EdgeInsets(top: 20, leading: 0, bottom: 0, trailing: 0))
+        XCTAssertEqual(regions.top.height, 180)
+        XCTAssertEqual(MapHomeOverlayRegions.topHeaderLimit(availableHeight: regions.top.height, measuredHeight: 156, showsPopup: true), 0)
+        XCTAssertEqual(MapHomeOverlayRegions.topHeaderLimit(availableHeight: 292, measuredHeight: 156, showsPopup: true), 156)
+        XCTAssertEqual(MapHomeOverlayRegions.topHeaderLimit(availableHeight: 292, measuredHeight: 230, showsPopup: true), 0)
+        XCTAssertEqual(MapHomeOverlayRegions.topHeaderLimit(availableHeight: 180, measuredHeight: 156, showsPopup: false), 180)
+    }
+
     func testHomeLayouts() {
         let scenarios: [(String, CGSize, Bool, DynamicTypeSize, Bool, Bool)] = [
+            ("small-accessibility5", CGSize(width: 320, height: 568), false, .accessibility5, true, true),
             ("spot-light", CGSize(width: 375, height: 667), false, .large, false, false),
             ("spot-dark-expanded", CGSize(width: 375, height: 667), true, .large, true, false),
             ("route-expanded", CGSize(width: 393, height: 852), false, .large, true, true),
@@ -135,7 +182,8 @@ private struct HomeLayoutFixture: View {
             spotContent: { Button("真实走动 · 已关闭", action: {}).frame(minHeight: 44) },
             routePanel: {
                 RoutePlaybackPanel(route: route, clock: route.clock, currentPair: pair,
-                                   onExit: {}, onSave: {}, onOpenSaved: {}, onRestart: {}, embedded: true)
+                                   onExit: {}, onSave: {}, onOpenSaved: {}, onRestart: {}, embedded: true,
+                                   section: expanded ? .speed : .summary)
             },
             caption: { EmptyView() }, onHelp: {}, onToggleFavorite: {},
             onOpenSettings: {}, onPrimaryTap: {}, onSecondaryTap: {}

@@ -6,6 +6,12 @@ struct MapHomeOverlayRegions {
     let bottom: CGRect
     let protectedCenter: CGRect
 
+    /// 空间不足时让浮窗临时使用整个顶部区域，保证标题和至少一行内容可操作。
+    static func topHeaderLimit(availableHeight: CGFloat, measuredHeight: CGFloat, showsPopup: Bool) -> CGFloat {
+        guard showsPopup else { return availableHeight }
+        return availableHeight - measuredHeight >= 134 ? measuredHeight : 0
+    }
+
     init(size: CGSize, safeArea: EdgeInsets = EdgeInsets()) {
         let gap: CGFloat = 76
         let center = CGPoint(x: size.width / 2, y: size.height / 2)
@@ -38,10 +44,12 @@ struct MapHomeOverlayLayout<Top: View, Bottom: View>: View {
                 top(regions.top.height)
                     .frame(width: regions.top.width, height: regions.top.height, alignment: .top)
                     .clipped()
+                    .contentShape(Rectangle())
                     .position(x: regions.top.midX, y: regions.top.midY)
                 bottom(regions.bottom.height)
                     .frame(width: regions.bottom.width, height: regions.bottom.height, alignment: .bottom)
                     .clipped()
+                    .contentShape(Rectangle())
                     .position(x: regions.bottom.midX, y: regions.bottom.midY)
             }
             .frame(width: size.width, height: size.height)
@@ -106,21 +114,39 @@ enum HomePopup: String, Identifiable {
 struct HomePopupSurface<Content: View>: View {
     let title: String
     let onClose: () -> Void
+    var maxHeight: CGFloat? = nil
     @ViewBuilder let content: () -> Content
+    @State private var headerHeight: CGFloat = 44
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack {
-                Text(title).font(.subheadline.weight(.semibold))
+                Text(title).font(.subheadline.weight(.semibold)).lineLimit(1).minimumScaleFactor(0.7)
                 Spacer(minLength: 4)
-                Button("完成", action: onClose).frame(minWidth: 44, minHeight: 44)
+                Button("完成", action: onClose).fixedSize().frame(minWidth: 44, minHeight: 44)
             }
-            content()
+            .background {
+                GeometryReader { geometry in
+                    Color.clear.preference(key: HomePopupHeaderHeightKey.self, value: geometry.size.height)
+                }
+            }
+            if let maxHeight {
+                HomeFittingScrollView(maxHeight: maxHeight - headerHeight - 12) { content() }
+            } else {
+                content()
+            }
         }
+        .onPreferenceChange(HomePopupHeaderHeightKey.self) { if $0 > 0 { headerHeight = $0 } }
         .padding(.horizontal, 12)
         .padding(.bottom, 8)
         .background(Color(uiColor: .secondarySystemGroupedBackground),
                     in: RoundedRectangle(cornerRadius: AppRadius.control))
+        .clipShape(RoundedRectangle(cornerRadius: AppRadius.control))
         .accessibilityIdentifier("home.popup")
     }
+}
+
+private enum HomePopupHeaderHeightKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
 }
