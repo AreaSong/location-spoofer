@@ -297,7 +297,7 @@ grep -q 'if route.phase == .preparing { return false }' "$MAP_HOME" \
   || fail "walking peek must stay tappable after start and end pins are set"
 grep -q 'if route.start == nil || route.end == nil { return "先设起点和终点" }' "$MAP_HOME" \
   || fail "collapsed walking caption must not say 先设起点和终点 after both pins are set"
-grep -q 'Button("已存路线")' "$ROOT/App/RoutePlaybackPanel.swift" || fail "route panel must expose saved routes"
+grep -q 'operation("已存路线"' "$ROOT/App/RoutePlaybackPanel.swift" || fail "route panel must expose saved routes"
 grep -q 'if routeKeepsRunningWhileSpotShown { return "查看路线" }' "$MAP_HOME" || fail "spot card must return to the running route instead of starting a spot operation"
 grep -q 'showsSpotHelp: spoofState != .idle && !routeKeepsRunningWhileSpotShown' "$MAP_HOME" \
   || fail "idle and running-route states must hide the spot help control"
@@ -307,7 +307,7 @@ if grep -A6 'Text("回到走路")' "$MAP_HOME" | grep -q 'CapsuleChipStyle'; the
 fi
 grep -A2 'if showsRoute {' "$ROOT/App/MapHomeBottomCard.swift" | grep -q 'routePanel' \
   || fail "expanded route details must render the route panel"
-grep -q 'private var expandedDetail' "$ROOT/App/MapHomeBottomCard.swift" \
+grep -q 'HomeFittingScrollView' "$ROOT/App/MapHomeBottomCard.swift" \
   || fail "expanded tools must be scrollable separately from persistent actions"
 ! grep -q 'Label("走路"' "$MAP_HOME" || fail "route walking must not have a second entry in the top menu"
 grep -q 'route.enter()' "$MAP_HOME" || fail "opening a route must not use the current real or spoofed location as the start"
@@ -317,15 +317,16 @@ grep -q 'route.load(saved)' "$MAP_HOME" || fail "saved routes must restore into 
 ! grep -q 'routeDeparturePair' "$MAP_HOME" || fail "route start must not be derived from GPS or the active spoofed point"
 grep -q '直接出现在起点' "$ROOT/Shared/RoutePlaybackController.swift" \
   || fail "playback must jump to the chosen start instead of walking from the current location"
-grep -q 'route.start == nil ? "起点" : "起点已设"' "$ROOT/App/RoutePlaybackPanel.swift" \
+grep -q 'route.start == nil ? "设为起点" : "替换起点"' "$ROOT/App/RoutePlaybackPanel.swift" \
   || fail "route panel must let the user set a start pin"
-grep -q 'route.end == nil ? "终点" : "终点已设"' "$ROOT/App/RoutePlaybackPanel.swift" \
+grep -q 'route.end == nil ? "设为终点" : "替换终点"' "$ROOT/App/RoutePlaybackPanel.swift" \
   || fail "route panel must let the user set an end pin"
-if grep -A18 'private func pinButton' "$ROOT/App/RoutePlaybackPanel.swift" | grep -q 'minHeight: 44'; then
-  fail "start and end pin chips must not use a full 44pt visual height"
-fi
-grep -A18 'private func pinButton' "$ROOT/App/RoutePlaybackPanel.swift" | grep -q 'minHeight: 32' \
-  || fail "start and end pin chips must match the compact capsule visual height"
+grep -q 'minHeight: 44' "$ROOT/App/RoutePlaybackPanel.swift" \
+  || fail "route popup actions must retain accessible touch targets"
+grep -q 'MapHomeOverlayLayout' "$MAP_HOME" \
+  || fail "home controls must use center-protected regions"
+grep -q 'protectedCenter' "$ROOT/App/MapHomeOverlayLayout.swift" \
+  || fail "home layout must reserve the map center"
 grep -q 'MKDirections' "$ROOT/Shared/RouteDirections.swift" || fail "route playback must request along-road directions"
 grep -q 'markerCoordinate' "$MAP_BRIDGE" || fail "the map must show the moving virtual location"
 grep -q '正在从起点沿路走到终点' "$ROOT/Shared/RoutePlaybackController+Status.swift" \
@@ -380,7 +381,7 @@ grep -q 'var mapKitTransportTypes' "$ROOT/Shared/RouteDirections.swift" \
 grep -q 'case .drive: return \[.automobile\]' "$ROOT/Shared/RouteDirections.swift" \
   || fail "driving must prefer automobile directions"
 grep -q 'RouteRepeatMode' "$ROOT/App/RoutePlaybackPanel.swift" || fail "route panel must expose repeat modes"
-grep -q 'Button("保存")' "$ROOT/App/RoutePlaybackPanel.swift" || fail "route panel must let the user save a route"
+grep -q 'operation("保存路线"' "$ROOT/App/RoutePlaybackPanel.swift" || fail "route panel must let the user save a route"
 grep -q 'case .savedRoutes' "$MAP_HOME" || fail "map home must present the saved route list sheet"
 grep -q 'playbackOrigin = Date()' "$ROOT/Shared/RoutePlaybackController.swift" \
   || fail "reversing a route leg must reset the playback clock"
@@ -399,8 +400,8 @@ grep -q 'strideMeters' "$ROOT/Shared/PhysicalWalkStore.swift" \
   || fail "physical walking must persist a step-fallback stride"
 grep -q '定点推送前会偏移' "$SETTINGS_VIEW" \
   || fail "developer-tunnel settings must explain spot offset before push"
-grep -q 'Button("倒着走")' "$ROOT/App/RoutePlaybackPanel.swift" || fail "route panel must let the user reverse a saved path"
-grep -q 'chevron.down' "$ROOT/App/RoutePlaybackPanel.swift" || fail "speed and offset must stay collapsed by default"
+grep -q 'operation("反转路线"' "$ROOT/App/RoutePlaybackPanel.swift" || fail "route panel must let the user reverse a saved path"
+grep -q 'chevron.down' "$ROOT/App/MapHomeView+Controls.swift" || fail "speed and offset must stay collapsed by default"
 grep -q 'formattedRemaining' "$ROOT/Shared/RoutePlayback.swift" || fail "playback must format remaining distance and time"
 grep -q '还剩' "$ROOT/Shared/RoutePlayback.swift" || fail "walking status must show remaining distance"
 grep -q 'setVisibleMapRect' "$ROOT/App/RouteMapAnnotations.swift" \

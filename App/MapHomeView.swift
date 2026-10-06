@@ -101,7 +101,8 @@ struct MapHomeView: View {
     @State var showSigningResignSheet = false
     @State var showRouteLocationSetup = false
     @State var showsRoutePanel = false
-    @State var isHomeDetailsExpanded = false
+    @State var homePopup: HomePopup?
+    @State var showsClearHomeRecents = false
     @State var showExitRouteConfirm = false
     @State var developerLocationError = ""
     @State var lastDeveloperTunnelRecoveryAt: Date?
@@ -267,79 +268,27 @@ struct MapHomeView: View {
             )
             .ignoresSafeArea(.container)
 
-            GeometryReader { geo in
-                VStack(spacing: 10) {
-                    topControls
-                    if let block = locationUseBlock {
-                        locationUnavailableOverlay(block)
-                            .onAppear { pauseRouteIfLocationBlocked() }
-                    }
-                    if search.isSearching || !search.results.isEmpty || !search.error.isEmpty {
-                        searchResultList
-                            .frame(maxHeight: searchFocused ? .infinity : geo.size.height * 0.4)
-                    }
-                    Spacer()
-                    // 编辑搜索时为键盘与可滚动结果让出空间；结束编辑后恢复地图操作。
+            if homePopup != nil {
+                Color.black.opacity(0.001)
+                    .ignoresSafeArea()
+                    .onTapGesture { homePopup = nil }
+                    .accessibilityLabel("关闭浮窗")
+                    .accessibilityAddTraits(.isButton)
+            }
+            MapHomeOverlayLayout(
+                top: { height in homeTopArea(availableHeight: height) },
+                bottom: { height in
                     if !searchFocused {
-                        // 右下角按钮
-                        HStack {
-                            Spacer()
-                            HStack(spacing: 12) {
-                                Button {
-                                    mapStyle.cycle()
-                                } label: {
-                                    Image(systemName: mapStyle.style.symbolName)
-                                        .font(.system(size: 18, weight: .semibold))
-                                        .frame(width: 44, height: 44)
-                                        .background(.regularMaterial, in: Circle())
-                                        .shadow(color: .black.opacity(0.2), radius: 6, y: 3)
-                                }
-                                .accessibilityLabel("地图图层")
-                                .accessibilityValue(mapStyle.style.title)
-                                .accessibilityHint("切换标准、卫星或混合图")
-                                Button {
-                                    if let url = URL(string: "maps://app") {
-                                        UIApplication.shared.open(url)
-                                    }
-                                } label: {
-                                    Image(systemName: "map.fill")
-                                        .font(.system(size: 18, weight: .semibold))
-                                        .frame(width: 44, height: 44)
-                                        .background(.regularMaterial, in: Circle())
-                                        .shadow(color: .black.opacity(0.2), radius: 6, y: 3)
-                                }
-                                Button {
-                                    requestRealtimeLocation()
-                                } label: {
-                                    if realtime.isRequesting {
-                                        ProgressView()
-                                            .frame(width: 44, height: 44)
-                                            .background(.regularMaterial, in: Circle())
-                                            .shadow(color: .black.opacity(0.2), radius: 6, y: 3)
-                                    } else {
-                                        Image(systemName: "location.fill")
-                                            .font(.system(size: 20, weight: .semibold))
-                                            .frame(width: 44, height: 44)
-                                            .background(.regularMaterial, in: Circle())
-                                            .shadow(color: .black.opacity(0.2), radius: 6, y: 3)
-                                    }
-                                }
-                                .disabled(realtimeButtonTask != nil || realtimeRequestTask != nil || realtime.isRequesting)
-                            }
-                        }
-                        .padding(.trailing, 16)
-                        .padding(.bottom, 8)
-                        bottomControls(expandedMaxHeight: geo.size.height * AppLayout.bottomCardExpandedHeightFraction,
-                                       availableHeight: max(160, geo.size.height - 160))
+                        bottomControls(availableHeight: height)
                     }
                 }
-                .padding(.horizontal, 16)
-                .padding(.top, 12)
-                .padding(.bottom, 12)
-                .frame(width: geo.size.width, height: geo.size.height, alignment: .top)
-            }
+            )
+
         }
         .navigationBarHidden(true)
+        .onChange(of: showsRoutePanelActive) { _ in homePopup = nil }
+        .onChange(of: searchFocused) { focused in if focused { homePopup = nil } }
+        .onChange(of: activeSheet) { sheet in if sheet != nil { homePopup = nil } }
         .sheet(item: $activeSheet) { sheet in
             NavigationView {
                 switch sheet {
@@ -756,7 +705,7 @@ struct MapHomeView: View {
         }
     }
 
-    func bottomControls(expandedMaxHeight: CGFloat, availableHeight: CGFloat) -> some View {
+    func bottomControls(availableHeight: CGFloat) -> some View {
         MapHomeBottomCard(
             displayName: homeDisplayName,
             selectionStatus: homeSelectionStatus,
@@ -766,7 +715,6 @@ struct MapHomeView: View {
             runtimeStatusText: homeRuntimeStatusText,
             runtimeStatusTone: homeRuntimeStatusTone,
             showsRoute: showsRoutePanelActive,
-            routeChipSubtitle: routeChipSubtitle,
             showsRouteProgress: showsRoutePanelActive && showsRouteProgress,
             primaryTitle: homePeekTitle,
             primaryAccessibilityLabel: homePeekAccessibilityLabel,
@@ -776,48 +724,15 @@ struct MapHomeView: View {
             secondaryTitle: homeSecondaryAction?.title,
             secondaryDisabled: homeSecondaryAction == .stopLocation && (spotStopPending || spotSwitchPending || spoofState == .verifying),
             showsSpotHelp: spoofState != .idle && !routeKeepsRunningWhileSpotShown && !showsRoutePanelActive,
-            expandedMaxHeight: expandedMaxHeight,
             availableHeight: availableHeight,
-            isExpanded: $isHomeDetailsExpanded,
             playbackClock: route.clock,
-            spotContent: {
-                VStack(alignment: .leading, spacing: 12) {
-                    MapHomeSelectionChips(
-                        hasRecents: !recentSelections.items.isEmpty,
-                        favoritesEmpty: favorites.favorites.isEmpty,
-                        recentChips: {
-                            ForEach(recentSelections.items) { item in
-                                recentChip(item)
-                            }
-                        },
-                        favoriteChips: {
-                            ForEach(favorites.displayedFavorites) { favorite in
-                                favoriteChip(favorite)
-                            }
-                        },
-                        allFavoritesButton: { allFavoritesButton },
-                        onClearRecents: { recentSelections.removeAll() }
-                    )
-                    MapHomeLocationDetails(
-                        pair: currentSelectionPair,
-                        mapSystem: displayedMapCoordinateSystem,
-                        walkStore: physicalWalkStore,
-                        walkController: physicalWalk,
-                        spoofActive: spoofState == .active
-                    )
-                }
-            },
-            routePanel: { routeCard },
+            spotContent: { homeSpotControls },
+            routePanel: { homeRouteControls },
             caption: {
-                HomePeekCaption(
-                    route: route, clock: route.clock, showsRoute: showsRoutePanelActive,
-                    physicalWalkText: physicalWalkPeekText
-                )
-            },
-            onShowSpot: { showsRoutePanel = false },
-            onShowRoute: {
-                enterRoute()
-                showsRoutePanel = true
+                if !showsRoutePanelActive {
+                    HomePeekCaption(route: route, clock: route.clock, showsRoute: false,
+                                    physicalWalkText: physicalWalkPeekText)
+                }
             },
             onHelp: {
                 if spoofState == .active {

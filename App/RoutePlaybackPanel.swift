@@ -1,48 +1,17 @@
 import SwiftUI
 
-private struct RouteOffsetPreset: Hashable {
-    let title: String
-    let meters: Double
-    static let all = [
-        RouteOffsetPreset(title: "贴路", meters: 0),
-        RouteOffsetPreset(title: "15米", meters: 15),
-        RouteOffsetPreset(title: "30米", meters: 30),
-        RouteOffsetPreset(title: "50米", meters: 50)
-    ]
-}
+enum RoutePanelSection {
+    case summary, points, travel, speed, offset, repetition, management
 
-private struct RouteChoiceBar<Item: Hashable>: View {
-    let items: [Item]
-    let title: (Item) -> String
-    let isSelected: (Item) -> Bool
-    var isDisabled = false
-    let onSelect: (Item) -> Void
-
-    var body: some View {
-        HStack(spacing: 6) {
-            ForEach(items, id: \.self) { item in
-                Button {
-                    onSelect(item)
-                } label: {
-                    Text(title(item))
-                        .font(.subheadline.weight(.semibold))
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.75)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 6)
-                        .foregroundStyle(isSelected(item) ? Color.accentColor : Color.primary)
-                        .background(
-                            isSelected(item) ? Color.accentColor.opacity(0.16) : Color.clear,
-                            in: RoundedRectangle(cornerRadius: AppRadius.inset, style: .continuous)
-                        )
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .disabled(isDisabled)
-            }
+    init(popup: HomePopup) {
+        switch popup {
+        case .points: self = .points
+        case .travel: self = .travel
+        case .speed: self = .speed
+        case .offset: self = .offset
+        case .repetition: self = .repetition
+        default: self = .management
         }
-        .padding(4)
-        .background(Color.secondary.opacity(0.12), in: RoundedRectangle(cornerRadius: AppRadius.control, style: .continuous))
     }
 }
 
@@ -55,73 +24,60 @@ struct RoutePlaybackPanel: View {
     let onOpenSaved: () -> Void
     let onRestart: () -> Void
     var embedded = false
-    @State private var showsSpeedOffset = false
-    @State private var showsUtilities = false
+    var section: RoutePanelSection = .summary
+    var onSelection: () -> Void = {}
     @State private var customSpeed = false
     @State private var customOffset = false
 
     var body: some View {
-        controls
-            .padding(embedded ? 0 : 10)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(panelChrome)
-    }
-
-    @ViewBuilder
-    private var panelChrome: some View {
-        if !embedded {
-            RoundedRectangle(cornerRadius: AppRadius.control, style: .continuous)
-                .fill(.regularMaterial)
+        VStack(alignment: .leading, spacing: 4) {
+            switch section {
+            case .summary: summary
+            case .points: points
+            case .travel: travelChoices
+            case .speed: speedChoices
+            case .offset: offsetChoices
+            case .repetition: repeatChoices
+            case .management: management
+            }
+        }
+        .font(.subheadline)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(embedded ? 0 : 10)
+        .background {
+            if !embedded { RoundedRectangle(cornerRadius: AppRadius.control).fill(.thickMaterial) }
         }
     }
 
-    private var controls: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            if let movementSummary {
-                Text(movementSummary)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-            }
+    private var summary: some View {
+        VStack(alignment: .leading, spacing: 4) {
             if let notice = route.pathNotice {
-                Text(notice)
-                    .font(.caption)
-                    .foregroundStyle(.orange)
-                    .lineLimit(2)
+                Label(notice, systemImage: "exclamationmark.triangle")
+                    .font(.caption).foregroundStyle(.orange)
+                    .fixedSize(horizontal: false, vertical: true)
             }
-            actionRow
-            if route.interruption == .pushFailed {
-                restartRow
+            if route.isRouting {
+                Text("正在规划路线").font(.caption)
+            } else if route.start != nil && route.end != nil {
+                Text(distanceLine).font(.caption).foregroundStyle(.secondary)
             }
-            settingsDisclosure
-            if showsSpeedOffset {
-                speedOffsetSection
-            }
-            if route.phase != .playing {
-                DisclosureGroup("路线管理", isExpanded: $showsUtilities) {
-                    utilityRow
-                }
-                .font(.subheadline)
-                .frame(minHeight: 44)
-            }
-            if let exceptionStatus {
-                Text(exceptionStatus)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(2)
-            }
+            if route.interruption == .pushFailed { Button("从头走", action: onRestart).frame(minHeight: 44) }
+            if let exceptionStatus { Text(exceptionStatus).font(.caption).foregroundStyle(.secondary) }
         }
     }
 
-    private var movementSummary: String? {
-        switch route.phase {
-        case .playing, .paused:
-            return RoutePlayback.formattedRemaining(
-                meters: route.remainingMeters,
-                speedMetersPerSecond: route.speedMetersPerSecond
-            )
-        default:
-            return nil
+    private var distanceLine: String {
+        if route.phase == .playing || route.phase == .paused {
+            return RoutePlayback.formattedRemaining(meters: route.remainingMeters, speedMetersPerSecond: route.speedMetersPerSecond)
+        }
+        if !route.canPlay { return "起点和终点太近" }
+        let meters = route.repeatMode == .roundTrip ? route.distanceMeters * 2 : route.distanceMeters
+        let distance = RoutePlayback.formattedDistance(meters)
+        let duration = RoutePlayback.formattedDuration(meters: meters, speedMetersPerSecond: route.speedMetersPerSecond)
+        switch route.repeatMode {
+        case .once: return "\(distance)，\(duration)"
+        case .roundTrip: return "往返 \(distance)，\(duration)"
+        case .loop: return "\(distance)，循环，\(duration)"
         }
     }
 
@@ -129,244 +85,119 @@ struct RoutePlaybackPanel: View {
         let text = clock.statusMessage
         guard !text.isEmpty else { return nil }
         switch route.phase {
-        case .finished:
-            return text
+        case .finished: return text
         case .playing, .paused:
-            if text == "已暂停。" || text == route.playbackStatusMessage() { return nil }
-            return text
-        default:
-            return nil
+            return text == "已暂停。" || text == route.playbackStatusMessage() ? nil : text
+        default: return nil
         }
     }
 
-    @ViewBuilder
-    private var actionRow: some View {
-        if route.phase == .preparing {
-            VStack(alignment: .leading, spacing: 6) {
-                if let preparingSummary {
-                    Text(preparingSummary)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
+    private var points: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text("当前地图选点 · 用于设置路线").font(.caption).foregroundStyle(.secondary)
+            Text(MapHomeCoordinateLine.compactLine(pair: currentPair, mapSystem: CoordinateConverter.currentMapCoordinateSystem))
+                .font(.caption.monospaced()).textSelection(.enabled)
+            if route.phase == .preparing {
+                operation(route.start == nil ? "设为起点" : "替换起点", symbol: "mappin", value: route.start == nil ? "未设置" : "已设置") {
+                    route.setStart(currentPair)
                 }
-                pinRow
+                operation(route.end == nil ? "设为终点" : "替换终点", symbol: "flag", value: route.end == nil ? "未设置" : "已设置") {
+                    route.setEnd(currentPair)
+                }
+                if route.canEditVias {
+                    operation("添加途经点", symbol: "plus", value: "已有 \(route.vias.count) 处") { route.addVia(currentPair) }
+                }
+                if !route.vias.isEmpty {
+                    operation("撤销途经点", symbol: "arrow.uturn.backward") { route.removeLastVia() }
+                }
+            } else {
+                Text("路线运行中或已结束，结束路线后可重新设置点位。")
+                    .font(.footnote).foregroundStyle(.secondary)
+            }
+            if route.phase != .playing && route.canReverse {
+                operation("反转路线", symbol: "arrow.left.arrow.right") { route.reverseDirection() }
             }
         }
     }
 
-    private var preparingSummary: String? {
-        if route.isRouting { return "正在规划路线" }
-        if route.start == nil || route.end == nil { return nil }
-        if !route.canPlay { return "起点和终点太近" }
-        return distanceLine
-    }
-
-    private var distanceLine: String {
-        let meters = route.distanceMeters
-        let duration = RoutePlayback.formattedDuration(
-            meters: route.repeatMode == .roundTrip ? meters * 2 : meters,
-            speedMetersPerSecond: route.speedMetersPerSecond
-        )
-        switch route.repeatMode {
-        case .once:
-            return "\(RoutePlayback.formattedDistance(meters))，\(duration)"
-        case .roundTrip:
-            return "往返 \(RoutePlayback.formattedDistance(meters * 2))，\(duration)"
-        case .loop:
-            return "\(RoutePlayback.formattedDistance(meters))，循环，\(duration)"
+    private var travelChoices: some View {
+        ForEach(Array(RouteTravelMode.allCases), id: \.self) { mode in
+            choice(mode.displayName, selected: mode == route.travelMode) { route.applyTravelMode(mode) }
+                .disabled(route.locksPathEdits || route.isRouting)
         }
     }
 
-    private var settingsDisclosure: some View {
-        Button {
-            showsSpeedOffset.toggle()
-        } label: {
-            HStack(spacing: 6) {
-                Text(routeSummary)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                Spacer(minLength: 0)
-                Image(systemName: showsSpeedOffset ? "chevron.up" : "chevron.down")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
-            }
-            .frame(minHeight: 44)
-            .contentShape(Rectangle())
+    private var repeatChoices: some View {
+        ForEach(Array(RouteRepeatMode.allCases), id: \.self) { mode in
+            choice(mode.displayName, selected: mode == route.repeatMode) { route.applyRepeatMode(mode) }
         }
-        .buttonStyle(.plain)
-        .accessibilityLabel("速度与偏移设置")
-        .accessibilityValue(routeSummary)
     }
 
-    private var routeSummary: String {
-        let speed = RoutePlayback.formattedSpeed(kilometersPerHour: route.speedKilometersPerHour)
-        let offset = route.offsetMeters <= 0 ? "贴路" : "偏移 \(Int(route.offsetMeters.rounded())) 米"
-        return "\(route.travelMode.displayName) · \(speed) · \(offset) · \(route.repeatMode.displayName)"
-    }
-
-    private var pinRow: some View {
-        HStack(spacing: 6) {
-            pinButton(route.start == nil ? "起点" : "起点已设", isSet: route.start != nil) {
-                route.setStart(currentPair)
-            }
-            pinButton(route.end == nil ? "终点" : "终点已设", isSet: route.end != nil) {
-                route.setEnd(currentPair)
-            }
-            if route.canEditVias {
-                pinButton(route.vias.isEmpty ? "途经" : "途经 \(route.vias.count)", isSet: !route.vias.isEmpty) {
-                    route.addVia(currentPair)
+    private var speedChoices: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            ForEach(route.travelMode.speedPresets, id: \.self) { preset in
+                choice(preset.title, selected: abs(route.speedKilometersPerHour - preset.kilometersPerHour) < 0.05) {
+                    route.setSpeedKilometersPerHour(preset.kilometersPerHour)
                 }
             }
-            if !route.vias.isEmpty {
-                pinButton("撤销", isSet: false) { route.removeLastVia() }
+            Button("自定义 · \(RoutePlayback.formattedSpeed(kilometersPerHour: route.speedKilometersPerHour))") { customSpeed.toggle() }
+                .frame(minHeight: 44)
+            if customSpeed || !route.travelMode.speedPresets.contains(where: { abs(route.speedKilometersPerHour - $0.kilometersPerHour) < 0.05 }) {
+                Slider(value: Binding(get: { route.speedKilometersPerHour }, set: { route.setSpeedKilometersPerHour($0) }),
+                       in: 1...route.travelMode.maximumKilometersPerHour, step: 0.5)
+                    .accessibilityLabel("自定义速度，公里每小时")
             }
         }
-        .padding(3)
-        .background(Color.secondary.opacity(0.12), in: RoundedRectangle(cornerRadius: AppRadius.control, style: .continuous))
     }
 
-    private var restartRow: some View {
-        Button("从头走") { onRestart() }
-            .buttonStyle(CapsuleChipStyle())
-    }
-
-    private func pinButton(
-        _ title: String,
-        isSet: Bool,
-        enabled: Bool = true,
-        action: @escaping () -> Void
-    ) -> some View {
-        Button(action: action) {
-            Text(title)
-                .font(.caption.weight(.semibold))
-                .lineLimit(1)
-                .minimumScaleFactor(0.7)
-                .frame(maxWidth: .infinity)
-                .frame(minHeight: 32)
-                .foregroundStyle(isSet ? Color.accentColor : Color.primary)
-                .background(
-                    isSet ? Color.accentColor.opacity(0.16) : Color.clear,
-                    in: RoundedRectangle(cornerRadius: AppRadius.inset, style: .continuous)
-                )
-                .contentShape(Rectangle().inset(by: -6))
+    private var offsetChoices: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            ForEach([0.0, 15, 30, 50], id: \.self) { meters in
+                choice("偏移 \(Int(meters)) 米", selected: abs(route.offsetMeters - meters) < 0.5) { route.setOffsetMeters(meters) }
+            }
+            Button("自定义 · \(Int(route.offsetMeters.rounded())) 米") { customOffset.toggle() }.frame(minHeight: 44)
+            if customOffset || ![0.0, 15, 30, 50].contains(where: { abs(route.offsetMeters - $0) < 0.5 }) {
+                Slider(value: Binding(get: { route.offsetMeters }, set: { route.setOffsetMeters($0) }), in: 0...80, step: 5)
+                    .accessibilityLabel("自定义位置偏移，米")
+            }
         }
-        .buttonStyle(.plain)
-        .disabled(!enabled)
-        .opacity(enabled ? 1 : 0.4)
-        .accessibilityLabel(title)
     }
 
-    private var utilityRow: some View {
-        VStack(alignment: .leading, spacing: 8) {
+    private var management: some View {
+        VStack(alignment: .leading, spacing: 0) {
             if route.phase != .playing {
-                if route.canReverse {
-                    Button("倒着走") { route.reverseDirection() }
-                        .buttonStyle(CapsuleChipStyle())
-                }
                 if route.canPlay && !route.isRouting && !route.waitingForActivation {
-                    Button("保存") { onSave() }
-                        .buttonStyle(CapsuleChipStyle())
+                    operation("保存路线", symbol: "square.and.arrow.down", action: onSave)
                 }
-                Button("已存路线") { onOpenSaved() }
-                    .buttonStyle(CapsuleChipStyle())
+                operation("已存路线", symbol: "folder", action: onOpenSaved)
             }
             if route.phase == .preparing || route.phase == .finished {
-                Button("退出路线") { onExit() }
-                    .buttonStyle(CapsuleChipStyle(tint: .red))
+                operation("退出路线", symbol: "xmark.circle", action: onExit)
+                    .foregroundStyle(.red)
             }
-            Spacer(minLength: 0)
+            if route.phase == .playing { Text("运行中的路线可通过底部按钮暂停或结束。").font(.footnote) }
         }
     }
 
-    private var speedOffsetSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            RouteChoiceBar(
-                items: Array(RouteTravelMode.allCases),
-                title: \.displayName,
-                isSelected: { $0 == route.travelMode },
-                isDisabled: route.locksPathEdits || route.isRouting,
-                onSelect: { route.applyTravelMode($0) }
-            )
-            RouteChoiceBar(
-                items: Array(RouteRepeatMode.allCases),
-                title: \.displayName,
-                isSelected: { $0 == route.repeatMode },
-                onSelect: { route.applyRepeatMode($0) }
-            )
-            metricHeader("速度 km/h", showsCustom: !customSpeed && speedMatchesPreset) {
-                customSpeed = true
-            }
-            RouteChoiceBar(
-                items: route.travelMode.speedPresets,
-                title: \.title,
-                isSelected: { abs(route.speedKilometersPerHour - $0.kilometersPerHour) < 0.05 },
-                onSelect: {
-                    customSpeed = false
-                    route.setSpeedKilometersPerHour($0.kilometersPerHour)
-                }
-            )
-            if customSpeed || !speedMatchesPreset {
-                Slider(
-                    value: speedBinding,
-                    in: 1...route.travelMode.maximumKilometersPerHour,
-                    step: 0.5
-                )
-            }
-            metricHeader("偏移", showsCustom: !customOffset && offsetMatchesPreset) {
-                customOffset = true
-            }
-            RouteChoiceBar(
-                items: RouteOffsetPreset.all,
-                title: \.title,
-                isSelected: { abs(route.offsetMeters - $0.meters) < 0.5 },
-                onSelect: {
-                    customOffset = false
-                    route.setOffsetMeters($0.meters)
-                }
-            )
-            if customOffset || !offsetMatchesPreset {
-                Slider(value: offsetBinding, in: 0...80, step: 5)
-            }
+    private func choice(_ title: String, selected: Bool, action: @escaping () -> Void) -> some View {
+        Button { action(); onSelection() } label: {
+            HStack {
+                Text(title)
+                Spacer(minLength: 4)
+                if selected { Image(systemName: "checkmark").foregroundStyle(Color.accentColor) }
+            }.frame(minHeight: 44).contentShape(Rectangle())
         }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(selected ? .isSelected : [])
     }
 
-    private var speedMatchesPreset: Bool {
-        route.travelMode.speedPresets.contains {
-            abs(route.speedKilometersPerHour - $0.kilometersPerHour) < 0.05
-        }
-    }
-
-    private var offsetMatchesPreset: Bool {
-        RouteOffsetPreset.all.contains { abs(route.offsetMeters - $0.meters) < 0.5 }
-    }
-
-    private func metricHeader(_ title: String, showsCustom: Bool, onCustom: @escaping () -> Void) -> some View {
-        HStack {
-            Text(title)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            Spacer(minLength: 0)
-            if showsCustom {
-                Button("自定义", action: onCustom)
-                    .font(.caption.weight(.semibold))
-                    .buttonStyle(.plain)
-                    .foregroundStyle(Color.accentColor)
-            }
-        }
-    }
-
-    private var speedBinding: Binding<Double> {
-        Binding(
-            get: { route.speedKilometersPerHour },
-            set: { route.setSpeedKilometersPerHour($0) }
-        )
-    }
-
-    private var offsetBinding: Binding<Double> {
-        Binding(
-            get: { route.offsetMeters },
-            set: { route.setOffsetMeters($0) }
-        )
+    private func operation(_ title: String, symbol: String, value: String? = nil, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack {
+                Label(title, systemImage: symbol)
+                Spacer(minLength: 4)
+                if let value { Text(value).font(.caption).foregroundStyle(.secondary) }
+            }.frame(minHeight: 44).contentShape(Rectangle())
+        }.buttonStyle(.plain)
     }
 }

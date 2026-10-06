@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// 关键控制固定在概览区，展开仅增加当前任务的工具，不改变按钮含义。
+/// 摘要与参数在受限区域内滚动，执行按钮固定在底部。
 struct MapHomeBottomCard<SpotContent: View, RoutePanel: View, Caption: View>: View {
     let displayName: String
     let selectionStatus: String
@@ -10,7 +10,6 @@ struct MapHomeBottomCard<SpotContent: View, RoutePanel: View, Caption: View>: Vi
     let runtimeStatusText: String
     let runtimeStatusTone: StatusPill.Tone
     let showsRoute: Bool
-    let routeChipSubtitle: String?
     let showsRouteProgress: Bool
     let primaryTitle: String
     let primaryAccessibilityLabel: String
@@ -20,120 +19,39 @@ struct MapHomeBottomCard<SpotContent: View, RoutePanel: View, Caption: View>: Vi
     let secondaryTitle: String?
     let secondaryDisabled: Bool
     let showsSpotHelp: Bool
-    let expandedMaxHeight: CGFloat
     let availableHeight: CGFloat
-    @Binding var isExpanded: Bool
     @ObservedObject var playbackClock: RoutePlaybackClock
     @ViewBuilder let spotContent: () -> SpotContent
     @ViewBuilder let routePanel: () -> RoutePanel
     @ViewBuilder let caption: () -> Caption
-    let onShowSpot: () -> Void
-    let onShowRoute: () -> Void
     let onHelp: () -> Void
     let onToggleFavorite: () -> Void
     let onOpenSettings: () -> Void
     let onPrimaryTap: () -> Void
     let onSecondaryTap: () -> Void
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.dynamicTypeSize) private var typeSize
-    @State private var detailHeight: CGFloat = 0
     @State private var actionHeight: CGFloat = 48
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            if typeSize.isAccessibilitySize || availableHeight < 360 {
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 10) {
-                        overview
-                        if isExpanded { Divider(); detailContent }
-                    }
+        VStack(alignment: .leading, spacing: 8) {
+            HomeFittingScrollView(maxHeight: availableHeight - actionHeight - 32) {
+                VStack(alignment: .leading, spacing: 6) {
+                    locationHeader
+                    statusRow
+                    detailContent
                 }
-                .frame(maxHeight: max(60, availableHeight - actionHeight - 34))
-                actionRow
-            } else {
-                overview
-                actionRow
-                if isExpanded { Divider(); expandedDetail }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
+            actionRow
         }
         .padding(12)
         .background {
             RoundedRectangle(cornerRadius: AppRadius.card, style: .continuous)
-                .fill(.regularMaterial)
+                .fill(.thickMaterial)
                 .overlay(alignment: .top) { routeProgressBar }
                 .clipShape(RoundedRectangle(cornerRadius: AppRadius.card, style: .continuous))
         }
         .shadow(color: .black.opacity(0.14), radius: 14, y: 6)
-        .animation(reduceMotion ? nil : .easeInOut(duration: 0.22), value: isExpanded)
-    }
-
-    private var overview: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            modeRow
-            locationHeader
-            statusRow
-        }
-    }
-
-    @ViewBuilder
-    private var modeRow: some View {
-        if typeSize.isAccessibilitySize {
-            VStack(alignment: .trailing, spacing: 4) { modeSwitcher; detailButton }
-        } else {
-            HStack(spacing: 12) { modeSwitcher; detailButton }
-        }
-    }
-
-    private var modeSwitcher: some View {
-        HStack(spacing: 4) {
-            modeButton("定点", symbol: "mappin", selected: !showsRoute, action: onShowSpot)
-            modeButton("路线", symbol: "point.topleft.down.curvedto.point.bottomright.up",
-                       selected: showsRoute, action: onShowRoute)
-        }
-        .padding(3)
-        .background(Color.secondary.opacity(0.1), in: RoundedRectangle(cornerRadius: AppRadius.control))
-    }
-
-    private var detailButton: some View {
-        Button { isExpanded.toggle() } label: {
-            Label(isExpanded ? "收起" : "详情", systemImage: isExpanded ? "chevron.down" : "chevron.up")
-                .font(.caption.weight(.semibold))
-                .frame(minWidth: 44, minHeight: 44)
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(isExpanded ? "收起详情" : "展开详情")
-        .accessibilityIdentifier("home.details")
-    }
-
-    private func modeButton(_ title: String, symbol: String, selected: Bool, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            VStack(spacing: 2) {
-                Group {
-                    if typeSize.isAccessibilitySize {
-                        Text(title)
-                    } else {
-                        Label(title, systemImage: symbol)
-                    }
-                }
-                .font(.subheadline.weight(.semibold))
-                if title == "路线", !showsRoute, let subtitle = routeChipSubtitle {
-                    Text(subtitle).font(.caption2)
-                }
-            }
-            .lineLimit(1)
-            .frame(maxWidth: .infinity, minHeight: 44)
-            .foregroundStyle(selected ? Color.primary : Color.secondary)
-            .background {
-                if selected {
-                    RoundedRectangle(cornerRadius: AppRadius.inset)
-                        .fill(Color(uiColor: .secondarySystemGroupedBackground))
-                }
-            }
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityAddTraits(selected ? .isSelected : [])
-        .accessibilityIdentifier(selected ? "home.mode.selected" : "home.mode.other")
     }
 
     private var locationHeader: some View {
@@ -205,7 +123,7 @@ struct MapHomeBottomCard<SpotContent: View, RoutePanel: View, Caption: View>: Vi
                 Color.clear.preference(key: HomeActionHeightKey.self, value: geometry.size.height)
             }
         }
-        .onPreferenceChange(HomeActionHeightKey.self) { actionHeight = $0 }
+        .onPreferenceChange(HomeActionHeightKey.self) { if $0 > 0 { actionHeight = $0 } }
     }
 
     private var primaryButton: some View {
@@ -248,20 +166,6 @@ struct MapHomeBottomCard<SpotContent: View, RoutePanel: View, Caption: View>: Vi
         }
     }
 
-    private var expandedDetail: some View {
-        ScrollView {
-            detailContent
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background {
-                GeometryReader { geometry in
-                    Color.clear.preference(key: HomeDetailHeightKey.self, value: geometry.size.height)
-                }
-            }
-        }
-        .onPreferenceChange(HomeDetailHeightKey.self) { detailHeight = $0 }
-        .frame(height: min(detailHeight > 0 ? detailHeight : expandedMaxHeight, expandedMaxHeight))
-    }
-
     @ViewBuilder
     private var detailContent: some View {
         if showsRoute {
@@ -284,12 +188,7 @@ struct MapHomeBottomCard<SpotContent: View, RoutePanel: View, Caption: View>: Vi
     }
 }
 
-private enum HomeDetailHeightKey: PreferenceKey {
+private enum HomeActionHeightKey: PreferenceKey {
     static var defaultValue: CGFloat = 0
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
-}
-
-private enum HomeActionHeightKey: PreferenceKey {
-    static var defaultValue: CGFloat = 48
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
 }

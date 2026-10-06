@@ -41,7 +41,7 @@ extension MapHomeView {
     }
 
     var homeDisplayName: String {
-        if showsRoutePanelActive && route.phase != .preparing {
+        if showsRoutePanelActive {
             return route.editingSavedRoute?.name ?? "当前路线"
         }
         return mapState.displayName ?? "当前选点"
@@ -57,7 +57,8 @@ extension MapHomeView {
             case .playing: return "正在沿路线移动"
             case .paused: return "路线已暂停"
             case .finished: return "路线已结束"
-            case .preparing, .inactive: return "当前地图选点 · 用于设置路线"
+            case .preparing, .inactive:
+                return route.start == nil || route.end == nil ? "请在上方路线点位中设置起点和终点" : "起终点已设 · 途经 \(route.vias.count) 处"
             }
         }
         if routeKeepsRunningWhileSpotShown { return "当前选点 · 路线仍占用定位" }
