@@ -12,17 +12,24 @@ extension MapHomeView {
     func favoriteChip(_ f: FavoriteLocation) -> some View {
         let selected = favorites.selectedFavoriteID == f.id
         return Button { select(f) } label: {
-            Label(compactChipTitle(f.name), systemImage: selected ? "checkmark.circle.fill" : "mappin")
-                .font(.caption2)
-                .imageScale(.small)
-                .lineLimit(1)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 6)
-                .frame(minHeight: 44)
+            HStack(spacing: 6) {
+                Image(systemName: selected ? "star.fill" : "star")
+                Text(compactChipTitle(f.name)).lineLimit(1)
+            }
+            .font(.caption)
+            .padding(.horizontal, 10)
+            .frame(minWidth: 120, minHeight: 44, alignment: .leading)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .background((selected ? Color.accentColor.opacity(0.16) : Color.secondary.opacity(0.12)), in: Capsule())
-        .overlay(Capsule().stroke(selected ? Color.accentColor.opacity(0.7) : Color.clear))
+        .background(
+            (selected ? Color.accentColor.opacity(0.16) : Color.secondary.opacity(0.12)),
+            in: RoundedRectangle(cornerRadius: AppRadius.inset)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: AppRadius.inset)
+                .stroke(selected ? Color.accentColor.opacity(0.7) : Color.clear)
+        )
         .accessibilityLabel(selected ? "\(f.name)，已选中" : f.name)
     }
 
@@ -30,11 +37,11 @@ extension MapHomeView {
         HStack(spacing: 0) {
             Button { selectRecent(item) } label: {
                 Text(compactChipTitle(item.name))
-                    .font(.caption2)
+                    .font(.caption)
                     .lineLimit(1)
-                    .padding(.leading, 8)
+                    .padding(.leading, 10)
                     .padding(.trailing, 4)
-                    .frame(minHeight: 44)
+                    .frame(minWidth: 88, minHeight: 44, alignment: .leading)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -50,7 +57,7 @@ extension MapHomeView {
             .foregroundStyle(.primary.opacity(0.55))
             .accessibilityLabel("从最近选点中删除")
         }
-        .background(Color.secondary.opacity(0.12), in: Capsule())
+        .background(Color.secondary.opacity(0.12), in: RoundedRectangle(cornerRadius: AppRadius.inset))
     }
 
     /// 芯片只展示缩写，完整名称留给无障碍和标题。

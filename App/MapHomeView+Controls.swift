@@ -100,8 +100,11 @@ extension MapHomeView {
                     homePopupButton(.points, title: "路线点位")
                     homePopupButton(.savedRoutes, title: "已存路线")
                 } else {
-                    homePopupButton(.recents, title: "最近", symbol: "clock")
-                    homePopupButton(.favorites, title: "收藏", symbol: "star")
+                    homePopupButton(
+                        .walk,
+                        title: physicalWalkStore.isEnabled ? "真实走动 · 已开启" : "真实走动",
+                        symbol: "figure.walk"
+                    )
                 }
             }
         }
@@ -133,7 +136,7 @@ extension MapHomeView {
         Button { toggleHomePopup(popup) } label: {
             HStack(spacing: 4) {
                 if let symbol { Image(systemName: symbol) }
-                Text(title).lineLimit(2)
+                Text(title).lineLimit(1)
                 Image(systemName: homePopup == popup ? "chevron.up" : "chevron.down").font(.caption2)
             }
             .font(.caption.weight(.medium))
@@ -227,11 +230,19 @@ extension MapHomeView {
     var homeSpotControls: some View {
         GeometryReader { geometry in
             ZStack(alignment: .top) {
-                homePopupButton(
-                    .walk,
-                    title: "真实走动 · \(physicalWalkStore.isEnabled ? "已开启" : "已关闭")",
-                    symbol: "figure.walk"
+                HomeSpotSwipeLanes(
+                    hasRecents: !recentSelections.items.isEmpty,
+                    favoritesEmpty: favorites.displayedFavorites.isEmpty,
+                    recentBars: {
+                        ForEach(recentSelections.items) { item in recentChip(item) }
+                    },
+                    favoriteBars: {
+                        ForEach(favorites.displayedFavorites) { favorite in favoriteChip(favorite) }
+                    },
+                    onClearRecents: { recentSelections.removeAll() },
+                    onManageFavorites: { activeSheet = .favorites }
                 )
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                 if homePopup == .walk {
                     HomePopupSurface(
                         title: "真实走动",

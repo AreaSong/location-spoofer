@@ -94,10 +94,10 @@ private enum HomeScrollHeightKey: PreferenceKey {
 enum HomePopup: String, Identifiable {
     case recents, favorites, points, savedRoutes, walk, travel, speed, offset, repetition, management
     var id: String { rawValue }
-    /// 定点/路线入口打开的列表，叠在底部卡片上，不改变功能区高度。
+    /// 路线入口打开的列表，叠在底部卡片上，不改变功能区高度。
     var isModeEntry: Bool {
         switch self {
-        case .recents, .favorites, .points, .savedRoutes: return true
+        case .points, .savedRoutes: return true
         default: return false
         }
     }

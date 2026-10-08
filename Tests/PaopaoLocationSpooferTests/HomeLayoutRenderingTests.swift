@@ -211,12 +211,22 @@ final class HomeLayoutRenderingTests: XCTestCase {
             availableHeight: AppLayout.homeFunctionCardHeight,
             playbackClock: route.clock,
             spotContent: {
-                VStack {
-                    Text("真实走动 · 已开启").frame(maxWidth: .infinity, minHeight: 44)
-                    ForEach(0..<8) { index in
-                        Text("额外行 \(index)").frame(minHeight: 44)
-                    }
-                }
+                HomeSpotSwipeLanes(
+                    hasRecents: true,
+                    favoritesEmpty: false,
+                    recentBars: {
+                        ForEach(0..<8) { index in
+                            Text("最近 \(index)").frame(minWidth: 120, minHeight: 44)
+                        }
+                    },
+                    favoriteBars: {
+                        ForEach(0..<8) { index in
+                            Text("收藏 \(index)").frame(minWidth: 120, minHeight: 44)
+                        }
+                    },
+                    onClearRecents: {},
+                    onManageFavorites: {}
+                )
             },
             routePanel: { EmptyView() },
             caption: { EmptyView() },
@@ -230,7 +240,50 @@ final class HomeLayoutRenderingTests: XCTestCase {
         host.view.layoutIfNeeded()
         RunLoop.main.run(until: Date().addingTimeInterval(0.15))
         let scrolls = descendants(of: host.view).compactMap { $0 as? UIScrollView }
-        XCTAssertTrue(scrolls.isEmpty, "定点功能区 must not scroll")
+        XCTAssertFalse(scrolls.filter { $0.contentSize.width > $0.bounds.width + 8 }.isEmpty,
+                       "最近/收藏 must swipe horizontally")
+        XCTAssertTrue(
+            scrolls.allSatisfy { $0.contentSize.height <= $0.bounds.height + 8 },
+            "定点功能区 must not scroll vertically"
+        )
+        window.isHidden = true
+    }
+
+    func testSpotSwipeLanesStayInsideTwoRows() {
+        let bounds = HomeLayoutBounds()
+        let lanes = HomeSpotSwipeLanes(
+            hasRecents: true,
+            favoritesEmpty: false,
+            recentBars: {
+                ForEach(0..<6) { index in
+                    Text("最近地点 \(index)").frame(minWidth: 140, minHeight: 44)
+                }
+            },
+            favoriteBars: {
+                ForEach(0..<6) { index in
+                    Text("收藏地点 \(index)").frame(minWidth: 140, minHeight: 44)
+                }
+            },
+            onClearRecents: {},
+            onManageFavorites: {}
+        )
+        .background {
+            GeometryReader { geometry in
+                Color.clear.onAppear { bounds.frames["lanes"] = geometry.frame(in: .global) }
+                    .onChange(of: geometry.frame(in: .global)) { bounds.frames["lanes"] = $0 }
+            }
+        }
+        let host = UIHostingController(rootView: lanes.padding())
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 200))
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        host.view.frame = window.bounds
+        host.view.layoutIfNeeded()
+        RunLoop.main.run(until: Date().addingTimeInterval(0.15))
+        XCTAssertLessThanOrEqual(bounds.frames["lanes"]?.height ?? .infinity, 100)
+        let scrolls = descendants(of: host.view).compactMap { $0 as? UIScrollView }
+        XCTAssertEqual(scrolls.count, 2)
+        XCTAssertTrue(scrolls.allSatisfy { $0.contentSize.width > $0.bounds.width })
         window.isHidden = true
     }
 
@@ -358,20 +411,7 @@ private struct HomeLayoutFixture: View {
                         MapSearchField(search: search, focus: $focused, onSubmit: {})
                         MapChromeIconButton(systemImage: "list.bullet.rectangle", accessibilityLabel: "日志", action: {})
                     }
-                    Text("22.500000, 113.900000").font(.caption.monospaced()).frame(minHeight: 44)
-                    HStack {
-                        Button("定点", action: {})
-                        Button("路线", action: {})
-                        Button(showsRoute ? "路线点位" : "最近", action: {})
-                        Button(showsRoute ? "已存路线" : "收藏", action: {})
-                    }.frame(minHeight: 44)
-                    if expanded {
-                        HomePopupSurface(title: showsRoute ? "路线点位" : "收藏地点", onClose: {}) {
-                            ForEach(0..<20) { index in
-                                Button("\(index + 1) · 深圳湾公园海风运动广场入口", action: {}).frame(minHeight: 44)
-                            }
-                        }
-                    }
+                    MapHomeCoordinateLine(pair: pair, mapSystem: .wgs84)
                 }
             }
             .background(measure("top"))
@@ -379,7 +419,17 @@ private struct HomeLayoutFixture: View {
             let clusterHeight = min(height, AppLayout.homeFunctionClusterHeight)
             let cardHeight = max(140, clusterHeight - AppLayout.homeModeBarHeight - AppLayout.homeFunctionStackSpacing)
             VStack(spacing: AppLayout.homeFunctionStackSpacing) {
-                Color.clear.frame(height: AppLayout.homeModeBarHeight)
+                HStack(spacing: 6) {
+                    Button("定点", action: {}).frame(minHeight: 44)
+                    Button("路线", action: {}).frame(minHeight: 44)
+                    if showsRoute {
+                        Button("路线点位", action: {}).frame(minHeight: 44)
+                        Button("已存路线", action: {}).frame(minHeight: 44)
+                    } else {
+                        Button("真实走动", action: {}).frame(minHeight: 44)
+                    }
+                }
+                .frame(height: AppLayout.homeModeBarHeight)
                 card(availableHeight: cardHeight)
             }
             .frame(height: clusterHeight, alignment: .top)
@@ -410,7 +460,20 @@ private struct HomeLayoutFixture: View {
             secondaryTitle: showsRoute ? "结束路线" : "停止定位", secondaryDisabled: false, showsSpotHelp: false,
             availableHeight: availableHeight,
             playbackClock: route.clock,
-            spotContent: { Button("真实走动 · 已关闭", action: {}).frame(minHeight: 44) },
+            spotContent: {
+                HomeSpotSwipeLanes(
+                    hasRecents: true,
+                    favoritesEmpty: false,
+                    recentBars: {
+                        Button("最近地点", action: {}).frame(minWidth: 120, minHeight: 44)
+                    },
+                    favoriteBars: {
+                        Button("收藏地点", action: {}).frame(minWidth: 120, minHeight: 44)
+                    },
+                    onClearRecents: {},
+                    onManageFavorites: {}
+                )
+            },
             routePanel: {
                 RoutePlaybackPanel(route: route, clock: route.clock, currentPair: pair,
                                    onExit: {}, onSave: {}, onOpenSaved: {}, onRestart: {}, embedded: true,

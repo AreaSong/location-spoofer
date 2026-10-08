@@ -279,7 +279,17 @@ grep -q 'static let limit = 10' "$ROOT/Shared/RecentSelectionStore.swift" || fai
 grep -q 'rememberDiscreteSelection' "$MAP_HOME" || fail "discrete map selections must record recent history"
 ! grep -A20 'onUserCenterChanged:' "$MAP_HOME" | grep -q 'rememberDiscreteSelection' \
   || fail "panning the map must not record recent selection history"
-grep -q 'tab("最近"' "$MAP_HOME" || fail "map home must expose the recent-selection tab"
+grep -q 'HomeSpotSwipeLanes' "$MAP_HOME" || fail "spot card must tile recents and favorites as swipe lanes"
+grep -q 'home.spot.recents' "$MAP_HOME" || fail "spot recents must be a horizontal swipe lane"
+grep -q 'home.spot.favorites' "$MAP_HOME" || fail "spot favorites must be a horizontal swipe lane"
+if awk '/var homeModeAndEntries/,/private func homeModeButton/' "$ROOT/App/MapHomeView+Controls.swift" | grep -q 'homePopupButton(.recents'; then
+  fail "recents must live inside the spot card, not on the mode bar"
+fi
+awk '/var homeModeAndEntries/,/private func homeModeButton/' "$ROOT/App/MapHomeView+Controls.swift" | grep -q '.walk' \
+  || fail "uncommon walk must sit on the mode bar for spot mode"
+if grep -A8 'var isModeEntry' "$ROOT/App/MapHomeOverlayLayout.swift" | grep -Eq 'recents|favorites'; then
+  fail "recents and favorites must not overlay the card as mode-entry lists"
+fi
 grep -q '代理正常' "$MAP_HOME" || fail "map home must show keep-alive healthy status"
 grep -q '保活中断' "$MAP_HOME" || fail "map home must show keep-alive interruption"
 grep -q '代理未运行' "$MAP_HOME" || fail "map home must show proxy stopped status"
