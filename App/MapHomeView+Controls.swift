@@ -16,10 +16,9 @@ extension MapHomeView {
             .frame(maxHeight: availableHeight, alignment: .top)
             .accessibilityIdentifier("home.topArea")
         } else {
-            HomeFittingScrollView(maxHeight: availableHeight) {
-                homeTopHeader
-            }
-            .accessibilityIdentifier("home.topArea")
+            homeTopHeader
+                .frame(maxWidth: .infinity, maxHeight: availableHeight, alignment: .top)
+                .accessibilityIdentifier("home.topArea")
         }
     }
 

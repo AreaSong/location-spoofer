@@ -349,6 +349,11 @@ grep -q 'MapHomeOverlayLayout' "$MAP_HOME" \
   || fail "home controls must use center-protected regions"
 grep -q 'protectedCenter' "$ROOT/App/MapHomeOverlayLayout.swift" \
   || fail "home layout must reserve the map center"
+if awk '/struct MapHomeOverlayLayout/,/^struct HomeFittingScrollView/' "$ROOT/App/MapHomeOverlayLayout.swift" | grep -q 'contentShape(Rectangle())'; then
+  fail "overlay regions must not swallow map pan and pinch outside the controls"
+fi
+test "$(grep -c 'Spacer(minLength: 0).allowsHitTesting(false)' "$ROOT/App/MapHomeOverlayLayout.swift")" -ge 2 \
+  || fail "empty overlay space must pass map gestures through"
 grep -q 'MKDirections' "$ROOT/Shared/RouteDirections.swift" || fail "route playback must request along-road directions"
 grep -q 'markerCoordinate' "$MAP_BRIDGE" || fail "the map must show the moving virtual location"
 grep -q '正在从起点沿路走到终点' "$ROOT/Shared/RoutePlaybackController+Status.swift" \

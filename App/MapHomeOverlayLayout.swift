@@ -41,17 +41,23 @@ struct MapHomeOverlayLayout<Top: View, Bottom: View>: View {
                               height: geometry.size.height + safe.top + safe.bottom)
             let regions = MapHomeOverlayRegions(size: size, safeArea: safe)
             ZStack(alignment: .topLeading) {
-                top(regions.top.height)
-                    .frame(width: regions.top.width, height: regions.top.height, alignment: .top)
-                    .clipped()
-                    .contentShape(Rectangle())
-                    .position(x: regions.top.midX, y: regions.top.midY)
-                bottom(regions.bottom.height)
-                    .frame(width: regions.bottom.width, height: regions.bottom.height, alignment: .bottom)
-                    .contentShape(Rectangle())
-                    .position(x: regions.bottom.midX, y: regions.bottom.midY)
+                VStack(spacing: 0) {
+                    top(regions.top.height)
+                        .frame(width: regions.top.width, alignment: .top)
+                    Spacer(minLength: 0).allowsHitTesting(false)
+                }
+                .frame(width: regions.top.width, height: regions.top.height, alignment: .top)
+                .clipped()
+                .offset(x: regions.top.minX, y: regions.top.minY)
+                VStack(spacing: 0) {
+                    Spacer(minLength: 0).allowsHitTesting(false)
+                    bottom(regions.bottom.height)
+                        .frame(width: regions.bottom.width, alignment: .bottom)
+                }
+                .frame(width: regions.bottom.width, height: regions.bottom.height, alignment: .bottom)
+                .offset(x: regions.bottom.minX, y: regions.bottom.minY)
             }
-            .frame(width: size.width, height: size.height)
+            .frame(width: size.width, height: size.height, alignment: .topLeading)
             .offset(x: -safe.leading, y: -safe.top)
         }
     }
