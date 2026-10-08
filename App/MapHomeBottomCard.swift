@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// 摘要与参数在受限区域内滚动，执行按钮固定在底部。
+/// 标题、参数、主按钮分区固定；功能区不滚动，避免打开子功能时整块上下挪动。
 struct MapHomeBottomCard<SpotContent: View, RoutePanel: View, Caption: View>: View {
     let displayName: String
     let selectionStatus: String
@@ -30,23 +30,24 @@ struct MapHomeBottomCard<SpotContent: View, RoutePanel: View, Caption: View>: Vi
     let onPrimaryTap: () -> Void
     let onSecondaryTap: () -> Void
     @Environment(\.dynamicTypeSize) private var typeSize
-    @State private var actionHeight: CGFloat = 48
     @State private var showsStatusDetail = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HomeFittingScrollView(maxHeight: availableHeight - actionHeight - 32, fillsMaxHeight: true) {
-                VStack(alignment: .leading, spacing: 6) {
-                    locationHeader
-                    detailContent
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-            }
+            locationHeader
+            detailContent
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                .clipped()
             actionRow
         }
-        .padding(12)
+        .padding(AppLayout.homeFunctionCardPadding)
         .frame(height: availableHeight, alignment: .top)
-        .overlay { statusDetailOverlay }
+        .overlay(alignment: .topLeading) { statusDetailTip }
+        .task(id: showsStatusDetail) {
+            guard showsStatusDetail else { return }
+            try? await Task.sleep(nanoseconds: 2_400_000_000)
+            showsStatusDetail = false
+        }
         .background {
             RoundedRectangle(cornerRadius: AppRadius.card, style: .continuous)
                 .fill(.thickMaterial)
@@ -120,56 +121,27 @@ struct MapHomeBottomCard<SpotContent: View, RoutePanel: View, Caption: View>: Vi
         }
         .buttonStyle(.plain)
         .layoutPriority(1)
-        .accessibilityLabel("查看说明")
-        .accessibilityValue(selectionStatus)
-        .accessibilityHint("显示当前选点或路线的说明")
+        .accessibilityLabel(selectionStatus)
         .accessibilityIdentifier("home.statusDetail")
     }
 
     @ViewBuilder
-    private var statusDetailOverlay: some View {
+    private var statusDetailTip: some View {
         if showsStatusDetail {
-            ZStack(alignment: .top) {
-                Color.black.opacity(0.18)
-                    .contentShape(Rectangle())
-                    .onTapGesture { showsStatusDetail = false }
-                    .accessibilityHidden(true)
-                statusDetailPanel
-                    .padding(8)
-            }
-            .accessibilityIdentifier("home.statusDetail.panel")
-        }
-    }
-
-    private var statusDetailPanel: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text("说明")
-                    .font(.subheadline.weight(.semibold))
-                    .lineLimit(1)
-                Spacer(minLength: 4)
-                Button("完成") { showsStatusDetail = false }
-                    .fixedSize()
-                    .frame(minWidth: 44, minHeight: 44)
-            }
             Text(selectionStatus)
-                .font(.subheadline)
+                .font(.caption)
+                .foregroundStyle(.primary)
+                .lineLimit(2)
                 .fixedSize(horizontal: false, vertical: true)
-            caption()
+                .padding(.horizontal, 10)
+                .padding(.vertical, 8)
+                .frame(maxWidth: 260, alignment: .leading)
+                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .shadow(color: .black.opacity(0.14), radius: 8, y: 3)
+                .padding(.top, 56)
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
         }
-        .padding(.horizontal, 12)
-        .padding(.bottom, 12)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background {
-            RoundedRectangle(cornerRadius: AppRadius.control, style: .continuous)
-                .fill(Color(uiColor: .systemBackground))
-        }
-        .clipShape(RoundedRectangle(cornerRadius: AppRadius.control, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: AppRadius.control, style: .continuous)
-                .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1)
-        }
-        .shadow(color: .black.opacity(0.16), radius: 10, y: 4)
     }
 
     private var runtimeStatusButton: some View {
@@ -228,12 +200,7 @@ struct MapHomeBottomCard<SpotContent: View, RoutePanel: View, Caption: View>: Vi
                 HStack(spacing: 10) { secondaryButton; primaryButton }
             }
         }
-        .background {
-            GeometryReader { geometry in
-                Color.clear.preference(key: HomeActionHeightKey.self, value: geometry.size.height)
-            }
-        }
-        .onPreferenceChange(HomeActionHeightKey.self) { if $0 > 0 { actionHeight = $0 } }
+        .layoutPriority(1)
     }
 
     private var primaryButton: some View {
@@ -296,11 +263,6 @@ struct MapHomeBottomCard<SpotContent: View, RoutePanel: View, Caption: View>: Vi
             .accessibilityHidden(true)
         }
     }
-}
-
-private enum HomeActionHeightKey: PreferenceKey {
-    static var defaultValue: CGFloat = 0
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
 }
 
 enum HomeCardHeaderHeightKey: PreferenceKey {

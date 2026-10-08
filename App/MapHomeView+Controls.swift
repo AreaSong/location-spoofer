@@ -226,14 +226,29 @@ extension MapHomeView {
     }
 
     var homeSpotControls: some View {
-        VStack(spacing: 4) {
-            homePopupButton(.walk, title: "真实走动 · \(physicalWalkStore.isEnabled ? "已开启" : "已关闭")", symbol: "figure.walk")
-            if homePopup == .walk {
-                HomePopupSurface(title: "真实走动", onClose: { homePopup = nil }) {
-                    PhysicalWalkHeadingControls(store: physicalWalkStore, controller: physicalWalk, spoofActive: spoofState == .active)
+        GeometryReader { geometry in
+            ZStack(alignment: .top) {
+                homePopupButton(
+                    .walk,
+                    title: "真实走动 · \(physicalWalkStore.isEnabled ? "已开启" : "已关闭")",
+                    symbol: "figure.walk"
+                )
+                if homePopup == .walk {
+                    HomePopupSurface(
+                        title: "真实走动",
+                        onClose: { homePopup = nil },
+                        maxHeight: max(88, geometry.size.height)
+                    ) {
+                        PhysicalWalkHeadingControls(
+                            store: physicalWalkStore,
+                            controller: physicalWalk,
+                            spoofActive: spoofState == .active
+                        )
+                    }
                 }
             }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
 
     var homeRouteControls: some View {

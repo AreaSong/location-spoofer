@@ -16,8 +16,10 @@ enum AppLayout {
     static let homeModeBarHeight: CGFloat = 52
     /// 模式条与卡片之间的间距。
     static let homeFunctionStackSpacing: CGFloat = 8
-    /// 定点/路线共用的底部卡片高度，切换模式或展开子功能时整块功能区不跳动。
-    static let homeFunctionCardHeight: CGFloat = 292
+    /// 定点/路线共用的底部卡片高度：标题行 + 两行选项 + 主按钮，切换时不跳动。
+    static let homeFunctionCardHeight: CGFloat = 216
+    /// 底部卡片内边距。
+    static let homeFunctionCardPadding: CGFloat = 10
     /// 模式条 + 间距 + 卡片，整块功能控件的锁定高度。
     static var homeFunctionClusterHeight: CGFloat {
         homeModeBarHeight + homeFunctionStackSpacing + homeFunctionCardHeight

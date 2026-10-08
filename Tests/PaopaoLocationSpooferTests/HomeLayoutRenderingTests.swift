@@ -197,6 +197,43 @@ final class HomeLayoutRenderingTests: XCTestCase {
         window.isHidden = true
     }
 
+    func testFunctionCardDoesNotScroll() {
+        let route = RoutePlaybackController()
+        let card = MapHomeBottomCard(
+            displayName: "当前选点",
+            selectionStatus: "已选位置 · 尚未开始",
+            spoofState: .idle, isFavoriteSelected: false, favoriteSaveDisabled: false,
+            runtimeStatusText: "开发者模式", runtimeStatusTone: .ok, showsRoute: false,
+            showsRouteProgress: false,
+            primaryTitle: "连接隧道", primaryAccessibilityLabel: "连接隧道",
+            primarySystemImage: nil, primaryColor: .blue, primaryDisabled: false,
+            secondaryTitle: nil as String?, secondaryDisabled: false, showsSpotHelp: false,
+            availableHeight: AppLayout.homeFunctionCardHeight,
+            playbackClock: route.clock,
+            spotContent: {
+                VStack {
+                    Text("真实走动 · 已开启").frame(maxWidth: .infinity, minHeight: 44)
+                    ForEach(0..<8) { index in
+                        Text("额外行 \(index)").frame(minHeight: 44)
+                    }
+                }
+            },
+            routePanel: { EmptyView() },
+            caption: { EmptyView() },
+            onHelp: {}, onToggleFavorite: {}, onOpenSettings: {}, onPrimaryTap: {}, onSecondaryTap: {}
+        )
+        let host = UIHostingController(rootView: card)
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 400))
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        host.view.frame = window.bounds
+        host.view.layoutIfNeeded()
+        RunLoop.main.run(until: Date().addingTimeInterval(0.15))
+        let scrolls = descendants(of: host.view).compactMap { $0 as? UIScrollView }
+        XCTAssertTrue(scrolls.isEmpty, "定点功能区 must not scroll")
+        window.isHidden = true
+    }
+
     func testModeEntryPopupStaysInsideTheCardHeight() {
         func render(showPopup: Bool) -> CGFloat {
             let bounds = HomeLayoutBounds()

@@ -307,8 +307,11 @@ if grep -A6 'Text("回到走路")' "$MAP_HOME" | grep -q 'CapsuleChipStyle'; the
 fi
 grep -A2 'if showsRoute {' "$ROOT/App/MapHomeBottomCard.swift" | grep -q 'routePanel' \
   || fail "expanded route details must render the route panel"
-grep -q 'HomeFittingScrollView' "$ROOT/App/MapHomeBottomCard.swift" \
-  || fail "expanded tools must be scrollable separately from persistent actions"
+if grep -q 'HomeFittingScrollView' "$ROOT/App/MapHomeBottomCard.swift"; then
+  fail "the function card must stay fixed and not scroll"
+fi
+grep -A2 'var homeSpotControls' "$ROOT/App/MapHomeView+Controls.swift" | grep -q 'GeometryReader' \
+  || fail "spot extras must overlay the parameter zone instead of shifting the card"
 grep -q 'home.runtimeStatus' "$ROOT/App/MapHomeBottomCard.swift" \
   || fail "runtime status must sit on the card title row"
 if grep -q 'private var statusRow' "$ROOT/App/MapHomeBottomCard.swift"; then
