@@ -788,7 +788,10 @@ struct MapHomeView: View {
             },
             onOpenSettings: { activeSheet = .settings },
             onPrimaryTap: { homePopup = nil; handlePeekTap() },
-            onSecondaryTap: { homePopup = nil; handleHomeSecondaryTap() }
+            onSecondaryTap: { homePopup = nil; handleHomeSecondaryTap() },
+            viaTitle: homeViaActionTitle,
+            viaDisabled: homeViaActionDisabled,
+            onViaTap: { homePopup = nil; handleHomeViaTap() }
         )
     }
 

@@ -149,6 +149,22 @@ final class RoutePlaybackTests: XCTestCase {
         XCTAssertEqual(same.wgs84.longitude, pair.wgs84.longitude)
     }
 
+    func testNearestProgressLocatesAViaOnThePolyline() {
+        let start = CoordinateConverter.coordinatePair(
+            lat: 22.494, lon: 113.951, mapCoordinateSystem: .wgs84
+        )
+        let corner = CoordinateConverter.coordinatePair(
+            lat: 22.495, lon: 113.951, mapCoordinateSystem: .wgs84
+        )
+        let end = CoordinateConverter.coordinatePair(
+            lat: 22.495, lon: 113.952, mapCoordinateSystem: .wgs84
+        )
+        let path = RoutePath.make([start, corner, end])
+        XCTAssertEqual(RoutePlayback.nearestProgress(of: start, on: path), 0, accuracy: 0.02)
+        XCTAssertEqual(RoutePlayback.nearestProgress(of: corner, on: path), 0.5, accuracy: 0.08)
+        XCTAssertEqual(RoutePlayback.nearestProgress(of: end, on: path), 1, accuracy: 0.02)
+    }
+
     func testReversedPathStartsAtOriginalEnd() {
         let start = CoordinateConverter.coordinatePair(
             lat: 22.494,
@@ -742,6 +758,49 @@ final class RoutePlaybackControllerTests: XCTestCase {
         route.pause()
     }
 
+    func testAddViaDuringPlaybackContinuesFromCurrent() async {
+        let previous = RouteDirections.provider
+        RouteDirections.provider = EchoRouteDirections()
+        defer { RouteDirections.provider = previous }
+
+        let route = preparedRoute(repeatMode: .once)
+        defer { _ = route.exit() }
+        route.ignoresWriteGate = true
+        route.tickIntervalNanoseconds = 20_000_000
+        route.setSpeedKilometersPerHour(40)
+        route.applyCoordinate = { _ in true }
+        route.requestPlay()
+        route.noteActivated()
+        try? await Task.sleep(nanoseconds: 1_500_000_000)
+        route.pause()
+
+        let here = route.current
+        XCTAssertNotNil(here)
+        XCTAssertGreaterThan(route.progress, 0.04)
+        let extra = CoordinateConverter.coordinatePair(
+            lat: 22.498,
+            lon: 113.955,
+            mapCoordinateSystem: .wgs84
+        )
+        route.addVia(extra)
+        try? await Task.sleep(nanoseconds: 50_000_000)
+        for _ in 0..<40 where route.isRouting {
+            try? await Task.sleep(nanoseconds: 50_000_000)
+        }
+
+        XCTAssertFalse(route.isRouting)
+        XCTAssertEqual(route.phase, .paused)
+        XCTAssertTrue(route.vias.contains(where: {
+            abs($0.wgs84.latitude - extra.wgs84.latitude) < 0.000_000_1
+        }))
+        XCTAssertEqual(route.progress, 0, accuracy: 0.02)
+        let pathStart = route.path?.points.first
+        XCTAssertNotNil(pathStart)
+        XCTAssertEqual(pathStart!.wgs84.latitude, here!.wgs84.latitude, accuracy: 0.002)
+        XCTAssertEqual(pathStart!.wgs84.longitude, here!.wgs84.longitude, accuracy: 0.002)
+        XCTAssertEqual(route.current?.wgs84.latitude ?? 0, here!.wgs84.latitude, accuracy: 0.002)
+    }
+
     func testPausedLocationBlockDropsResume() {
         let route = preparedRoute(repeatMode: .once)
         route.applyCoordinate = { _ in true }
@@ -834,6 +893,17 @@ final class RoutePlaybackControllerTests: XCTestCase {
             viaPoints: [corner],
             pathPoints: [start, corner, end]
         )
+    }
+}
+
+private struct EchoRouteDirections: RouteDirectionsProviding {
+    @MainActor
+    func routePoints(
+        from start: CoordinatePair,
+        to end: CoordinatePair,
+        mode: RouteTravelMode
+    ) async -> [CoordinatePair]? {
+        [start, end]
     }
 }
 

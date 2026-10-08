@@ -190,6 +190,42 @@ enum RoutePlayback {
         )
     }
 
+    /// 把一个点投到折线上，返回 0...1 进度，用来区分已经走过和还没走到的途经点。
+    static func nearestProgress(of pair: CoordinatePair, on path: RoutePath) -> Double {
+        guard path.points.count >= 2, path.totalMeters > 0 else { return 0 }
+        var bestMeters = 0.0
+        var bestDistance = Double.greatestFiniteMagnitude
+        for index in 0..<(path.points.count - 1) {
+            let start = path.points[index]
+            let end = path.points[index + 1]
+            let span = distanceMeters(from: start, to: end)
+            let projection = span < 0.1 ? 0 : clampedProjection(of: pair, from: start, to: end)
+            let projected = interpolate(from: start, to: end, progress: projection)
+            let distance = distanceMeters(from: pair, to: projected)
+            if distance < bestDistance {
+                bestDistance = distance
+                bestMeters = path.cumulativeMeters[index] + span * projection
+            }
+        }
+        return min(1, max(0, bestMeters / path.totalMeters))
+    }
+
+    private static func clampedProjection(of pair: CoordinatePair, from start: CoordinatePair, to end: CoordinatePair) -> Double {
+        let east = shortestLongitudeMeters(from: start, to: end)
+        let north = (end.wgs84.latitude - start.wgs84.latitude) * 111_320
+        let length = east * east + north * north
+        guard length > 0.01 else { return 0 }
+        let pairEast = shortestLongitudeMeters(from: start, to: pair)
+        let pairNorth = (pair.wgs84.latitude - start.wgs84.latitude) * 111_320
+        return min(1, max(0, (pairEast * east + pairNorth * north) / length))
+    }
+
+    private static func shortestLongitudeMeters(from start: CoordinatePair, to end: CoordinatePair) -> Double {
+        let delta = CoordinateConverter.shortestLongitudeDelta(from: start.wgs84.longitude, to: end.wgs84.longitude)
+        let latitude = (start.wgs84.latitude + end.wgs84.latitude) / 2
+        return delta * 111_320 * cos(latitude * .pi / 180)
+    }
+
     static func interpolate(path: RoutePath, progress: Double) -> CoordinatePair {
         guard let first = path.points.first else {
             return CoordinateConverter.coordinatePair(lat: 0, lon: 0, mapCoordinateSystem: .wgs84)

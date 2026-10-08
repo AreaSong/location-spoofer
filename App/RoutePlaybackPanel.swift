@@ -1,7 +1,7 @@
 import SwiftUI
 
 enum RoutePanelSection {
-    case summary, points, travel, speed, offset, repetition, management
+    case summary, points, travel, speed, offset, repetition, management, settings
 
     init(popup: HomePopup) {
         switch popup {
@@ -10,6 +10,7 @@ enum RoutePanelSection {
         case .speed: self = .speed
         case .offset: self = .offset
         case .repetition: self = .repetition
+        case .management: self = .settings
         default: self = .management
         }
     }
@@ -39,6 +40,7 @@ struct RoutePlaybackPanel: View {
             case .offset: offsetChoices
             case .repetition: repeatChoices
             case .management: management
+            case .settings: settings
             }
         }
         .font(.subheadline)
@@ -111,7 +113,7 @@ struct RoutePlaybackPanel: View {
                     operation("撤销途经点", symbol: "arrow.uturn.backward") { route.removeLastVia() }
                 }
             } else {
-                Text("路线运行中或已结束，结束路线后可重新设置点位。")
+                Text("运行中用底部「途经点」加绕路；起终点需停止后再改。")
                     .font(.footnote).foregroundStyle(.secondary)
             }
             if route.phase != .playing && route.canReverse {
@@ -163,19 +165,34 @@ struct RoutePlaybackPanel: View {
         }
     }
 
+    private var settings: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            points
+            travelChoices
+            speedChoices
+            repeatChoices
+            offsetChoices
+            management
+        }
+    }
+
     private var management: some View {
         VStack(alignment: .leading, spacing: 0) {
             if route.phase != .playing {
                 if route.canPlay && !route.isRouting && !route.waitingForActivation {
                     operation("保存路线", symbol: "square.and.arrow.down", action: onSave)
                 }
-                operation("已存路线", symbol: "folder", action: onOpenSaved)
+                operation("管理与导入路线", symbol: "folder", action: onOpenSaved)
             }
             if route.phase == .preparing || route.phase == .finished {
                 operation("退出路线", symbol: "xmark.circle", action: onExit)
                     .foregroundStyle(.red)
             }
-            if route.phase == .playing { Text("运行中的路线可通过底部按钮暂停或结束。").font(.footnote) }
+            if route.phase == .playing || route.phase == .paused {
+                Text("停止在底部按钮；退出路线也在这里。").font(.footnote)
+                operation("退出路线", symbol: "xmark.circle", action: onExit)
+                    .foregroundStyle(.red)
+            }
         }
     }
 

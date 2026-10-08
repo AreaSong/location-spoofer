@@ -6,7 +6,7 @@ enum HomeSecondaryAction: Equatable {
 
     var title: String {
         switch self {
-        case .exitRoute: return "结束路线"
+        case .exitRoute: return "停止"
         case .stopLocation: return "停止定位"
         }
     }
@@ -14,7 +14,8 @@ enum HomeSecondaryAction: Equatable {
     static func resolve(routePhase: RoutePhase, waiting: Bool, showsRoute: Bool,
                         spoofState: SpoofState, needsSwitch: Bool) -> Self? {
         if routePhase == .playing || routePhase == .paused || waiting { return .exitRoute }
-        if spoofState == .active && (showsRoute || needsSwitch) { return .stopLocation }
+        if showsRoute { return nil }
+        if spoofState == .active && needsSwitch { return .stopLocation }
         return nil
     }
 }
@@ -40,6 +41,22 @@ extension MapHomeView {
         }
     }
 
+    var homeViaActionTitle: String? {
+        guard showsRoutePanelActive, route.start != nil else { return nil }
+        switch route.phase {
+        case .preparing, .playing, .paused: return "途经点"
+        default: return nil
+        }
+    }
+
+    var homeViaActionDisabled: Bool {
+        route.isRouting || route.waitingForActivation || route.vias.count >= RoutePlaybackController.maxViaCount
+    }
+
+    func handleHomeViaTap() {
+        route.addVia(currentSelectionPair)
+    }
+
     var homeDisplayName: String {
         if showsRoutePanelActive {
             return route.editingSavedRoute?.name ?? "当前路线"
@@ -58,7 +75,7 @@ extension MapHomeView {
             case .paused: return "路线已暂停"
             case .finished: return "路线已结束"
             case .preparing, .inactive:
-                return route.start == nil || route.end == nil ? "请在上方路线点位中设置起点和终点" : "起终点已设 · 途经 \(route.vias.count) 处"
+                return route.start == nil || route.end == nil ? "先设起点，再设途经和终点" : "起终点已设 · 途经 \(route.vias.count) 处"
             }
         }
         if routeKeepsRunningWhileSpotShown { return "当前选点 · 路线仍占用定位" }

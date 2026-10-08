@@ -97,8 +97,7 @@ extension MapHomeView {
                 }
                 .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: AppRadius.inset))
                 if showsRoutePanelActive {
-                    homePopupButton(.points, title: "路线点位")
-                    homePopupButton(.savedRoutes, title: "已存路线")
+                    homePopupButton(.management, title: "路线参数", symbol: "slider.horizontal.3")
                 } else {
                     homePopupButton(
                         .walk,
@@ -262,24 +261,30 @@ extension MapHomeView {
     }
 
     var homeRouteControls: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            routePanel(section: .summary)
-            if let popup = homePopup, popup.isRouteParameter {
-                HomePopupSurface(title: popup.title, onClose: { homePopup = nil }) {
-                    routePanel(section: RoutePanelSection(popup: popup))
-                }
-            } else {
-                HStack(spacing: 4) {
-                    homePopupButton(.travel, title: route.travelMode.displayName)
-                    homePopupButton(.speed, title: RoutePlayback.formattedSpeed(kilometersPerHour: route.speedKilometersPerHour))
-                    homePopupButton(.repetition, title: route.repeatMode.displayName)
-                }
-                HStack(spacing: 4) {
-                    homePopupButton(.offset, title: "偏移 \(Int(route.offsetMeters.rounded())) 米")
-                    homePopupButton(.management, title: "路线管理")
+        GeometryReader { geometry in
+            ZStack(alignment: .top) {
+                HomeRouteSavedList(
+                    routes: savedRoutes.routes,
+                    selectedID: route.editingSavedRoute?.id,
+                    onSelect: { saved in
+                        let previous = route.phase
+                        settleRouteSimulation(after: route.load(saved), from: previous)
+                    },
+                    onManage: openSavedRoutes
+                )
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                if let popup = homePopup, popup.isRouteParameter {
+                    HomePopupSurface(
+                        title: popup.title,
+                        onClose: { homePopup = nil },
+                        maxHeight: max(88, geometry.size.height)
+                    ) {
+                        routePanel(section: RoutePanelSection(popup: popup))
+                    }
                 }
             }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
 
     private func routePanel(section: RoutePanelSection) -> some View {
@@ -287,7 +292,7 @@ extension MapHomeView {
             route: route, clock: route.clock, currentPair: currentSelectionPair,
             onExit: requestExitRoute, onSave: promptSaveRoute, onOpenSaved: openSavedRoutes,
             onRestart: { playRoute(fromStart: true) }, embedded: true,
-            section: section, onSelection: { homePopup = nil }
+            section: section, onSelection: {}
         )
     }
 }

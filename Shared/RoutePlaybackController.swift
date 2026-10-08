@@ -84,6 +84,9 @@ final class RoutePlaybackController: ObservableObject {
     private var recoveredProgress: Double?
     private var lastSessionProgress = -1.0
     private var lastSessionWrite = Date.distantPast
+    /// 行走中加途经后，按「当前位置 → 新点 → 未走途经 → 终点」规划剩余路。
+    private var playbackAnchorsOverride: [CoordinatePair]?
+    private var rebasesPlaybackToPathStart = false
 
     init(
         preferenceStore: RoutePlaybackPreferenceStore = RoutePlaybackPreferenceStore(),
@@ -111,7 +114,7 @@ final class RoutePlaybackController: ObservableObject {
     }
 
     var canEditVias: Bool {
-        start != nil && phase == .preparing
+        start != nil && (phase == .preparing || isPlaybackInProgress)
     }
 
     var canOverwriteSavedRoute: Bool { editingSavedRoute != nil }
@@ -180,6 +183,7 @@ final class RoutePlaybackController: ObservableObject {
         start = pair
         end = nil
         vias = []
+        clearPlaybackDetour()
         path = nil
         current = pair
         progress = 0
@@ -207,6 +211,7 @@ final class RoutePlaybackController: ObservableObject {
         start = saved.start
         end = saved.end
         vias = saved.viaPoints
+        clearPlaybackDetour()
         travelMode = saved.travelMode
         speedKilometersPerHour = saved.travelMode.clampedSpeed(saved.speedKilometersPerHour)
         offsetMeters = min(80, max(0, saved.offsetMeters))
@@ -271,7 +276,12 @@ final class RoutePlaybackController: ObservableObject {
     }
 
     func addVia(_ pair: CoordinatePair) {
-        guard !locksPathEdits, canEditVias, let start else { return }
+        guard canEditVias, start != nil else { return }
+        if isPlaybackInProgress {
+            insertUpcomingVia(pair)
+            return
+        }
+        guard !locksPathEdits else { return }
         if let index = indexOfVia(near: pair, within: 20) {
             vias[index] = pair
             statusMessage = "已更新途经 \(index + 1)。"
@@ -283,12 +293,62 @@ final class RoutePlaybackController: ObservableObject {
             return
         }
         let previous = vias.last ?? start
-        guard RoutePlayback.distanceMeters(from: previous, to: pair) >= RoutePlayback.minimumDistanceMeters else {
+        guard let previous,
+              RoutePlayback.distanceMeters(from: previous, to: pair) >= RoutePlayback.minimumDistanceMeters else {
             statusMessage = "途经点和上一个点太近，请再拉开一些。"
             return
         }
         vias.append(pair)
         Task { await rebuildPath() }
+    }
+
+    private func insertUpcomingVia(_ pair: CoordinatePair) {
+        guard let current, end != nil else { return }
+        if let index = indexOfVia(near: pair, within: 20) {
+            vias[index] = pair
+            statusMessage = "已更新途经 \(index + 1)。"
+            let split = splitViasByProgress()
+            continuePlaybackThroughRemaining(from: current, upcomingPrefix: split.upcoming)
+            return
+        }
+        guard vias.count < Self.maxViaCount else {
+            statusMessage = "途经点已满，点橙色数字删除后再加。"
+            return
+        }
+        guard RoutePlayback.distanceMeters(from: current, to: pair) >= RoutePlayback.minimumDistanceMeters else {
+            statusMessage = "途经点和当前位置太近，请再拉开一些。"
+            return
+        }
+        let split = splitViasByProgress()
+        vias = split.visited + [pair] + split.upcoming
+        statusMessage = "正在接入新的途经点…"
+        continuePlaybackThroughRemaining(from: current, upcomingPrefix: [pair] + split.upcoming)
+    }
+
+    private func splitViasByProgress() -> (visited: [CoordinatePair], upcoming: [CoordinatePair]) {
+        guard let path, path.totalMeters > 0 else { return ([], vias) }
+        var visited: [CoordinatePair] = []
+        var upcoming: [CoordinatePair] = []
+        for via in vias {
+            if RoutePlayback.nearestProgress(of: via, on: path) <= progress + 0.02 {
+                visited.append(via)
+            } else {
+                upcoming.append(via)
+            }
+        }
+        return (visited, upcoming)
+    }
+
+    private func continuePlaybackThroughRemaining(from current: CoordinatePair, upcomingPrefix: [CoordinatePair]) {
+        guard let end else { return }
+        playbackAnchorsOverride = [current] + upcomingPrefix + [end]
+        rebasesPlaybackToPathStart = true
+        Task { await rebuildPath() }
+    }
+
+    private func clearPlaybackDetour() {
+        playbackAnchorsOverride = nil
+        rebasesPlaybackToPathStart = false
     }
 
     func removeVia(at index: Int) {
@@ -338,6 +398,7 @@ final class RoutePlaybackController: ObservableObject {
         headingForward = true
         elapsed = 0
         progress = 0
+        clearPlaybackDetour()
         current = path?.points.first ?? start
         waitingForActivation = true
         statusMessage = "正在开启虚拟定位…"
@@ -440,6 +501,7 @@ final class RoutePlaybackController: ObservableObject {
         progress = 0
         interruption = .playing
         waitingForActivation = false
+        clearPlaybackDetour()
         current = path?.points.first ?? start
         phase = .preparing
         refreshReadyMessage()
@@ -467,6 +529,7 @@ final class RoutePlaybackController: ObservableObject {
         start = nil
         end = nil
         vias = []
+        clearPlaybackDetour()
         path = nil
         current = nil
         progress = 0
@@ -561,7 +624,7 @@ final class RoutePlaybackController: ObservableObject {
     }
 
     func rebuildPath() async {
-        let points = anchors
+        let points = playbackAnchorsOverride ?? anchors
         guard points.count >= 2 else {
             path = nil
             pathFallback = nil
@@ -582,7 +645,13 @@ final class RoutePlaybackController: ObservableObject {
         path = RoutePath.make(routed.points)
         pathFallback = routed.fallback
         isRouting = false
-        if isPlaybackInProgress {
+        if playbackAnchorsOverride != nil || rebasesPlaybackToPathStart {
+            progress = 0
+            elapsed = 0
+            playbackOrigin = now()
+            current = path?.points.first ?? current
+            rebasesPlaybackToPathStart = false
+        } else if isPlaybackInProgress {
             rebaseElapsed(toSpeedKilometersPerHour: speedKilometersPerHour)
             snapCurrentToProgress()
         }
@@ -590,7 +659,9 @@ final class RoutePlaybackController: ObservableObject {
         restorePlaybackStatusIfNeeded()
         bumpPathRevision()
         applyPendingRecovery()
-        reapplyRecoveredProgress()
+        if playbackAnchorsOverride == nil {
+            reapplyRecoveredProgress()
+        }
     }
 
     private var isPlaybackInProgress: Bool {

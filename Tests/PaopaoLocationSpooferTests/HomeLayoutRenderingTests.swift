@@ -87,17 +87,7 @@ final class HomeLayoutRenderingTests: XCTestCase {
             playbackClock: route.clock,
             spotContent: { Button("真实走动 · 已关闭", action: {}).frame(minHeight: 44) },
             routePanel: {
-                VStack(spacing: 4) {
-                    HStack(spacing: 4) {
-                        Text("步行").frame(maxWidth: .infinity, minHeight: 44)
-                        Text("5.0 公里/小时").frame(maxWidth: .infinity, minHeight: 44)
-                        Text("一次").frame(maxWidth: .infinity, minHeight: 44)
-                    }
-                    HStack(spacing: 4) {
-                        Text("偏移 0 米").frame(maxWidth: .infinity, minHeight: 44)
-                        Text("路线管理").frame(maxWidth: .infinity, minHeight: 44)
-                    }
-                }
+                HomeRouteSavedList(routes: [], selectedID: nil, onSelect: { _ in }, onManage: {})
             },
             caption: { EmptyView() }, onHelp: {}, onToggleFavorite: {},
             onOpenSettings: {}, onPrimaryTap: {}, onSecondaryTap: {}
@@ -423,8 +413,7 @@ private struct HomeLayoutFixture: View {
                     Button("定点", action: {}).frame(minHeight: 44)
                     Button("路线", action: {}).frame(minHeight: 44)
                     if showsRoute {
-                        Button("路线点位", action: {}).frame(minHeight: 44)
-                        Button("已存路线", action: {}).frame(minHeight: 44)
+                        Button("路线参数", action: {}).frame(minHeight: 44)
                     } else {
                         Button("真实走动", action: {}).frame(minHeight: 44)
                     }
@@ -457,7 +446,7 @@ private struct HomeLayoutFixture: View {
             primaryTitle: showsRoute ? "继续" : "切换到此处",
             primaryAccessibilityLabel: showsRoute ? "继续路线" : "切换到此处",
             primarySystemImage: nil, primaryColor: .blue, primaryDisabled: false,
-            secondaryTitle: showsRoute ? "结束路线" : "停止定位", secondaryDisabled: false, showsSpotHelp: false,
+            secondaryTitle: showsRoute ? "停止" : "停止定位", secondaryDisabled: false, showsSpotHelp: false,
             availableHeight: availableHeight,
             playbackClock: route.clock,
             spotContent: {
@@ -475,12 +464,11 @@ private struct HomeLayoutFixture: View {
                 )
             },
             routePanel: {
-                RoutePlaybackPanel(route: route, clock: route.clock, currentPair: pair,
-                                   onExit: {}, onSave: {}, onOpenSaved: {}, onRestart: {}, embedded: true,
-                                   section: expanded ? .speed : .summary)
+                HomeRouteSavedList(routes: [], selectedID: nil, onSelect: { _ in }, onManage: {})
             },
             caption: { EmptyView() }, onHelp: {}, onToggleFavorite: {},
-            onOpenSettings: {}, onPrimaryTap: {}, onSecondaryTap: {}
+            onOpenSettings: {}, onPrimaryTap: {}, onSecondaryTap: {},
+            viaTitle: showsRoute ? "途经点" : nil
         )
     }
 }

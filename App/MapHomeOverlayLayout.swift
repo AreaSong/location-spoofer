@@ -118,7 +118,7 @@ enum HomePopup: String, Identifiable {
         case .speed: return "速度"
         case .offset: return "位置偏移"
         case .repetition: return "重复方式"
-        case .management: return "路线管理"
+        case .management: return "路线参数"
         }
     }
 }

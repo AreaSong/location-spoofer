@@ -181,6 +181,11 @@ grep -q 'static func fanPath' "$ROOT/App/WalkHeadingHud.swift" \
 if grep -A6 'if visible {' "$ROOT/App/WalkHeadingHud.swift" | grep -q 'centerPin'; then
   fail "walk heading must not hide the map-center selection pin"
 fi
+if grep -n 'centerPin?.isHidden = coordinate' "$ROOT/App/MapViewRepresentable.swift"; then
+  fail "route progress must not hide the map-center selection pin"
+fi
+grep -q 'centerPin?.isHidden = false' "$ROOT/App/MapViewRepresentable.swift" \
+  || fail "route progress must keep the map-center selection pin visible"
 if grep -q 'location.north.fill' "$ROOT/App/WalkHeadingHud.swift"; then
   fail "walk heading must not use a floating location.north.fill arrow"
 fi
@@ -299,7 +304,8 @@ grep -q 'Label("排序"' "$ROOT/App/FavoriteListView.swift" || fail "favorite li
 grep -q 'displayedFavorites' "$MAP_HOME" || fail "home favorite chips must share the sorted favorite order"
 grep -q 'displayedFavorites' "$ROOT/App/FavoriteListView.swift" || fail "favorite list must share the sorted favorite order"
 grep -q 'setSortOrder' "$ROOT/Shared/FavoriteLocationStore.swift" || fail "favorite sort preference must be persistable"
-grep -q 'return "出发"' "$MAP_HOME" || fail "after start and end are set, one more tap must depart without a 开始 label"
+grep -q 'return "开始"' "$MAP_HOME" || fail "after start and end are set, the primary action must be 开始"
+! grep -q 'return "出发"' "$MAP_HOME" || fail "route launch must use 开始 instead of 出发"
 ! grep -q '开始走' "$MAP_HOME" || fail "walking launch must not use 开始走"
 ! grep -q 'route.end == nil || !route.canPlay' "$MAP_HOME" \
   || fail "a set end pin must not keep the peek button on 设为终点"
@@ -307,7 +313,13 @@ grep -q 'if route.phase == .preparing { return false }' "$MAP_HOME" \
   || fail "walking peek must stay tappable after start and end pins are set"
 grep -q 'if route.start == nil || route.end == nil { return "先设起点和终点" }' "$MAP_HOME" \
   || fail "collapsed walking caption must not say 先设起点和终点 after both pins are set"
-grep -q 'operation("已存路线"' "$ROOT/App/RoutePlaybackPanel.swift" || fail "route panel must expose saved routes"
+grep -q 'HomeRouteSavedList' "$MAP_HOME" || fail "saved routes must tile vertically inside the route card"
+grep -q 'home.route.saved' "$MAP_HOME" || fail "saved route list must be identifiable in the route card"
+if awk '/var homeModeAndEntries/,/private func homeModeButton/' "$ROOT/App/MapHomeView+Controls.swift" | grep -q 'homePopupButton(.points'; then
+  fail "route points must not sit on the mode bar"
+fi
+awk '/var homeModeAndEntries/,/private func homeModeButton/' "$ROOT/App/MapHomeView+Controls.swift" | grep -q '.management' \
+  || fail "uncommon route settings must sit on the mode bar"
 grep -q 'if routeKeepsRunningWhileSpotShown { return "查看路线" }' "$MAP_HOME" || fail "spot card must return to the running route instead of starting a spot operation"
 grep -q 'showsSpotHelp: spoofState != .idle && !routeKeepsRunningWhileSpotShown' "$MAP_HOME" \
   || fail "idle and running-route states must hide the spot help control"

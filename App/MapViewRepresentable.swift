@@ -289,7 +289,8 @@ struct MapViewRepresentable: UIViewRepresentable {
         }
 
         func updateRouteProgress(_ coordinate: CLLocationCoordinate2D?, on map: MKMapView) {
-            centerPin?.isHidden = coordinate != nil
+            // 红钉始终是地图中心选点；进度点只表示当前走到的位置。
+            centerPin?.isHidden = false
             guard let coordinate, CLLocationCoordinate2DIsValid(coordinate) else {
                 if let progressAnnotation {
                     map.removeAnnotation(progressAnnotation)

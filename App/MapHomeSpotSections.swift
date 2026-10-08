@@ -103,3 +103,64 @@ struct HomeSpotSwipeLanes<RecentBars: View, FavoriteBars: View>: View {
             .buttonStyle(.plain)
     }
 }
+
+/// 路线常用区：已存路线竖向平铺，不左右滑。
+struct HomeRouteSavedList: View {
+    let routes: [SavedRoute]
+    let selectedID: UUID?
+    let onSelect: (SavedRoute) -> Void
+    let onManage: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            if routes.isEmpty {
+                Text("还没有保存的路线。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                manageButton
+            } else {
+                ScrollView {
+                    VStack(spacing: 6) {
+                        ForEach(routes) { route in savedRow(route) }
+                        manageButton
+                    }
+                }
+                .accessibilityIdentifier("home.route.saved")
+            }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("已存路线")
+    }
+
+    private var manageButton: some View {
+        Button("管理与导入路线", action: onManage)
+            .font(.caption.weight(.medium))
+            .foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+            .padding(.horizontal, 10)
+            .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: AppRadius.inset))
+            .buttonStyle(.plain)
+    }
+
+    private func savedRow(_ route: SavedRoute) -> some View {
+        let selected = selectedID == route.id
+        return Button { onSelect(route) } label: {
+            HStack(spacing: 6) {
+                Image(systemName: selected ? "checkmark.circle.fill" : "map")
+                Text(route.name).lineLimit(1)
+                Spacer(minLength: 0)
+            }
+            .font(.caption)
+            .padding(.horizontal, 10)
+            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .background(
+            (selected ? Color.accentColor.opacity(0.16) : Color.secondary.opacity(0.12)),
+            in: RoundedRectangle(cornerRadius: AppRadius.inset)
+        )
+        .accessibilityLabel(selected ? "\(route.name)，已选中" : route.name)
+    }
+}

@@ -309,3 +309,33 @@ private final class DirectionPedometer: PhysicalWalkSensing {
     func start(from date: Date, handler: @escaping (PhysicalWalkSample?, Error?) -> Void) {}
     func stop() {}
 }
+
+@MainActor
+final class MapCenterPinTests: XCTestCase {
+    func testRouteProgressKeepsCenterSelectionPinVisible() {
+        let parent = MapViewRepresentable(
+            selection: .init(
+                coordinate: .init(latitude: 22.5, longitude: 113.9),
+                source: .mapTap,
+                explicitName: nil,
+                revision: 0
+            ),
+            initialViewportMeters: 500,
+            cameraCommand: nil,
+            onRealtimeLocationChanged: { _ in },
+            onUserCenterChanged: { _, _ in },
+            onViewportChanged: { _ in },
+            onMapTap: { _ in },
+            onUserZoomChanged: nil
+        )
+        let coordinator = parent.makeCoordinator()
+        let map = MKMapView(frame: CGRect(x: 0, y: 0, width: 320, height: 640))
+        let pin = UIImageView()
+        pin.isHidden = true
+        coordinator.centerPin = pin
+        coordinator.updateRouteProgress(.init(latitude: 22.54, longitude: 113.94), on: map)
+        XCTAssertFalse(pin.isHidden, "playback marker must not hide the map-center selection pin")
+        coordinator.updateRouteProgress(nil, on: map)
+        XCTAssertFalse(pin.isHidden)
+    }
+}

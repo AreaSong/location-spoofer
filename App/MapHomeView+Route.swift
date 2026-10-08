@@ -415,9 +415,9 @@ extension MapHomeView {
         case .preparing where route.start == nil:
             return "设为起点"
         case .preparing where route.end == nil:
-            return "设为终点"
+            return "终点"
         default:
-            return "出发"
+            return "开始"
         }
     }
 

@@ -29,6 +29,9 @@ struct MapHomeBottomCard<SpotContent: View, RoutePanel: View, Caption: View>: Vi
     let onOpenSettings: () -> Void
     let onPrimaryTap: () -> Void
     let onSecondaryTap: () -> Void
+    var viaTitle: String? = nil
+    var viaDisabled: Bool = false
+    var onViaTap: () -> Void = {}
     @Environment(\.dynamicTypeSize) private var typeSize
     @State private var showsStatusDetail = false
 
@@ -195,12 +198,27 @@ struct MapHomeBottomCard<SpotContent: View, RoutePanel: View, Caption: View>: Vi
     private var actionRow: some View {
         Group {
             if typeSize.isAccessibilitySize {
-                VStack(spacing: 8) { primaryButton; secondaryButton }
+                VStack(spacing: 8) { viaButton; secondaryButton; primaryButton }
             } else {
-                HStack(spacing: 10) { secondaryButton; primaryButton }
+                HStack(spacing: 8) { viaButton; secondaryButton; primaryButton }
             }
         }
         .layoutPriority(1)
+    }
+
+    @ViewBuilder
+    private var viaButton: some View {
+        if let viaTitle {
+            Button(viaTitle, action: onViaTap)
+                .font(.subheadline.weight(.semibold))
+                .padding(.horizontal, 10)
+                .frame(maxWidth: .infinity, minHeight: 48)
+                .foregroundStyle(.primary)
+                .background(Color.secondary.opacity(0.12), in: RoundedRectangle(cornerRadius: AppRadius.control))
+                .buttonStyle(.plain)
+                .disabled(viaDisabled)
+                .accessibilityIdentifier("home.via")
+        }
     }
 
     private var primaryButton: some View {
@@ -234,7 +252,7 @@ struct MapHomeBottomCard<SpotContent: View, RoutePanel: View, Caption: View>: Vi
                 .font(.subheadline.weight(.semibold))
                 .padding(.horizontal, 14)
                 .frame(minHeight: 48)
-                .frame(maxWidth: typeSize.isAccessibilitySize ? .infinity : nil)
+                .frame(maxWidth: (viaTitle != nil || typeSize.isAccessibilitySize) ? .infinity : nil)
                 .foregroundStyle(.primary)
                 .background(Color.secondary.opacity(0.12), in: RoundedRectangle(cornerRadius: AppRadius.control))
                 .buttonStyle(.plain)

@@ -23,10 +23,10 @@ final class HomePresentationTests: XCTestCase {
                        showsRoute: false, spoofState: .verifying, needsSwitch: false), .exitRoute)
     }
 
-    func testCompletedOrDraftRouteKeepsExistingLocationStop() {
+    func testDraftRouteDoesNotStealSpotStopOntoTheRouteCard() {
         for phase in [RoutePhase.preparing, .finished] {
-            XCTAssertEqual(HomeSecondaryAction.resolve(routePhase: phase, waiting: false,
-                           showsRoute: true, spoofState: .active, needsSwitch: false), .stopLocation)
+            XCTAssertNil(HomeSecondaryAction.resolve(routePhase: phase, waiting: false,
+                         showsRoute: true, spoofState: .active, needsSwitch: false))
             XCTAssertNil(HomeSecondaryAction.resolve(routePhase: phase, waiting: false,
                          showsRoute: true, spoofState: .idle, needsSwitch: false))
         }
