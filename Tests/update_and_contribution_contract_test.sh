@@ -38,7 +38,7 @@ import sys
 with open(sys.argv[1], encoding="utf-8") as handle:
     config = json.load(handle)
 
-assert config["latestVersion"] == "1.1.1.2"
+assert config["latestVersion"] == "1.1.1.3"
 assert config["minimumSupportedVersion"] == "1.0.0"
 assert "shadowrocket" not in config["communityPromptClients"]
 assert set(config["communityPromptClients"]) == {

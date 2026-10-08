@@ -147,7 +147,7 @@ Debug 模拟器产物可用 `xcrun simctl launch <当前设备 UUID> com.paopaol
 
 ## 发布版本
 
-当前 `project.yml` 的 App/扩展共用 `MARKETING_VERSION=1.1.1.2`、`CURRENT_PROJECT_VERSION=15`；两个 Info.plist 均引用这些字段。`version.txt` 的 latestVersion、待发布 tag `v1.1.1.2` 和归档 `docs/releases/v1.1.1.2.md` 对应。`minimumSupportedVersion=1.0.0` 是 App 更新版本下限，不是 iOS 版本。
+当前 `project.yml` 的 App/扩展共用 `MARKETING_VERSION=1.1.1.3`、`CURRENT_PROJECT_VERSION=16`；两个 Info.plist 均引用这些字段。`version.txt` 的 latestVersion、待发布 tag `v1.1.1.3` 和归档 `docs/releases/v1.1.1.3.md` 对应。`minimumSupportedVersion=1.0.0` 是 App 更新版本下限，不是 iOS 版本。
 
 四段营销版本与 [Apple 对 CFBundleShortVersionString 的三段整数格式要求](https://developer.apple.com/documentation/bundleresources/information-property-list/cfbundleshortversionstring) 存在差异。本阶段保留既有自签发布策略，不改版本号或历史归档；构建/IPA 结构检查通过不证明 App Store 等渠道接受此格式，后续需由用户决定版本映射及渠道策略。CI 归档检查也不代替版本策略核销。
 

@@ -102,7 +102,6 @@ struct MapHomeView: View {
     @State var showRouteLocationSetup = false
     @State var showsRoutePanel = false
     @State var homePopup: HomePopup?
-    @State var showsClearHomeRecents = false
     @State var showExitRouteConfirm = false
     @State var developerLocationError = ""
     @State var lastDeveloperTunnelRecoveryAt: Date?
@@ -270,7 +269,7 @@ struct MapHomeView: View {
                 Color.black.opacity(0.001)
                     .ignoresSafeArea()
                     .onTapGesture { homePopup = nil }
-                    .accessibilityLabel("关闭浮窗")
+                    .accessibilityLabel("关闭面板")
                     .accessibilityAddTraits(.isButton)
             }
             MapHomeOverlayLayout(
@@ -725,19 +724,6 @@ struct MapHomeView: View {
 
     func homeStableActionCard(availableHeight: CGFloat) -> some View {
         homeActionCard(availableHeight: availableHeight)
-            .overlay {
-                if let popup = homePopup, popup.isModeEntry {
-                    HomePopupSurface(
-                        title: popup.title,
-                        onClose: { homePopup = nil },
-                        maxHeight: max(88, availableHeight - 16)
-                    ) {
-                        homeModeEntryPopup(popup)
-                    }
-                    .padding(8)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-                }
-            }
             .frame(height: availableHeight, alignment: .top)
     }
 

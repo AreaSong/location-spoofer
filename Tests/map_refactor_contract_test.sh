@@ -124,8 +124,10 @@ grep -q 'secondaryButton' "$ROOT/App/MapHomeBottomCard.swift" \
   || fail "collapsed bottom card must keep stop and route-exit controls visible"
 grep -q 'Toggle("初始指向"' "$ROOT/App/MapHomeView+PhysicalWalk.swift" \
   || fail "custom heading must be a dedicated toggle, defaulting off"
-grep -q 'Toggle("真实走动"' "$ROOT/App/MapHomeView+PhysicalWalk.swift" \
+grep -q 'Text("开启")' "$ROOT/App/MapHomeView+PhysicalWalk.swift" \
   || fail "physical walk settings must retain the explicit enable toggle"
+grep -q 'accessibilityLabel("真实走动")' "$ROOT/App/MapHomeView+PhysicalWalk.swift" \
+  || fail "the walk enable toggle must keep the 真实走动 accessibility name"
 grep -q 'isCustomHeadingEnabled' "$ROOT/Shared/PhysicalWalkStore.swift" \
   || fail "custom heading on/off must persist separately from physical walking"
 grep -q 'latestMapHeadingDegrees' "$ROOT/App/PhysicalWalkSensors.swift" \
@@ -332,8 +334,18 @@ grep -A2 'if showsRoute {' "$ROOT/App/MapHomeBottomCard.swift" | grep -q 'routeP
 if grep -q 'HomeFittingScrollView' "$ROOT/App/MapHomeBottomCard.swift"; then
   fail "the function card must stay fixed and not scroll"
 fi
-grep -A2 'var homeSpotControls' "$ROOT/App/MapHomeView+Controls.swift" | grep -q 'GeometryReader' \
-  || fail "spot extras must overlay the parameter zone instead of shifting the card"
+if grep -A40 'var homeSpotControls' "$ROOT/App/MapHomeView+Controls.swift" | grep -q 'HomePopupSurface'; then
+  fail "walk settings must replace the common zone instead of overlaying a 完成 popup"
+fi
+grep -A40 'var homeSpotControls' "$ROOT/App/MapHomeView+Controls.swift" | grep -q 'PhysicalWalkHeadingControls' \
+  || fail "tapping 走动 must show walk settings in the common zone"
+if grep -A40 'var homeRouteControls' "$ROOT/App/MapHomeView+Controls.swift" | grep -q 'HomePopupSurface'; then
+  fail "route parameters must replace the common zone instead of overlaying a 完成 popup"
+fi
+awk '/var homeModeAndEntries/,/private func homeModeButton/' "$ROOT/App/MapHomeView+Controls.swift" | grep -q '"走动"' \
+  || fail "spot mode bar must use the short 走动 label"
+awk '/var homeModeAndEntries/,/private func homeModeButton/' "$ROOT/App/MapHomeView+Controls.swift" | grep -q '"参数"' \
+  || fail "route mode bar must use the short 参数 label"
 grep -q 'home.runtimeStatus' "$ROOT/App/MapHomeBottomCard.swift" \
   || fail "runtime status must sit on the card title row"
 if grep -q 'private var statusRow' "$ROOT/App/MapHomeBottomCard.swift"; then
@@ -451,7 +463,13 @@ grep -q 'strideMeters' "$ROOT/Shared/PhysicalWalkStore.swift" \
 grep -q '定点推送前会偏移' "$SETTINGS_VIEW" \
   || fail "developer-tunnel settings must explain spot offset before push"
 grep -q 'operation("反转路线"' "$ROOT/App/RoutePlaybackPanel.swift" || fail "route panel must let the user reverse a saved path"
-grep -q 'chevron.down' "$ROOT/App/MapHomeView+Controls.swift" || fail "speed and offset must stay collapsed by default"
+grep -q 'customSpeed = false' "$ROOT/App/RoutePlaybackPanel.swift" \
+  || fail "speed and offset must stay collapsed by default"
+awk '/private var settings:/,/private var management:/' "$ROOT/App/RoutePlaybackPanel.swift" | grep -q 'travelChoices' \
+  || fail "route parameters must keep travel and speed controls"
+if awk '/private var settings:/,/private var management:/' "$ROOT/App/RoutePlaybackPanel.swift" | grep -q 'points'; then
+  fail "route parameters must not repeat 设为起点 and other point operations"
+fi
 grep -q 'formattedRemaining' "$ROOT/Shared/RoutePlayback.swift" || fail "playback must format remaining distance and time"
 grep -q '还剩' "$ROOT/Shared/RoutePlayback.swift" || fail "walking status must show remaining distance"
 grep -q 'setVisibleMapRect' "$ROOT/App/RouteMapAnnotations.swift" \

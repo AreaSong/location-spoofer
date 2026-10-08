@@ -124,8 +124,11 @@ struct PhysicalWalkHeadingControls: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Toggle("真实走动", isOn: enabledBinding)
-                .font(.subheadline)
+            Toggle(isOn: enabledBinding) {
+                Text("开启")
+            }
+            .font(.subheadline)
+            .accessibilityLabel("真实走动")
             walkHint
             if store.isEnabled {
                 Toggle("初始指向", isOn: customHeadingBinding)

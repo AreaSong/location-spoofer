@@ -82,29 +82,29 @@ extension MapHomeView {
     }
 
     var homeModeAndEntries: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 6) {
-                HStack(spacing: 2) {
-                    homeModeButton("定点", selected: !showsRoutePanelActive) {
-                        homePopup = nil
-                        showsRoutePanel = false
-                    }
-                    homeModeButton("路线", selected: showsRoutePanelActive) {
-                        homePopup = nil
-                        enterRoute()
-                        showsRoutePanel = true
-                    }
-                }
-                .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: AppRadius.inset))
-                if showsRoutePanelActive {
-                    homePopupButton(.management, title: "路线参数", symbol: "slider.horizontal.3")
-                } else {
-                    homePopupButton(
-                        .walk,
-                        title: physicalWalkStore.isEnabled ? "真实走动 · 已开启" : "真实走动",
-                        symbol: "figure.walk"
-                    )
-                }
+        HStack(spacing: 2) {
+            homeModeButton("定点", selected: !showsRoutePanelActive) {
+                homePopup = nil
+                showsRoutePanel = false
+            }
+            homeModeButton("路线", selected: showsRoutePanelActive) {
+                homePopup = nil
+                enterRoute()
+                showsRoutePanel = true
+            }
+            if showsRoutePanelActive {
+                homePanelButton(
+                    "参数",
+                    popup: .management,
+                    accessibilityLabel: "路线参数"
+                )
+            } else {
+                homePanelButton(
+                    "走动",
+                    popup: .walk,
+                    showsEnabledDot: physicalWalkStore.isEnabled,
+                    accessibilityLabel: "真实走动"
+                )
             }
         }
         .padding(4)
@@ -116,8 +116,7 @@ extension MapHomeView {
     private func homeModeButton(_ title: String, selected: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Text(title).font(.subheadline.weight(.semibold))
-                .padding(.horizontal, 10)
-                .frame(minWidth: 52, minHeight: 44)
+                .frame(maxWidth: .infinity, minHeight: 44)
                 .foregroundStyle(selected ? Color.primary : Color.secondary)
                 .background(selected ? Color(uiColor: .secondarySystemGroupedBackground) : .clear,
                             in: RoundedRectangle(cornerRadius: AppRadius.inset))
@@ -131,104 +130,55 @@ extension MapHomeView {
         homePopup = homePopup == popup ? nil : popup
     }
 
-    func homePopupButton(_ popup: HomePopup, title: String, symbol: String? = nil) -> some View {
-        Button { toggleHomePopup(popup) } label: {
-            HStack(spacing: 4) {
-                if let symbol { Image(systemName: symbol) }
-                Text(title).lineLimit(1)
-                Image(systemName: homePopup == popup ? "chevron.up" : "chevron.down").font(.caption2)
+    private func homePanelButton(
+        _ title: String,
+        popup: HomePopup,
+        showsEnabledDot: Bool = false,
+        accessibilityLabel: String
+    ) -> some View {
+        let selected = homePopup == popup
+        return Button { toggleHomePopup(popup) } label: {
+            HStack(spacing: 6) {
+                if showsEnabledDot {
+                    Circle()
+                        .fill(Color.accentColor)
+                        .frame(width: 7, height: 7)
+                        .accessibilityHidden(true)
+                }
+                Text(title).font(.subheadline.weight(.semibold))
             }
-            .font(.caption.weight(.medium))
             .frame(maxWidth: .infinity, minHeight: 44)
-            .padding(.horizontal, 4)
-            .background(Color.accentColor.opacity(homePopup == popup ? 0.15 : 0.06),
+            .foregroundStyle(selected ? Color.primary : Color.secondary)
+            .background(selected ? Color(uiColor: .secondarySystemGroupedBackground) : .clear,
                         in: RoundedRectangle(cornerRadius: AppRadius.inset))
         }
         .buttonStyle(.plain)
-        .accessibilityValue(homePopup == popup ? "已展开" : "已收起")
+        .accessibilityLabel(accessibilityLabel)
+        .accessibilityAddTraits(selected ? .isSelected : [])
+        .accessibilityValue(panelAccessibilityValue(popup: popup, enabled: showsEnabledDot))
         .accessibilityIdentifier("home.open.\(popup.rawValue)")
     }
 
-    @ViewBuilder
-    func homeModeEntryPopup(_ popup: HomePopup) -> some View {
-        switch popup {
-        case .recents:
-            homeRecentList
-        case .favorites:
-            homeFavoriteList
-        case .points:
-            routePanel(section: .points)
-        case .savedRoutes:
-            homeSavedRouteList
-        default:
-            EmptyView()
-        }
-    }
-
-    private var homeRecentList: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            if recentSelections.items.isEmpty { Text("搜索或点击地图后，选点会出现在这里。").font(.footnote) }
-            ForEach(recentSelections.items) { item in
-                HStack {
-                    Button { selectRecent(item); homePopup = nil } label: {
-                        Text(item.name).frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-                    }
-                    Button { recentSelections.remove(item) } label: {
-                        Image(systemName: "xmark").frame(width: 44, height: 44)
-                    }.accessibilityLabel("从最近选点中删除 \(item.name)")
-                }
-            }
-            if !recentSelections.items.isEmpty {
-                Button("清空最近地点") { showsClearHomeRecents = true }
-                    .frame(minHeight: 44).foregroundStyle(.secondary)
-            }
-        }
-        .font(.subheadline).buttonStyle(.plain)
-        .confirmationDialog("清空最近选点？", isPresented: $showsClearHomeRecents, titleVisibility: .visible) {
-            Button("清空", role: .destructive) { recentSelections.removeAll() }
-            Button("取消", role: .cancel) {}
-        }
-    }
-
-    private var homeFavoriteList: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            if favorites.favorites.isEmpty { Text("收藏常用地点，下次可以直接选用。").font(.footnote) }
-            ForEach(favorites.displayedFavorites) { favorite in
-                Button { select(favorite); homePopup = nil } label: {
-                    HStack {
-                        Text(favorite.name)
-                        Spacer()
-                        if favorites.selectedFavoriteID == favorite.id { Image(systemName: "checkmark") }
-                    }.frame(minHeight: 44)
-                }.buttonStyle(.plain)
-            }
-            Button("管理收藏") { activeSheet = .favorites }.frame(minHeight: 44)
-        }.font(.subheadline)
-    }
-
-    private var homeSavedRouteList: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            if savedRoutes.routes.isEmpty { Text("还没有保存的路线。").font(.footnote) }
-            ForEach(savedRoutes.routes) { saved in
-                Button {
-                    let previous = route.phase
-                    settleRouteSimulation(after: route.load(saved), from: previous)
-                    homePopup = nil
-                } label: {
-                    HStack {
-                        Text(saved.name)
-                        Spacer()
-                        if route.editingSavedRoute?.id == saved.id { Image(systemName: "checkmark") }
-                    }.frame(minHeight: 44)
-                }.buttonStyle(.plain)
-            }
-            Button("管理与导入路线") { openSavedRoutes() }.frame(minHeight: 44)
-        }.font(.subheadline)
+    private func panelAccessibilityValue(popup: HomePopup, enabled: Bool) -> String {
+        var parts: [String] = []
+        if popup == .walk { parts.append(enabled ? "已开启" : "已关闭") }
+        parts.append(homePopup == popup ? "已展开" : "已收起")
+        return parts.joined(separator: "，")
     }
 
     var homeSpotControls: some View {
-        GeometryReader { geometry in
-            ZStack(alignment: .top) {
+        Group {
+            if homePopup == .walk {
+                ScrollView {
+                    PhysicalWalkHeadingControls(
+                        store: physicalWalkStore,
+                        controller: physicalWalk,
+                        spoofActive: spoofState == .active
+                    )
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .accessibilityIdentifier("home.walk.panel")
+            } else {
                 HomeSpotSwipeLanes(
                     hasRecents: !recentSelections.items.isEmpty,
                     favoritesEmpty: favorites.displayedFavorites.isEmpty,
@@ -241,28 +191,20 @@ extension MapHomeView {
                     onClearRecents: { recentSelections.removeAll() },
                     onManageFavorites: { activeSheet = .favorites }
                 )
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-                if homePopup == .walk {
-                    HomePopupSurface(
-                        title: "真实走动",
-                        onClose: { homePopup = nil },
-                        maxHeight: max(88, geometry.size.height)
-                    ) {
-                        PhysicalWalkHeadingControls(
-                            store: physicalWalkStore,
-                            controller: physicalWalk,
-                            spoofActive: spoofState == .active
-                        )
-                    }
-                }
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
 
     var homeRouteControls: some View {
-        GeometryReader { geometry in
-            ZStack(alignment: .top) {
+        Group {
+            if homePopup == .management {
+                ScrollView {
+                    routePanel(section: .settings)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .accessibilityIdentifier("home.route.parameters")
+            } else {
                 HomeRouteSavedList(
                     routes: savedRoutes.routes,
                     selectedID: route.editingSavedRoute?.id,
@@ -272,16 +214,6 @@ extension MapHomeView {
                     },
                     onManage: openSavedRoutes
                 )
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-                if let popup = homePopup, popup.isRouteParameter {
-                    HomePopupSurface(
-                        title: popup.title,
-                        onClose: { homePopup = nil },
-                        maxHeight: max(88, geometry.size.height)
-                    ) {
-                        routePanel(section: RoutePanelSection(popup: popup))
-                    }
-                }
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)

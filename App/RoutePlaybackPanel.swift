@@ -167,11 +167,13 @@ struct RoutePlaybackPanel: View {
 
     private var settings: some View {
         VStack(alignment: .leading, spacing: 8) {
-            points
             travelChoices
             speedChoices
             repeatChoices
             offsetChoices
+            if route.phase != .playing && route.canReverse {
+                operation("反转路线", symbol: "arrow.left.arrow.right") { route.reverseDirection() }
+            }
             management
         }
     }

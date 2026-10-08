@@ -60,6 +60,43 @@ final class HomeLayoutRenderingTests: XCTestCase {
         view.subviews.flatMap { [$0] + descendants(of: $0) }
     }
 
+    private func visibleTexts(in view: UIView) -> [String] {
+        accessibilityStrings(from: view)
+    }
+
+    private func accessibilityStrings(from object: NSObject) -> [String] {
+        var values: [String] = []
+        collectAccessibilityStrings(from: object, into: &values)
+        return values
+    }
+
+    private func collectAccessibilityStrings(from object: NSObject, into values: inout [String]) {
+        for candidate in [
+            object.accessibilityLabel,
+            object.accessibilityValue as? String,
+            (object as? UILabel)?.text,
+            (object as? UILabel)?.attributedText?.string,
+            (object as? UIButton)?.currentTitle,
+            (object as? UITextView)?.text
+        ] {
+            if let candidate, !candidate.isEmpty, !values.contains(candidate) {
+                values.append(candidate)
+            }
+        }
+        if let view = object as? UIView {
+            if let elements = view.accessibilityElements {
+                for element in elements {
+                    if let object = element as? NSObject {
+                        collectAccessibilityStrings(from: object, into: &values)
+                    }
+                }
+            }
+            for subview in view.subviews {
+                collectAccessibilityStrings(from: subview, into: &values)
+            }
+        }
+    }
+
     func testSpotAndRouteCardsShareFixedHeight() {
         let budget = AppLayout.homeFunctionCardHeight
         XCTAssertEqual(cardHeight(showsRoute: false, availableHeight: budget), budget, accuracy: 2)
@@ -85,7 +122,7 @@ final class HomeLayoutRenderingTests: XCTestCase {
             secondaryTitle: nil as String?, secondaryDisabled: false, showsSpotHelp: false,
             availableHeight: availableHeight,
             playbackClock: route.clock,
-            spotContent: { Button("真实走动 · 已关闭", action: {}).frame(minHeight: 44) },
+            spotContent: { Button("走动", action: {}).frame(minHeight: 44) },
             routePanel: {
                 HomeRouteSavedList(routes: [], selectedID: nil, onSelect: { _ in }, onManage: {})
             },
@@ -327,6 +364,52 @@ final class HomeLayoutRenderingTests: XCTestCase {
         XCTAssertEqual(idle, open, accuracy: 2, "Opening 最近/收藏 must not grow the function area")
     }
 
+    func testWalkPanelUsesShortEnableToggle() {
+        let suite = "WalkPanel.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let store = PhysicalWalkStore(defaults: defaults)
+        let walk = PhysicalWalkController()
+        let host = UIHostingController(rootView: PhysicalWalkHeadingControls(
+            store: store, controller: walk, spoofActive: true
+        ).padding())
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 240))
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        host.view.frame = window.bounds
+        host.view.layoutIfNeeded()
+        RunLoop.main.run(until: Date().addingTimeInterval(0.15))
+        XCTAssertFalse(descendants(of: host.view).compactMap { $0 as? UISwitch }.isEmpty,
+                       "walk panel must keep an enable switch")
+        XCTAssertFalse(visibleTexts(in: host.view).contains("完成"))
+        window.isHidden = true
+    }
+
+    func testRouteParameterPanelOmitsPointOperations() {
+        let route = RoutePlaybackController()
+        let pair = CoordinateConverter.coordinatePair(
+            lat: 22.5, lon: 113.9, mapCoordinateSystem: .wgs84
+        )
+        route.enter(start: pair)
+        let panel = RoutePlaybackPanel(
+            route: route, clock: route.clock, currentPair: pair,
+            onExit: {}, onSave: {}, onOpenSaved: {}, onRestart: {},
+            embedded: true, section: .settings
+        )
+        let host = UIHostingController(rootView: panel.padding().frame(width: 390, height: 360))
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 400))
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        host.view.frame = window.bounds
+        host.view.layoutIfNeeded()
+        RunLoop.main.run(until: Date().addingTimeInterval(0.15))
+        let texts = visibleTexts(in: host.view)
+        XCTAssertTrue(texts.contains("步行"), "route parameters must keep travel modes, got \(texts)")
+        XCTAssertFalse(texts.contains("设为起点"), "route parameters must not repeat point operations, got \(texts)")
+        XCTAssertFalse(texts.contains("完成"), "route parameters must not use a 完成 popup, got \(texts)")
+        window.isHidden = true
+    }
+
     func testSmallScreenPopupReplacesHeaderInsteadOfLosingItsContent() {
         let regions = MapHomeOverlayRegions(size: CGSize(width: 320, height: 568), safeArea: EdgeInsets(top: 20, leading: 0, bottom: 0, trailing: 0))
         XCTAssertEqual(regions.top.height, 180)
@@ -409,13 +492,13 @@ private struct HomeLayoutFixture: View {
             let clusterHeight = min(height, AppLayout.homeFunctionClusterHeight)
             let cardHeight = max(140, clusterHeight - AppLayout.homeModeBarHeight - AppLayout.homeFunctionStackSpacing)
             VStack(spacing: AppLayout.homeFunctionStackSpacing) {
-                HStack(spacing: 6) {
-                    Button("定点", action: {}).frame(minHeight: 44)
-                    Button("路线", action: {}).frame(minHeight: 44)
+                HStack(spacing: 2) {
+                    Button("定点", action: {}).frame(maxWidth: .infinity, minHeight: 44)
+                    Button("路线", action: {}).frame(maxWidth: .infinity, minHeight: 44)
                     if showsRoute {
-                        Button("路线参数", action: {}).frame(minHeight: 44)
+                        Button("参数", action: {}).frame(maxWidth: .infinity, minHeight: 44)
                     } else {
-                        Button("真实走动", action: {}).frame(minHeight: 44)
+                        Button("走动", action: {}).frame(maxWidth: .infinity, minHeight: 44)
                     }
                 }
                 .frame(height: AppLayout.homeModeBarHeight)
