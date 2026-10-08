@@ -13,7 +13,7 @@ struct MapHomeCoordinateLine: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        HStack(spacing: 8) {
             systemSwitcher
             coordinateCopy
         }
@@ -74,7 +74,14 @@ struct MapHomeCoordinateLine: View {
                     .minimumScaleFactor(0.72)
                     .allowsTightening(true)
                     .layoutPriority(1)
-                if isCurrent {
+                if copied {
+                    Text("已复制")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 1)
+                        .background(.green, in: Capsule())
+                } else if isCurrent {
                     Text("当前")
                         .font(.caption2.weight(.semibold))
                         .foregroundStyle(.white)
@@ -86,17 +93,6 @@ struct MapHomeCoordinateLine: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .frame(minHeight: 44)
             .contentShape(Rectangle())
-            .overlay(alignment: .topTrailing) {
-                if copied {
-                    Text("已复制")
-                        .font(.caption2.bold())
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 2)
-                        .background(.green, in: Capsule())
-                        .offset(y: -24)
-                }
-            }
         }
         .buttonStyle(.plain)
         .accessibilityLabel("\(Self.title(for: selectedSystem)) \(text)")

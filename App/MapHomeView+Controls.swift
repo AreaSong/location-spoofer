@@ -16,27 +16,8 @@ extension MapHomeView {
             .frame(maxHeight: availableHeight, alignment: .top)
             .accessibilityIdentifier("home.topArea")
         } else {
-            let popup = homePopup.flatMap { $0.isTop ? $0 : nil }
-            let headerLimit = MapHomeOverlayRegions.topHeaderLimit(availableHeight: availableHeight,
-                                                                  measuredHeight: homeTopHeaderHeight, showsPopup: popup != nil)
-            VStack(spacing: 6) {
-                if headerLimit > 0 {
-                    HomeFittingScrollView(maxHeight: headerLimit) {
-                        homeTopHeader
-                            .background {
-                                GeometryReader { geometry in
-                                    Color.clear.preference(key: HomeTopHeaderHeightKey.self, value: geometry.size.height)
-                                }
-                            }
-                    }
-                    .onPreferenceChange(HomeTopHeaderHeightKey.self) { if $0 > 0 { homeTopHeaderHeight = $0 } }
-                }
-                if let popup {
-                    HomePopupSurface(title: popup.title, onClose: { homePopup = nil },
-                                     maxHeight: availableHeight - headerLimit - (headerLimit > 0 ? 6 : 0)) {
-                        homeTopPopup(popup)
-                    }
-                }
+            HomeFittingScrollView(maxHeight: availableHeight) {
+                homeTopHeader
             }
             .accessibilityIdentifier("home.topArea")
         }
@@ -50,44 +31,58 @@ extension MapHomeView {
                     .onAppear { pauseRouteIfLocationBlocked() }
             }
             homeCoordinateSummary
-            homeModeAndEntries
+            MapZoomControls(
+                scaleLabel: MapZoomMath.viewportScaleLabel(distanceMeters: mapState.viewportMeters),
+                onZoomIn: { mapState.zoom(by: 0.5) },
+                onZoomOut: { mapState.zoom(by: 2) }
+            )
         }
     }
 
     private var homeCoordinateSummary: some View {
-        HStack(spacing: 4) {
-            Button { toggleHomePopup(.coordinates) } label: {
-                Text(MapHomeCoordinateLine.compactLine(pair: currentSelectionPair, mapSystem: displayedMapCoordinateSystem))
-                    .font(.caption.monospaced()).lineLimit(1).minimumScaleFactor(0.7)
-                    .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-            }
-            .accessibilityLabel("当前坐标，点击查看和复制")
-            homeMapTools
-        }
-        .padding(.horizontal, 8)
-        .background(.thickMaterial, in: RoundedRectangle(cornerRadius: AppRadius.control))
+        MapHomeCoordinateLine(pair: currentSelectionPair, mapSystem: displayedMapCoordinateSystem)
+            .padding(.horizontal, 8)
+            .background(.thickMaterial, in: RoundedRectangle(cornerRadius: AppRadius.control))
     }
 
-    private var homeMapTools: some View {
-        HStack(spacing: 0) {
-            Button { homePopup = nil; mapStyle.cycle() } label: { Image(systemName: mapStyle.style.symbolName).frame(width: 44, height: 44) }
-                .accessibilityLabel("地图图层").accessibilityValue(mapStyle.style.title)
-            Button {
+    var homeMapTools: some View {
+        VStack(spacing: AppLayout.mapToolStackSpacing) {
+            MapChromeIconButton(systemImage: "square.stack.3d.up", accessibilityLabel: "地图图层") {
+                homePopup = nil
+                mapStyle.cycle()
+            }
+            .accessibilityValue(mapStyle.style.title)
+            MapChromeIconButton(systemImage: "map.fill", accessibilityLabel: "打开系统地图") {
                 homePopup = nil
                 if let url = URL(string: "maps://app") { UIApplication.shared.open(url) }
-            } label: { Image(systemName: "map.fill").frame(width: 44, height: 44) }
-                .accessibilityLabel("打开系统地图")
-            Button { homePopup = nil; requestRealtimeLocation() } label: {
-                Group {
-                    if realtime.isRequesting { ProgressView() } else { Image(systemName: "location.fill") }
-                }.frame(width: 44, height: 44)
             }
+            Button {
+                homePopup = nil
+                requestRealtimeLocation()
+            } label: {
+                Group {
+                    if realtime.isRequesting {
+                        ProgressView()
+                    } else {
+                        Image(systemName: "location.fill")
+                            .font(.system(size: 18, weight: .semibold))
+                    }
+                }
+                .foregroundStyle(.primary)
+                .frame(width: AppLayout.mapToolButtonSize, height: AppLayout.mapToolButtonSize)
+                .background(.regularMaterial, in: Circle())
+                .shadow(color: .black.opacity(0.13), radius: 9, y: 4)
+                .contentShape(Circle())
+            }
+            .buttonStyle(MapChromeIconStyle())
             .accessibilityLabel("回到当前位置")
             .disabled(realtimeButtonTask != nil || realtimeRequestTask != nil || realtime.isRequesting)
         }
+        .fixedSize()
+        .accessibilityIdentifier("home.mapTools")
     }
 
-    private var homeModeAndEntries: some View {
+    var homeModeAndEntries: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 6) {
                 HStack(spacing: 2) {
@@ -113,6 +108,8 @@ extension MapHomeView {
         }
         .padding(4)
         .background(.thickMaterial, in: RoundedRectangle(cornerRadius: AppRadius.control))
+        .fixedSize(horizontal: false, vertical: true)
+        .accessibilityIdentifier("home.modeBar")
     }
 
     private func homeModeButton(_ title: String, selected: Bool, action: @escaping () -> Void) -> some View {
@@ -152,10 +149,8 @@ extension MapHomeView {
     }
 
     @ViewBuilder
-    private func homeTopPopup(_ popup: HomePopup) -> some View {
+    func homeModeEntryPopup(_ popup: HomePopup) -> some View {
         switch popup {
-        case .coordinates:
-            MapHomeCoordinateLine(pair: currentSelectionPair, mapSystem: displayedMapCoordinateSystem)
         case .recents:
             homeRecentList
         case .favorites:
@@ -164,7 +159,8 @@ extension MapHomeView {
             routePanel(section: .points)
         case .savedRoutes:
             homeSavedRouteList
-        default: EmptyView()
+        default:
+            EmptyView()
         }
     }
 
@@ -243,7 +239,7 @@ extension MapHomeView {
     var homeRouteControls: some View {
         VStack(alignment: .leading, spacing: 4) {
             routePanel(section: .summary)
-            if let popup = homePopup, !popup.isTop {
+            if let popup = homePopup, popup.isRouteParameter {
                 HomePopupSurface(title: popup.title, onClose: { homePopup = nil }) {
                     routePanel(section: RoutePanelSection(popup: popup))
                 }
@@ -269,9 +265,4 @@ extension MapHomeView {
             section: section, onSelection: { homePopup = nil }
         )
     }
-}
-
-private enum HomeTopHeaderHeightKey: PreferenceKey {
-    static var defaultValue: CGFloat = 0
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
 }

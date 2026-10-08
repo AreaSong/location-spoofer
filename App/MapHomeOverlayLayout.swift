@@ -48,7 +48,6 @@ struct MapHomeOverlayLayout<Top: View, Bottom: View>: View {
                     .position(x: regions.top.midX, y: regions.top.midY)
                 bottom(regions.bottom.height)
                     .frame(width: regions.bottom.width, height: regions.bottom.height, alignment: .bottom)
-                    .clipped()
                     .contentShape(Rectangle())
                     .position(x: regions.bottom.midX, y: regions.bottom.midY)
             }
@@ -86,17 +85,23 @@ private enum HomeScrollHeightKey: PreferenceKey {
 }
 
 enum HomePopup: String, Identifiable {
-    case coordinates, recents, favorites, points, savedRoutes, walk, travel, speed, offset, repetition, management
+    case recents, favorites, points, savedRoutes, walk, travel, speed, offset, repetition, management
     var id: String { rawValue }
-    var isTop: Bool {
+    /// 定点/路线入口打开的列表，放在底部功能区上方。
+    var isModeEntry: Bool {
         switch self {
-        case .coordinates, .recents, .favorites, .points, .savedRoutes: return true
+        case .recents, .favorites, .points, .savedRoutes: return true
+        default: return false
+        }
+    }
+    var isRouteParameter: Bool {
+        switch self {
+        case .travel, .speed, .offset, .repetition, .management: return true
         default: return false
         }
     }
     var title: String {
         switch self {
-        case .coordinates: return "选点坐标"
         case .recents: return "最近地点"
         case .favorites: return "收藏地点"
         case .points: return "路线点位"

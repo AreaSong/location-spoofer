@@ -102,7 +102,7 @@ struct MapHomeView: View {
     @State var showRouteLocationSetup = false
     @State var showsRoutePanel = false
     @State var homePopup: HomePopup?
-    @State var homeTopHeaderHeight: CGFloat = 156
+    @State var homeBottomChromeHeight: CGFloat = 60
     @State var showsClearHomeRecents = false
     @State var showExitRouteConfirm = false
     @State var developerLocationError = ""
@@ -252,8 +252,6 @@ struct MapHomeView: View {
                     ViewportStore.save(distance)
                     LastCoordinateStore.updateZoom(distance)
                 },
-                onZoomIn: { mapState.zoom(by: 0.5) },
-                onZoomOut: { mapState.zoom(by: 2) },
                 routeCoordinates: route.overlayCoordinates,
                 routePins: route.overlayPins,
                 favoritePins: FavoriteMapPin.pins(
@@ -708,6 +706,36 @@ struct MapHomeView: View {
     }
 
     func bottomControls(availableHeight: CGFloat) -> some View {
+        VStack(spacing: 8) {
+            VStack(alignment: .trailing, spacing: 0) {
+                homeMapTools
+                VStack(spacing: 8) {
+                    homeModeAndEntries
+                    if let popup = homePopup, popup.isModeEntry {
+                        HomePopupSurface(
+                            title: popup.title,
+                            onClose: { homePopup = nil },
+                            maxHeight: max(88, availableHeight - 200)
+                        ) {
+                            homeModeEntryPopup(popup)
+                        }
+                    }
+                }
+                .frame(maxWidth: .infinity)
+                .background {
+                    GeometryReader { geometry in
+                        Color.clear.preference(key: HomeBottomChromeHeightKey.self, value: geometry.size.height)
+                    }
+                }
+            }
+            homeActionCard(availableHeight: max(140, availableHeight - homeBottomChromeHeight - 8))
+        }
+        .frame(maxWidth: .infinity)
+        .fixedSize(horizontal: false, vertical: true)
+        .onPreferenceChange(HomeBottomChromeHeightKey.self) { if $0 > 0 { homeBottomChromeHeight = $0 } }
+    }
+
+    func homeActionCard(availableHeight: CGFloat) -> some View {
         MapHomeBottomCard(
             displayName: homeDisplayName,
             selectionStatus: homeSelectionStatus,
@@ -811,3 +839,9 @@ struct MapHomeView: View {
     var testFavorite: FavoriteLocation { currentSelectionFavorite }
 
 }
+
+private enum HomeBottomChromeHeightKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
+}
+

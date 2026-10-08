@@ -393,7 +393,8 @@ grep -q 'static let limit = 50' "$ROOT/Shared/SavedRouteStore.swift" \
   || fail "saved routes must keep fifty entries"
 test -f "$ROOT/Shared/MapDisplayStyle.swift" || fail "map layers must have a persisted display style"
 grep -q 'mapDisplayStyle' "$MAP_BRIDGE" || fail "the map bridge must apply the selected map layer"
-grep -q 'accessibilityLabel("地图图层")' "$MAP_HOME" || fail "map layers must be switchable from the home map"
+grep -Eq 'accessibilityLabel\("地图图层"\)|accessibilityLabel: "地图图层"' "$MAP_HOME" \
+  || fail "map layers must be switchable from the home map"
 grep -q 'developerSpotWGS84' "$ROOT/App/SpoofSession.swift" \
   || fail "developer-tunnel spots must be offset before push"
 grep -q 'strideMeters' "$ROOT/Shared/PhysicalWalkStore.swift" \

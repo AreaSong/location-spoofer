@@ -12,10 +12,11 @@ enum AppRadius {
 /// 首页底部卡展开区相对屏幕高度的上限，避免挡住大半地图。
 enum AppLayout {
     static let bottomCardExpandedHeightFraction: CGFloat = 0.28
-    /// 地图左侧缩放按钮边长，与 `MapViewRepresentable` 的缩放条对齐。
+    /// 地图缩放条边长，与首页坐标条左下的缩放控件对齐。
     static let mapZoomControlSize: CGFloat = 52
-    /// 签名倒计时相对缩放条再右移的距离：控件宽 + 8pt 触控间距。
-    static let mapZoomControlClearance: CGFloat = mapZoomControlSize + 8
+    /// 图层 / 系统地图 / 回到定位 三个圆钮加间距，贴在定点/路线条右上角。
+    static let mapToolButtonSize: CGFloat = 48
+    static let mapToolStackSpacing: CGFloat = 8
 }
 
 /// 地图页顶部圆形图标按钮。直接打开目标页，避免 SwiftUI Menu 叠在 MKMapView 上时第二次点击被地图手势吃掉。
@@ -29,7 +30,7 @@ struct MapChromeIconButton: View {
             Image(systemName: systemImage)
                 .font(.system(size: 18, weight: .semibold))
                 .foregroundStyle(.primary)
-                .frame(width: 48, height: 48)
+                .frame(width: AppLayout.mapToolButtonSize, height: AppLayout.mapToolButtonSize)
                 .background(.regularMaterial, in: Circle())
                 .shadow(color: .black.opacity(0.13), radius: 9, y: 4)
                 .contentShape(Circle())
@@ -40,10 +41,56 @@ struct MapChromeIconButton: View {
     }
 }
 
-private struct MapChromeIconStyle: ButtonStyle {
+struct MapChromeIconStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .opacity(configuration.isPressed ? 0.7 : 1)
+    }
+}
+
+/// 坐标条左下的缩放条。保持与原地图内控件相同的尺寸和比例读数，避免误触。
+struct MapZoomControls: View {
+    let scaleLabel: String
+    let onZoomIn: () -> Void
+    let onZoomOut: () -> Void
+
+    var body: some View {
+        VStack(spacing: 0) {
+            Button(action: onZoomIn) {
+                Image(systemName: "plus")
+                    .font(.system(size: 22, weight: .bold))
+                    .frame(width: AppLayout.mapZoomControlSize, height: AppLayout.mapZoomControlSize)
+            }
+            .accessibilityLabel("放大地图")
+            Rectangle()
+                .fill(Color(uiColor: .separator))
+                .frame(width: 28, height: 0.5)
+            Text(scaleLabel)
+                .font(.system(size: 9, weight: .semibold, design: .rounded))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+                .frame(width: AppLayout.mapZoomControlSize, height: 28)
+                .accessibilityLabel("当前地图比例 \(scaleLabel)")
+            Rectangle()
+                .fill(Color(uiColor: .separator))
+                .frame(width: 28, height: 0.5)
+            Button(action: onZoomOut) {
+                Image(systemName: "minus")
+                    .font(.system(size: 22, weight: .bold))
+                    .frame(width: AppLayout.mapZoomControlSize, height: AppLayout.mapZoomControlSize)
+            }
+            .accessibilityLabel("缩小地图")
+        }
+        .foregroundStyle(.primary)
+        .frame(width: AppLayout.mapZoomControlSize)
+        .background(
+            Color(uiColor: .systemBackground).opacity(0.8),
+            in: RoundedRectangle(cornerRadius: 13)
+        )
+        .shadow(color: .black.opacity(0.18), radius: 7, y: 3)
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("home.zoom")
     }
 }
 
