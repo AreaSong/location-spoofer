@@ -309,6 +309,25 @@ grep -A2 'if showsRoute {' "$ROOT/App/MapHomeBottomCard.swift" | grep -q 'routeP
   || fail "expanded route details must render the route panel"
 grep -q 'HomeFittingScrollView' "$ROOT/App/MapHomeBottomCard.swift" \
   || fail "expanded tools must be scrollable separately from persistent actions"
+grep -q 'home.runtimeStatus' "$ROOT/App/MapHomeBottomCard.swift" \
+  || fail "runtime status must sit on the card title row"
+if grep -q 'private var statusRow' "$ROOT/App/MapHomeBottomCard.swift"; then
+  fail "runtime status must not occupy a dedicated row under the title"
+fi
+grep -q 'home.statusDetail' "$ROOT/App/MapHomeBottomCard.swift" \
+  || fail "selection captions must open from a title-row info control"
+if awk '/private var locationHeader/,/private var titleRow/' "$ROOT/App/MapHomeBottomCard.swift" | grep -q 'selectionStatus'; then
+  fail "selection captions must not sit under the title"
+fi
+grep -q 'func homeStableActionCard' "$MAP_HOME" \
+  || fail "mode-entry lists must overlay the spot card instead of growing the function area"
+grep -q 'homeFunctionClusterHeight' "$ROOT/App/AppStyle.swift" \
+  || fail "spot and route must share a fixed function-cluster height"
+grep -q 'home.functionCluster' "$MAP_HOME_MAIN" \
+  || fail "mode bar and action card must lock as one cluster"
+if awk '/func bottomControls/,/^    func homeStableActionCard/' "$MAP_HOME_MAIN" | grep -q 'popup.isModeEntry'; then
+  fail "mode-entry popups must not sit between the mode bar and the action card"
+fi
 ! grep -q 'Label("走路"' "$MAP_HOME" || fail "route walking must not have a second entry in the top menu"
 grep -q 'route.enter()' "$MAP_HOME" || fail "opening a route must not use the current real or spoofed location as the start"
 grep -q 'route.load(saved)' "$MAP_HOME" || fail "saved routes must restore into the playback controller"

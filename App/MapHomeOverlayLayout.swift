@@ -57,9 +57,10 @@ struct MapHomeOverlayLayout<Top: View, Bottom: View>: View {
     }
 }
 
-/// 内容短时贴合内容，内容长时只在所属区域滚动，避免空白撑满半屏。
+/// 内容短时贴合内容，内容长时只在所属区域滚动；需要撑满时用 fillsMaxHeight 锁死高度。
 struct HomeFittingScrollView<Content: View>: View {
     let maxHeight: CGFloat
+    var fillsMaxHeight: Bool = false
     @ViewBuilder let content: () -> Content
     @State private var contentHeight: CGFloat = 0
 
@@ -74,7 +75,7 @@ struct HomeFittingScrollView<Content: View>: View {
                 }
         }
         .onPreferenceChange(HomeScrollHeightKey.self) { contentHeight = $0 }
-        .frame(height: min(contentHeight > 0 ? contentHeight : maxHeight, max(0, maxHeight)))
+        .frame(height: fillsMaxHeight ? max(0, maxHeight) : min(contentHeight > 0 ? contentHeight : maxHeight, max(0, maxHeight)))
         .clipped()
     }
 }
@@ -87,7 +88,7 @@ private enum HomeScrollHeightKey: PreferenceKey {
 enum HomePopup: String, Identifiable {
     case recents, favorites, points, savedRoutes, walk, travel, speed, offset, repetition, management
     var id: String { rawValue }
-    /// 定点/路线入口打开的列表，放在底部功能区上方。
+    /// 定点/路线入口打开的列表，叠在底部卡片上，不改变功能区高度。
     var isModeEntry: Bool {
         switch self {
         case .recents, .favorites, .points, .savedRoutes: return true

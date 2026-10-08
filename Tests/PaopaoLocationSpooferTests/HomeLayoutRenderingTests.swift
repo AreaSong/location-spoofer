@@ -60,6 +60,193 @@ final class HomeLayoutRenderingTests: XCTestCase {
         view.subviews.flatMap { [$0] + descendants(of: $0) }
     }
 
+    func testSpotAndRouteCardsShareFixedHeight() {
+        let budget = AppLayout.homeFunctionCardHeight
+        XCTAssertEqual(cardHeight(showsRoute: false, availableHeight: budget), budget, accuracy: 2)
+        XCTAssertEqual(cardHeight(showsRoute: true, availableHeight: budget), budget, accuracy: 2)
+        XCTAssertEqual(
+            AppLayout.homeFunctionClusterHeight,
+            AppLayout.homeModeBarHeight + AppLayout.homeFunctionStackSpacing + AppLayout.homeFunctionCardHeight
+        )
+    }
+
+    private func cardHeight(showsRoute: Bool, availableHeight: CGFloat) -> CGFloat {
+        let bounds = HomeLayoutBounds()
+        let route = RoutePlaybackController()
+        let card = MapHomeBottomCard(
+            displayName: showsRoute ? "当前路线" : "当前选点",
+            selectionStatus: showsRoute ? "请设置起点和终点" : "已选位置 · 尚未开始",
+            spoofState: .idle, isFavoriteSelected: false, favoriteSaveDisabled: false,
+            runtimeStatusText: "开发者模式", runtimeStatusTone: .ok, showsRoute: showsRoute,
+            showsRouteProgress: false,
+            primaryTitle: showsRoute ? "设为起点" : "连接隧道",
+            primaryAccessibilityLabel: showsRoute ? "设为起点" : "连接隧道",
+            primarySystemImage: nil, primaryColor: .blue, primaryDisabled: false,
+            secondaryTitle: nil as String?, secondaryDisabled: false, showsSpotHelp: false,
+            availableHeight: availableHeight,
+            playbackClock: route.clock,
+            spotContent: { Button("真实走动 · 已关闭", action: {}).frame(minHeight: 44) },
+            routePanel: {
+                VStack(spacing: 4) {
+                    HStack(spacing: 4) {
+                        Text("步行").frame(maxWidth: .infinity, minHeight: 44)
+                        Text("5.0 公里/小时").frame(maxWidth: .infinity, minHeight: 44)
+                        Text("一次").frame(maxWidth: .infinity, minHeight: 44)
+                    }
+                    HStack(spacing: 4) {
+                        Text("偏移 0 米").frame(maxWidth: .infinity, minHeight: 44)
+                        Text("路线管理").frame(maxWidth: .infinity, minHeight: 44)
+                    }
+                }
+            },
+            caption: { EmptyView() }, onHelp: {}, onToggleFavorite: {},
+            onOpenSettings: {}, onPrimaryTap: {}, onSecondaryTap: {}
+        )
+        .background {
+            GeometryReader { geometry in
+                Color.clear.onAppear { bounds.frames["card"] = geometry.frame(in: .global) }
+                    .onChange(of: geometry.frame(in: .global)) { bounds.frames["card"] = $0 }
+            }
+        }
+        let host = UIHostingController(rootView: card)
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 375, height: 667))
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        host.view.frame = window.bounds
+        host.view.layoutIfNeeded()
+        RunLoop.main.run(until: Date().addingTimeInterval(0.15))
+        let height = bounds.frames["card"]?.height ?? -1
+        window.isHidden = true
+        return height
+    }
+
+    func testRuntimeStatusSitsOnTheTitleRow() {
+        for showsRoute in [false, true] {
+            let bounds = HomeLayoutBounds()
+            let route = RoutePlaybackController()
+            let card = MapHomeBottomCard(
+                displayName: showsRoute ? "当前路线" : "当前选点",
+                selectionStatus: showsRoute ? "请设置起点和终点" : "已选位置 · 尚未开始",
+                spoofState: .idle, isFavoriteSelected: false, favoriteSaveDisabled: false,
+                runtimeStatusText: "开发者模式", runtimeStatusTone: .ok, showsRoute: showsRoute,
+                showsRouteProgress: false,
+                primaryTitle: showsRoute ? "设为起点" : "连接隧道",
+                primaryAccessibilityLabel: showsRoute ? "设为起点" : "连接隧道",
+                primarySystemImage: nil, primaryColor: .blue, primaryDisabled: false,
+                secondaryTitle: nil as String?, secondaryDisabled: false, showsSpotHelp: false,
+                availableHeight: 240,
+                playbackClock: route.clock,
+                spotContent: { Color.clear.frame(height: 44) },
+                routePanel: { Color.clear.frame(height: 88) },
+                caption: { EmptyView() }, onHelp: {}, onToggleFavorite: {},
+                onOpenSettings: {}, onPrimaryTap: {}, onSecondaryTap: {}
+            )
+            .onPreferenceChange(HomeCardTitleFrameKey.self) { bounds.frames["title"] = $0 }
+            .onPreferenceChange(HomeRuntimeStatusFrameKey.self) { bounds.frames["status"] = $0 }
+            let host = UIHostingController(rootView: card)
+            let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 400))
+            window.rootViewController = host
+            window.makeKeyAndVisible()
+            host.view.frame = window.bounds
+            host.view.layoutIfNeeded()
+            RunLoop.main.run(until: Date().addingTimeInterval(0.2))
+            let mode = showsRoute ? "route" : "spot"
+            guard let title = bounds.frames["title"], let status = bounds.frames["status"] else {
+                XCTFail("Missing title/status frames in \(mode)")
+                window.isHidden = true
+                continue
+            }
+            XCTAssertEqual(title.midY, status.midY, accuracy: 18, "\(mode) status must share the title row")
+            XCTAssertGreaterThan(status.minX, title.minX + 40, "\(mode) status must sit to the right of the title")
+            window.isHidden = true
+        }
+    }
+
+    func testSelectionCaptionDoesNotAddAHeaderRow() {
+        let bounds = HomeLayoutBounds()
+        let route = RoutePlaybackController()
+        let card = MapHomeBottomCard(
+            displayName: "当前选点",
+            selectionStatus: "已选位置 · 尚未开始",
+            spoofState: .idle, isFavoriteSelected: false, favoriteSaveDisabled: false,
+            runtimeStatusText: "开发者模式", runtimeStatusTone: .ok, showsRoute: false,
+            showsRouteProgress: false,
+            primaryTitle: "连接隧道", primaryAccessibilityLabel: "连接隧道",
+            primarySystemImage: nil, primaryColor: .blue, primaryDisabled: false,
+            secondaryTitle: nil as String?, secondaryDisabled: false, showsSpotHelp: false,
+            availableHeight: 240,
+            playbackClock: route.clock,
+            spotContent: { Color.clear.frame(height: 44) },
+            routePanel: { EmptyView() },
+            caption: { Text("已设路线").font(.caption) },
+            onHelp: {}, onToggleFavorite: {}, onOpenSettings: {}, onPrimaryTap: {}, onSecondaryTap: {}
+        )
+        .onPreferenceChange(HomeCardHeaderHeightKey.self) {
+            bounds.frames["header"] = CGRect(x: 0, y: 0, width: 0, height: $0)
+        }
+        let host = UIHostingController(rootView: card)
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 400))
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        host.view.frame = window.bounds
+        host.view.layoutIfNeeded()
+        RunLoop.main.run(until: Date().addingTimeInterval(0.2))
+        let height = bounds.frames["header"]?.height ?? 999
+        XCTAssertGreaterThan(height, 36)
+        XCTAssertLessThanOrEqual(height, 52, "说明文字 must not occupy a row under the title")
+        window.isHidden = true
+    }
+
+    func testModeEntryPopupStaysInsideTheCardHeight() {
+        func render(showPopup: Bool) -> CGFloat {
+            let bounds = HomeLayoutBounds()
+            let content = VStack(spacing: 8) {
+                Text("定点").frame(maxWidth: .infinity, minHeight: 44)
+                RoundedRectangle(cornerRadius: 20)
+                    .fill(Color.secondary.opacity(0.2))
+                    .frame(height: 200)
+                    .overlay {
+                        if showPopup {
+                            HomePopupSurface(title: "最近地点", onClose: {}, maxHeight: 184) {
+                                ForEach(0..<20) { index in
+                                    Text("地点 \(index)").frame(minHeight: 44)
+                                }
+                            }
+                            .padding(8)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                        }
+                    }
+                    .background {
+                        GeometryReader { geometry in
+                            Color.clear.onAppear { bounds.frames["card"] = geometry.frame(in: .global) }
+                                .onChange(of: geometry.frame(in: .global)) { bounds.frames["card"] = $0 }
+                        }
+                    }
+            }
+            .padding()
+            .background {
+                GeometryReader { geometry in
+                    Color.clear.onAppear { bounds.frames["cluster"] = geometry.frame(in: .global) }
+                        .onChange(of: geometry.frame(in: .global)) { bounds.frames["cluster"] = $0 }
+                }
+            }
+            let host = UIHostingController(rootView: content)
+            let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 375, height: 667))
+            window.rootViewController = host
+            window.makeKeyAndVisible()
+            host.view.frame = window.bounds
+            host.view.layoutIfNeeded()
+            RunLoop.main.run(until: Date().addingTimeInterval(0.15))
+            let height = bounds.frames["cluster"]?.height ?? -1
+            window.isHidden = true
+            return height
+        }
+        let idle = render(showPopup: false)
+        let open = render(showPopup: true)
+        XCTAssertGreaterThan(idle, 200)
+        XCTAssertEqual(idle, open, accuracy: 2, "Opening 最近/收藏 must not grow the function area")
+    }
+
     func testSmallScreenPopupReplacesHeaderInsteadOfLosingItsContent() {
         let regions = MapHomeOverlayRegions(size: CGSize(width: 320, height: 568), safeArea: EdgeInsets(top: 20, leading: 0, bottom: 0, trailing: 0))
         XCTAssertEqual(regions.top.height, 180)
@@ -102,8 +289,8 @@ final class HomeLayoutRenderingTests: XCTestCase {
                 XCTAssertGreaterThanOrEqual(frame.minY, 0)
                 XCTAssertLessThanOrEqual(frame.maxY, size.height + 1)
             }
-            if name == "spot-light", let frame = bounds.frames["bottom"] {
-                XCTAssertLessThan(frame.height, 250, "Short content must not fill all available map space")
+            if let frame = bounds.frames["bottom"] {
+                XCTAssertLessThanOrEqual(frame.height, AppLayout.homeFunctionClusterHeight + 1)
             }
             let attachment = XCTAttachment(image: rendered)
             attachment.name = "home-\(name)"
@@ -152,7 +339,14 @@ private struct HomeLayoutFixture: View {
             }
             .background(measure("top"))
         }, bottom: { height in
-            card(availableHeight: height).background(measure("bottom"))
+            let clusterHeight = min(height, AppLayout.homeFunctionClusterHeight)
+            let cardHeight = max(140, clusterHeight - AppLayout.homeModeBarHeight - AppLayout.homeFunctionStackSpacing)
+            VStack(spacing: AppLayout.homeFunctionStackSpacing) {
+                Color.clear.frame(height: AppLayout.homeModeBarHeight)
+                card(availableHeight: cardHeight)
+            }
+            .frame(height: clusterHeight, alignment: .top)
+            .background(measure("bottom"))
         })
         .frame(width: size.width, height: size.height)
         .background(Color(uiColor: .systemGroupedBackground))

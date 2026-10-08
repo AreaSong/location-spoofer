@@ -31,13 +31,13 @@ struct MapHomeBottomCard<SpotContent: View, RoutePanel: View, Caption: View>: Vi
     let onSecondaryTap: () -> Void
     @Environment(\.dynamicTypeSize) private var typeSize
     @State private var actionHeight: CGFloat = 48
+    @State private var showsStatusDetail = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HomeFittingScrollView(maxHeight: availableHeight - actionHeight - 32) {
+            HomeFittingScrollView(maxHeight: availableHeight - actionHeight - 32, fillsMaxHeight: true) {
                 VStack(alignment: .leading, spacing: 6) {
                     locationHeader
-                    statusRow
                     detailContent
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -45,6 +45,8 @@ struct MapHomeBottomCard<SpotContent: View, RoutePanel: View, Caption: View>: Vi
             actionRow
         }
         .padding(12)
+        .frame(height: availableHeight, alignment: .top)
+        .overlay { statusDetailOverlay }
         .background {
             RoundedRectangle(cornerRadius: AppRadius.card, style: .continuous)
                 .fill(.thickMaterial)
@@ -55,59 +57,167 @@ struct MapHomeBottomCard<SpotContent: View, RoutePanel: View, Caption: View>: Vi
     }
 
     private var locationHeader: some View {
-        HStack(alignment: .top, spacing: 8) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(displayName)
-                    .font(.headline)
-                    .lineLimit(typeSize.isAccessibilitySize ? 3 : 2)
-                    .fixedSize(horizontal: false, vertical: true)
-                Text(selectionStatus)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(typeSize.isAccessibilitySize ? nil : 3)
-                    .fixedSize(horizontal: false, vertical: true)
-                caption()
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            if !showsRoute {
-                Button(action: onToggleFavorite) {
-                    Image(systemName: isFavoriteSelected ? "star.fill" : "star")
-                        .font(.system(size: 19, weight: .medium))
-                        .foregroundStyle(isFavoriteSelected ? Color.orange : Color.secondary)
-                        .frame(width: 44, height: 44)
+        titleRow
+            .background {
+                GeometryReader { geometry in
+                    Color.clear.preference(key: HomeCardHeaderHeightKey.self, value: geometry.size.height)
                 }
-                .buttonStyle(.plain)
-                .disabled(favoriteSaveDisabled)
-                .accessibilityLabel(isFavoriteSelected ? "取消选中收藏" : "收藏当前选点")
+            }
+    }
+
+    @ViewBuilder
+    private var titleRow: some View {
+        if typeSize.isAccessibilitySize {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(alignment: .center, spacing: 0) {
+                    titleText
+                    statusDetailButton
+                }
+                HStack(spacing: 8) {
+                    runtimeStatusButton
+                    if showsSpotHelp { helpButton }
+                    if !showsRoute { favoriteButton }
+                    Spacer(minLength: 0)
+                }
+            }
+        } else {
+            HStack(alignment: .center, spacing: 6) {
+                titleText
+                statusDetailButton
+                Spacer(minLength: 8)
+                runtimeStatusButton
+                if showsSpotHelp { helpButton }
+                if !showsRoute { favoriteButton }
             }
         }
     }
 
-    private var statusRow: some View {
-        HStack(spacing: 8) {
-            Button(action: onOpenSettings) {
-                HStack(spacing: 6) {
-                    Circle().fill(runtimeStatusTone.color).frame(width: 6, height: 6)
-                    Text(runtimeStatusText).font(.caption)
-                    Image(systemName: "chevron.right").font(.caption2)
+    private var titleText: some View {
+        Text(displayName)
+            .font(.headline)
+            .lineLimit(typeSize.isAccessibilitySize ? 3 : 1)
+            .truncationMode(.tail)
+            .frame(minWidth: 0, alignment: .leading)
+            .fixedSize(horizontal: false, vertical: true)
+            .background {
+                GeometryReader { geometry in
+                    Color.clear.preference(key: HomeCardTitleFrameKey.self, value: geometry.frame(in: .global))
                 }
-                .foregroundStyle(.secondary)
-                .frame(minHeight: 44, alignment: .leading)
-                .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
-            .accessibilityHint("打开设置")
-            Spacer(minLength: 0)
-            if showsSpotHelp {
-                Button(action: onHelp) {
-                    Label("帮助", systemImage: "questionmark.circle")
-                        .font(.caption)
-                        .frame(minWidth: 44, minHeight: 44)
-                }
-                .buttonStyle(.plain)
+            .accessibilityIdentifier("home.cardTitle")
+            .accessibilityValue(selectionStatus)
+    }
+
+    private var statusDetailButton: some View {
+        Button {
+            showsStatusDetail.toggle()
+        } label: {
+            Image(systemName: showsStatusDetail ? "exclamationmark.circle.fill" : "exclamationmark.circle")
+                .font(.system(size: 17, weight: .medium))
                 .foregroundStyle(.secondary)
+                .frame(width: 44, height: 44)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .layoutPriority(1)
+        .accessibilityLabel("查看说明")
+        .accessibilityValue(selectionStatus)
+        .accessibilityHint("显示当前选点或路线的说明")
+        .accessibilityIdentifier("home.statusDetail")
+    }
+
+    @ViewBuilder
+    private var statusDetailOverlay: some View {
+        if showsStatusDetail {
+            ZStack(alignment: .top) {
+                Color.black.opacity(0.18)
+                    .contentShape(Rectangle())
+                    .onTapGesture { showsStatusDetail = false }
+                    .accessibilityHidden(true)
+                statusDetailPanel
+                    .padding(8)
+            }
+            .accessibilityIdentifier("home.statusDetail.panel")
+        }
+    }
+
+    private var statusDetailPanel: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text("说明")
+                    .font(.subheadline.weight(.semibold))
+                    .lineLimit(1)
+                Spacer(minLength: 4)
+                Button("完成") { showsStatusDetail = false }
+                    .fixedSize()
+                    .frame(minWidth: 44, minHeight: 44)
+            }
+            Text(selectionStatus)
+                .font(.subheadline)
+                .fixedSize(horizontal: false, vertical: true)
+            caption()
+        }
+        .padding(.horizontal, 12)
+        .padding(.bottom, 12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background {
+            RoundedRectangle(cornerRadius: AppRadius.control, style: .continuous)
+                .fill(Color(uiColor: .systemBackground))
+        }
+        .clipShape(RoundedRectangle(cornerRadius: AppRadius.control, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: AppRadius.control, style: .continuous)
+                .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1)
+        }
+        .shadow(color: .black.opacity(0.16), radius: 10, y: 4)
+    }
+
+    private var runtimeStatusButton: some View {
+        Button(action: onOpenSettings) {
+            HStack(spacing: 4) {
+                Circle().fill(runtimeStatusTone.color).frame(width: 6, height: 6)
+                Text(runtimeStatusText).font(.caption).lineLimit(1)
+                Image(systemName: "chevron.right").font(.caption2)
+            }
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 4)
+            .frame(minHeight: 44)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .fixedSize(horizontal: true, vertical: false)
+        .layoutPriority(1)
+        .accessibilityHint("打开设置")
+        .background {
+            GeometryReader { geometry in
+                Color.clear.preference(key: HomeRuntimeStatusFrameKey.self, value: geometry.frame(in: .global))
             }
         }
+        .accessibilityIdentifier("home.runtimeStatus")
+    }
+
+    private var favoriteButton: some View {
+        Button(action: onToggleFavorite) {
+            Image(systemName: isFavoriteSelected ? "star.fill" : "star")
+                .font(.system(size: 19, weight: .medium))
+                .foregroundStyle(isFavoriteSelected ? Color.orange : Color.secondary)
+                .frame(width: 44, height: 44)
+        }
+        .buttonStyle(.plain)
+        .disabled(favoriteSaveDisabled)
+        .accessibilityLabel(isFavoriteSelected ? "取消选中收藏" : "收藏当前选点")
+    }
+
+    private var helpButton: some View {
+        Button(action: onHelp) {
+            Label("帮助", systemImage: "questionmark.circle")
+                .font(.caption)
+                .labelStyle(.iconOnly)
+                .frame(width: 44, height: 44)
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(.secondary)
+        .accessibilityLabel("帮助")
     }
 
     private var actionRow: some View {
@@ -191,4 +301,25 @@ struct MapHomeBottomCard<SpotContent: View, RoutePanel: View, Caption: View>: Vi
 private enum HomeActionHeightKey: PreferenceKey {
     static var defaultValue: CGFloat = 0
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
+}
+
+enum HomeCardHeaderHeightKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
+}
+
+enum HomeCardTitleFrameKey: PreferenceKey {
+    static var defaultValue = CGRect.zero
+    static func reduce(value: inout CGRect, nextValue: () -> CGRect) {
+        let next = nextValue()
+        if next != .zero { value = next }
+    }
+}
+
+enum HomeRuntimeStatusFrameKey: PreferenceKey {
+    static var defaultValue = CGRect.zero
+    static func reduce(value: inout CGRect, nextValue: () -> CGRect) {
+        let next = nextValue()
+        if next != .zero { value = next }
+    }
 }

@@ -12,6 +12,16 @@ enum AppRadius {
 /// 首页底部卡展开区相对屏幕高度的上限，避免挡住大半地图。
 enum AppLayout {
     static let bottomCardExpandedHeightFraction: CGFloat = 0.28
+    /// 定点/路线条高度：内边距 4×2 + 选项 44。
+    static let homeModeBarHeight: CGFloat = 52
+    /// 模式条与卡片之间的间距。
+    static let homeFunctionStackSpacing: CGFloat = 8
+    /// 定点/路线共用的底部卡片高度，切换模式或展开子功能时整块功能区不跳动。
+    static let homeFunctionCardHeight: CGFloat = 292
+    /// 模式条 + 间距 + 卡片，整块功能控件的锁定高度。
+    static var homeFunctionClusterHeight: CGFloat {
+        homeModeBarHeight + homeFunctionStackSpacing + homeFunctionCardHeight
+    }
     /// 地图缩放条边长，与首页坐标条左下的缩放控件对齐。
     static let mapZoomControlSize: CGFloat = 52
     /// 图层 / 系统地图 / 回到定位 三个圆钮加间距，贴在定点/路线条右上角。
