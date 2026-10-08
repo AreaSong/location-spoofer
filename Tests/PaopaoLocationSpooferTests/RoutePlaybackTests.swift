@@ -688,6 +688,7 @@ final class RoutePlaybackControllerTests: XCTestCase {
         }
         XCTAssertEqual(route.vias.count, RoutePlaybackController.maxViaCount)
         XCTAssertEqual(RoutePlaybackController.maxViaCount, 10)
+        XCTAssertEqual(viaNumbers(on: route), Array(1...RoutePlaybackController.maxViaCount))
 
         let extra = CoordinateConverter.coordinatePair(
             lat: 22.51,
@@ -790,15 +791,57 @@ final class RoutePlaybackControllerTests: XCTestCase {
 
         XCTAssertFalse(route.isRouting)
         XCTAssertEqual(route.phase, .paused)
+        XCTAssertEqual(route.vias.count, 2)
+        XCTAssertEqual(route.vias.last!.wgs84.latitude, extra.wgs84.latitude, accuracy: 0.000_000_1)
         XCTAssertTrue(route.vias.contains(where: {
             abs($0.wgs84.latitude - extra.wgs84.latitude) < 0.000_000_1
         }))
         XCTAssertEqual(route.progress, 0, accuracy: 0.02)
+        XCTAssertEqual(viaNumbers(on: route), [1, 2])
         let pathStart = route.path?.points.first
         XCTAssertNotNil(pathStart)
         XCTAssertEqual(pathStart!.wgs84.latitude, here!.wgs84.latitude, accuracy: 0.002)
         XCTAssertEqual(pathStart!.wgs84.longitude, here!.wgs84.longitude, accuracy: 0.002)
         XCTAssertEqual(route.current?.wgs84.latitude ?? 0, here!.wgs84.latitude, accuracy: 0.002)
+    }
+
+    func testAddViaDuringPlaybackAppendsAfterExistingVias() async {
+        let previous = RouteDirections.provider
+        RouteDirections.provider = EchoRouteDirections()
+        defer { RouteDirections.provider = previous }
+
+        let route = preparedRoute(repeatMode: .once)
+        defer { _ = route.exit() }
+        route.ignoresWriteGate = true
+        route.applyCoordinate = { _ in true }
+        route.requestPlay()
+        route.noteActivated()
+        route.pause()
+
+        let original = route.vias[0]
+        let first = CoordinateConverter.coordinatePair(
+            lat: 22.498,
+            lon: 113.955,
+            mapCoordinateSystem: .wgs84
+        )
+        route.addVia(first)
+        await waitUntilRouteSettles(route)
+        XCTAssertEqual(route.vias.count, 2)
+        XCTAssertEqual(route.vias[0].wgs84.latitude, original.wgs84.latitude, accuracy: 0.000_000_1)
+        XCTAssertEqual(route.vias[1].wgs84.latitude, first.wgs84.latitude, accuracy: 0.000_000_1)
+        XCTAssertEqual(viaNumbers(on: route), [1, 2])
+
+        let second = CoordinateConverter.coordinatePair(
+            lat: 22.499,
+            lon: 113.956,
+            mapCoordinateSystem: .wgs84
+        )
+        route.addVia(second)
+        await waitUntilRouteSettles(route)
+        XCTAssertEqual(route.vias.count, 3)
+        XCTAssertEqual(route.vias[0].wgs84.latitude, original.wgs84.latitude, accuracy: 0.000_000_1)
+        XCTAssertEqual(route.vias[2].wgs84.latitude, second.wgs84.latitude, accuracy: 0.000_000_1)
+        XCTAssertEqual(viaNumbers(on: route), [1, 2, 3])
     }
 
     func testPausedLocationBlockDropsResume() {
@@ -852,6 +895,21 @@ final class RoutePlaybackControllerTests: XCTestCase {
         XCTAssertEqual(restored.speedKilometersPerHour, 7, accuracy: 0.01)
         XCTAssertEqual(restored.offsetMeters, 25, accuracy: 0.01)
         XCTAssertEqual(restored.repeatMode, .loop)
+    }
+
+    private func viaNumbers(on route: RoutePlaybackController) -> [Int] {
+        route.overlayPins.compactMap { pin in
+            if case .via(let number) = pin.role { return number }
+            return nil
+        }
+    }
+
+    private func waitUntilRouteSettles(_ route: RoutePlaybackController) async {
+        try? await Task.sleep(nanoseconds: 50_000_000)
+        for _ in 0..<40 where route.isRouting {
+            try? await Task.sleep(nanoseconds: 50_000_000)
+        }
+        XCTAssertFalse(route.isRouting)
     }
 
     private func makeRoute() -> RoutePlaybackController {

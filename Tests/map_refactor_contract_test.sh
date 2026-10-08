@@ -469,6 +469,11 @@ grep -q 'writtenLatitude: wgs.latitude' "$ROOT/App/SpoofSession.swift" \
 test -f "$ROOT/Shared/RoutePlaybackClock.swift" \
   || fail "playback progress must publish separately from the route structure"
 grep -q 'overlayPins' "$MAP_HOME" || fail "the map must receive start, via, and end pins"
+grep -Fq 'split.visited + split.upcoming + [pair]' "$ROOT/Shared/RoutePlaybackController.swift" \
+  || fail "a via added during playback must append after existing upcoming points"
+if grep -Fq 'split.visited + [pair] + split.upcoming' "$ROOT/Shared/RoutePlaybackController.swift"; then
+  fail "a via added during playback must not jump to the front of the via list"
+fi
 grep -q 'return "起"' "$ROOT/App/RouteMapAnnotations.swift" || fail "the start pin must be labeled 起"
 grep -q 'return "终"' "$ROOT/App/RouteMapAnnotations.swift" || fail "the end pin must be labeled 终"
 grep -q 'viaPoints' "$ROOT/Shared/SavedRouteStore.swift" || fail "saved routes must persist via points"

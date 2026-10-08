@@ -320,9 +320,10 @@ final class RoutePlaybackController: ObservableObject {
             return
         }
         let split = splitViasByProgress()
-        vias = split.visited + [pair] + split.upcoming
+        // 后加的点排在还没走到的途经点后面、终点前面，避免新点变成 1 号并打乱原顺序。
+        vias = split.visited + split.upcoming + [pair]
         statusMessage = "正在接入新的途经点…"
-        continuePlaybackThroughRemaining(from: current, upcomingPrefix: [pair] + split.upcoming)
+        continuePlaybackThroughRemaining(from: current, upcomingPrefix: split.upcoming + [pair])
     }
 
     private func splitViasByProgress() -> (visited: [CoordinatePair], upcoming: [CoordinatePair]) {
