@@ -92,7 +92,7 @@ private enum HomeScrollHeightKey: PreferenceKey {
 }
 
 enum HomePopup: String, Identifiable {
-    case recents, favorites, points, savedRoutes, walk, travel, speed, offset, repetition, management
+    case recents, favorites, points, savedRoutes, walk, travel, speed, offset, repetition, management, coordinate
     var id: String { rawValue }
     /// 路线入口打开的列表，叠在底部卡片上，不改变功能区高度。
     var isModeEntry: Bool {
@@ -119,7 +119,107 @@ enum HomePopup: String, Identifiable {
         case .offset: return "位置偏移"
         case .repetition: return "重复方式"
         case .management: return "路线参数"
+        case .coordinate: return "坐标标准"
         }
+    }
+}
+
+enum HomeCoordinateRowFrameKey: PreferenceKey {
+    static var defaultValue: CGRect = .zero
+    static func reduce(value: inout CGRect, nextValue: () -> CGRect) {
+        let next = nextValue()
+        if next != .zero { value = next }
+    }
+}
+
+/// 贴在坐标行下的工具浮层，不用「完成」，点空白地图或再点「功能」关掉。
+struct HomeToolsPopover<Content: View>: View {
+    let title: String
+    var maxHeight: CGFloat = 360
+    @ViewBuilder let content: () -> Content
+    @State private var titleHeight: CGFloat = 24
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title)
+                .font(.subheadline.weight(.semibold))
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background {
+                    GeometryReader { geometry in
+                        Color.clear.preference(key: HomePopoverTitleHeightKey.self, value: geometry.size.height)
+                    }
+                }
+            HomeFittingScrollView(maxHeight: max(44, maxHeight - titleHeight - 28)) {
+                content()
+            }
+        }
+        .onPreferenceChange(HomePopoverTitleHeightKey.self) { if $0 > 0 { titleHeight = $0 } }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .background(.thickMaterial, in: RoundedRectangle(cornerRadius: AppRadius.control, style: .continuous))
+        .shadow(color: .black.opacity(0.16), radius: 12, y: 6)
+        .accessibilityIdentifier("home.tools.popover")
+    }
+}
+
+private enum HomePopoverTitleHeightKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
+}
+
+/// 坐标标准与复制。不用 SwiftUI Menu，避免叠在 MKMapView 上第二次点击被地图手势吃掉。
+struct HomeCoordinateMenu: View {
+    let selectedSystem: CoordinateConverter.MapCoordinateSystem
+    let mapSystem: CoordinateConverter.MapCoordinateSystem
+    let onSelect: (CoordinateConverter.MapCoordinateSystem) -> Void
+    let onCopy: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            systemRow(.gcj02)
+            systemRow(.wgs84)
+            Button(action: onCopy) {
+                Text("复制坐标")
+                    .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 12)
+        .background(.thickMaterial, in: RoundedRectangle(cornerRadius: AppRadius.control, style: .continuous))
+        .shadow(color: .black.opacity(0.16), radius: 12, y: 6)
+        .accessibilityIdentifier("home.coordinate.menu")
+    }
+
+    private func systemRow(_ system: CoordinateConverter.MapCoordinateSystem) -> some View {
+        let selected = selectedSystem == system
+        return Button {
+            onSelect(system)
+        } label: {
+            HStack(spacing: 8) {
+                Text(MapHomeCoordinateLine.title(for: system))
+                    .font(.subheadline)
+                    .fixedSize(horizontal: true, vertical: false)
+                Spacer(minLength: 8)
+                if selected && system == mapSystem {
+                    Text("当前")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 1)
+                        .background(Color.accentColor, in: Capsule())
+                }
+                if selected {
+                    Image(systemName: "checkmark")
+                        .foregroundStyle(Color.accentColor)
+                }
+            }
+            .frame(minHeight: 44)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(MapHomeCoordinateLine.title(for: system))
+        .accessibilityAddTraits(selected ? .isSelected : [])
     }
 }
 

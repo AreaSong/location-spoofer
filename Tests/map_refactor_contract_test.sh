@@ -292,8 +292,20 @@ grep -q 'home.spot.favorites' "$MAP_HOME" || fail "spot favorites must be a hori
 if awk '/var homeModeAndEntries/,/private func homeModeButton/' "$ROOT/App/MapHomeView+Controls.swift" | grep -q 'homePopupButton(.recents'; then
   fail "recents must live inside the spot card, not on the mode bar"
 fi
-awk '/var homeModeAndEntries/,/private func homeModeButton/' "$ROOT/App/MapHomeView+Controls.swift" | grep -q '.walk' \
-  || fail "uncommon walk must sit on the mode bar for spot mode"
+if awk '/var homeModeAndEntries/,/private func homeModeButton/' "$ROOT/App/MapHomeView+Controls.swift" | grep -Eq '\.walk|"走动"'; then
+  fail "walk must not sit on the mode bar beside 定点/路线"
+fi
+grep -q 'showsFunction: true' "$ROOT/App/MapHomeView+Controls.swift" \
+  || fail "uncommon tools must sit on the coordinate row as 功能"
+grep -q 'Text("功能")' "$ROOT/App/MapHomeCoordinateLine.swift" \
+  || fail "the coordinate row must keep the 功能 label"
+grep -q 'struct HomeToolsPopover' "$ROOT/App/MapHomeOverlayLayout.swift" \
+  || fail "walk and route parameters must open as a floating popover"
+grep -q 'struct HomeCoordinateMenu' "$ROOT/App/MapHomeOverlayLayout.swift" \
+  || fail "coordinate taps must open GCJ/WGS/copy without a SwiftUI Menu"
+if grep -E '^[[:space:]]*Menu \{' "$ROOT/App/MapHomeCoordinateLine.swift"; then
+  fail "coordinate actions must not use SwiftUI Menu over the map"
+fi
 if grep -A8 'var isModeEntry' "$ROOT/App/MapHomeOverlayLayout.swift" | grep -Eq 'recents|favorites'; then
   fail "recents and favorites must not overlay the card as mode-entry lists"
 fi
@@ -320,8 +332,11 @@ grep -q 'home.route.saved' "$MAP_HOME" || fail "saved route list must be identif
 if awk '/var homeModeAndEntries/,/private func homeModeButton/' "$ROOT/App/MapHomeView+Controls.swift" | grep -q 'homePopupButton(.points'; then
   fail "route points must not sit on the mode bar"
 fi
-awk '/var homeModeAndEntries/,/private func homeModeButton/' "$ROOT/App/MapHomeView+Controls.swift" | grep -q '.management' \
-  || fail "uncommon route settings must sit on the mode bar"
+if awk '/var homeModeAndEntries/,/private func homeModeButton/' "$ROOT/App/MapHomeView+Controls.swift" | grep -Eq '\.management|"参数"'; then
+  fail "route parameters must not sit on the mode bar beside 定点/路线"
+fi
+grep -q 'toggleHomePopup(showsRoutePanelActive ? .management : .walk)' "$ROOT/App/MapHomeView+Controls.swift" \
+  || fail "功能 must open walk or route parameters from the coordinate row"
 grep -q 'if routeKeepsRunningWhileSpotShown { return "查看路线" }' "$MAP_HOME" || fail "spot card must return to the running route instead of starting a spot operation"
 grep -q 'showsSpotHelp: spoofState != .idle && !routeKeepsRunningWhileSpotShown' "$MAP_HOME" \
   || fail "idle and running-route states must hide the spot help control"
@@ -335,17 +350,24 @@ if grep -q 'HomeFittingScrollView' "$ROOT/App/MapHomeBottomCard.swift"; then
   fail "the function card must stay fixed and not scroll"
 fi
 if grep -A40 'var homeSpotControls' "$ROOT/App/MapHomeView+Controls.swift" | grep -q 'HomePopupSurface'; then
-  fail "walk settings must replace the common zone instead of overlaying a 完成 popup"
+  fail "walk settings must not overlay a 完成 popup on the spot card"
 fi
-grep -A40 'var homeSpotControls' "$ROOT/App/MapHomeView+Controls.swift" | grep -q 'PhysicalWalkHeadingControls' \
-  || fail "tapping 走动 must show walk settings in the common zone"
+if grep -A40 'var homeSpotControls' "$ROOT/App/MapHomeView+Controls.swift" | grep -q 'PhysicalWalkHeadingControls'; then
+  fail "walk settings must not replace recents and favorites in the common zone"
+fi
 if grep -A40 'var homeRouteControls' "$ROOT/App/MapHomeView+Controls.swift" | grep -q 'HomePopupSurface'; then
-  fail "route parameters must replace the common zone instead of overlaying a 完成 popup"
+  fail "route parameters must not overlay a 完成 popup on the route card"
 fi
-awk '/var homeModeAndEntries/,/private func homeModeButton/' "$ROOT/App/MapHomeView+Controls.swift" | grep -q '"走动"' \
-  || fail "spot mode bar must use the short 走动 label"
-awk '/var homeModeAndEntries/,/private func homeModeButton/' "$ROOT/App/MapHomeView+Controls.swift" | grep -q '"参数"' \
-  || fail "route mode bar must use the short 参数 label"
+if grep -A40 'var homeRouteControls' "$ROOT/App/MapHomeView+Controls.swift" | grep -q 'routePanel(section: .settings)'; then
+  fail "route parameters must not replace saved routes in the common zone"
+fi
+grep -A40 'func homeChromePopover' "$ROOT/App/MapHomeView+Controls.swift" | grep -q 'PhysicalWalkHeadingControls' \
+  || fail "tapping 功能 in spot mode must show walk settings in the floating popover"
+grep -A40 'func homeChromePopover' "$ROOT/App/MapHomeView+Controls.swift" | grep -q 'routePanel(section: .settings)' \
+  || fail "tapping 功能 in route mode must show route parameters in the floating popover"
+if awk '/struct HomeToolsPopover/,/struct HomeCoordinateMenu/' "$ROOT/App/MapHomeOverlayLayout.swift" | grep -q 'Button("完成"'; then
+  fail "the function popover must not use a 完成 button"
+fi
 grep -q 'home.runtimeStatus' "$ROOT/App/MapHomeBottomCard.swift" \
   || fail "runtime status must sit on the card title row"
 if grep -q 'private var statusRow' "$ROOT/App/MapHomeBottomCard.swift"; then

@@ -102,6 +102,10 @@ struct MapHomeView: View {
     @State var showRouteLocationSetup = false
     @State var showsRoutePanel = false
     @State var homePopup: HomePopup?
+    @State var previewCoordinateSystem = CoordinateConverter.currentMapCoordinateSystem
+    @State var coordinateCopied = false
+    @State var coordinateCopyGeneration = 0
+    @State var coordinateRowFrame: CGRect = .zero
     @State var showExitRouteConfirm = false
     @State var developerLocationError = ""
     @State var lastDeveloperTunnelRecoveryAt: Date?
@@ -280,13 +284,19 @@ struct MapHomeView: View {
                     }
                 }
             )
-
         }
+        .coordinateSpace(name: "homeOverlay")
+        .overlay(alignment: .topLeading) {
+            homeChromePopoverOverlay
+        }
+        .onPreferenceChange(HomeCoordinateRowFrameKey.self) { coordinateRowFrame = $0 }
         .ignoresSafeArea(.keyboard)
         .navigationBarHidden(true)
         .onChange(of: showsRoutePanelActive) { _ in homePopup = nil }
         .onChange(of: searchFocused) { focused in if focused { homePopup = nil } }
         .onChange(of: activeSheet) { sheet in if sheet != nil { homePopup = nil } }
+        .onChange(of: displayedMapCoordinateSystem) { previewCoordinateSystem = $0 }
+        .onChange(of: cachedSelectionPair) { _ in previewCoordinateSystem = displayedMapCoordinateSystem }
         .sheet(item: $activeSheet) { sheet in
             NavigationView {
                 switch sheet {

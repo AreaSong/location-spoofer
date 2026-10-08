@@ -364,6 +364,64 @@ final class HomeLayoutRenderingTests: XCTestCase {
         XCTAssertEqual(idle, open, accuracy: 2, "Opening 最近/收藏 must not grow the function area")
     }
 
+    func testCoordinateMenuListsSystemsAndCopy() {
+        let menu = HomeCoordinateMenu(
+            selectedSystem: .wgs84, mapSystem: .wgs84, onSelect: { _ in }, onCopy: {}
+        )
+        let host = UIHostingController(rootView: menu.padding())
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 240))
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        host.view.frame = window.bounds
+        host.view.layoutIfNeeded()
+        RunLoop.main.run(until: Date().addingTimeInterval(0.15))
+        let texts = visibleTexts(in: host.view)
+        XCTAssertTrue(texts.contains { $0.contains("GCJ-02") }, "got \(texts)")
+        XCTAssertTrue(texts.contains { $0.contains("WGS-84") }, "got \(texts)")
+        XCTAssertTrue(texts.contains("复制坐标"), "got \(texts)")
+        XCTAssertFalse(texts.contains("完成"))
+        window.isHidden = true
+    }
+
+    func testCoordinateRowPutsFunctionBesideCoordinates() {
+        let pair = CoordinateConverter.coordinatePair(
+            lat: 22.5, lon: 113.9, mapCoordinateSystem: .wgs84
+        )
+        let line = MapHomeCoordinateLine(
+            pair: pair, mapSystem: .wgs84, selectedSystem: .wgs84,
+            showsFunction: true, onCoordinateTap: {}, onFunctionTap: {}
+        )
+        let host = UIHostingController(rootView: line.padding().frame(width: 390))
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 120))
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        host.view.frame = window.bounds
+        host.view.layoutIfNeeded()
+        RunLoop.main.run(until: Date().addingTimeInterval(0.15))
+        let texts = visibleTexts(in: host.view)
+        XCTAssertTrue(texts.contains("功能"), "got \(texts)")
+        XCTAssertFalse(texts.contains("走动"), "got \(texts)")
+        XCTAssertFalse(texts.contains("参数"), "got \(texts)")
+        window.isHidden = true
+    }
+
+    func testToolsPopoverOmitsDoneButton() {
+        let popover = HomeToolsPopover(title: "真实走动") {
+            Toggle(isOn: .constant(false)) { Text("开启") }
+        }
+        let host = UIHostingController(rootView: popover.padding().frame(width: 360, height: 200))
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 240))
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        host.view.frame = window.bounds
+        host.view.layoutIfNeeded()
+        RunLoop.main.run(until: Date().addingTimeInterval(0.15))
+        XCTAssertFalse(visibleTexts(in: host.view).contains("完成"))
+        XCTAssertFalse(descendants(of: host.view).compactMap { $0 as? UISwitch }.isEmpty,
+                       "function popover must host walk controls")
+        window.isHidden = true
+    }
+
     func testWalkPanelUsesShortEnableToggle() {
         let suite = "WalkPanel.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
@@ -484,7 +542,14 @@ private struct HomeLayoutFixture: View {
                         MapSearchField(search: search, focus: $focused, onSubmit: {})
                         MapChromeIconButton(systemImage: "list.bullet.rectangle", accessibilityLabel: "日志", action: {})
                     }
-                    MapHomeCoordinateLine(pair: pair, mapSystem: .wgs84)
+                    MapHomeCoordinateLine(
+                        pair: pair,
+                        mapSystem: .wgs84,
+                        selectedSystem: .wgs84,
+                        showsFunction: true,
+                        onCoordinateTap: {},
+                        onFunctionTap: {}
+                    )
                 }
             }
             .background(measure("top"))
@@ -495,11 +560,6 @@ private struct HomeLayoutFixture: View {
                 HStack(spacing: 2) {
                     Button("定点", action: {}).frame(maxWidth: .infinity, minHeight: 44)
                     Button("路线", action: {}).frame(maxWidth: .infinity, minHeight: 44)
-                    if showsRoute {
-                        Button("参数", action: {}).frame(maxWidth: .infinity, minHeight: 44)
-                    } else {
-                        Button("走动", action: {}).frame(maxWidth: .infinity, minHeight: 44)
-                    }
                 }
                 .frame(height: AppLayout.homeModeBarHeight)
                 card(availableHeight: cardHeight)

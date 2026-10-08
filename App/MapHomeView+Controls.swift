@@ -39,9 +39,29 @@ extension MapHomeView {
     }
 
     private var homeCoordinateSummary: some View {
-        MapHomeCoordinateLine(pair: currentSelectionPair, mapSystem: displayedMapCoordinateSystem)
-            .padding(.horizontal, 8)
-            .background(.thickMaterial, in: RoundedRectangle(cornerRadius: AppRadius.control))
+        MapHomeCoordinateLine(
+            pair: currentSelectionPair,
+            mapSystem: displayedMapCoordinateSystem,
+            selectedSystem: previewCoordinateSystem,
+            copied: coordinateCopied,
+            showsFunction: true,
+            functionSelected: homePopup == .walk || homePopup == .management,
+            functionEnabledDot: !showsRoutePanelActive && physicalWalkStore.isEnabled,
+            functionAccessibilityLabel: "功能",
+            functionAccessibilityValue: functionAccessibilityValue,
+            onCoordinateTap: { toggleHomePopup(.coordinate) },
+            onFunctionTap: { toggleHomePopup(showsRoutePanelActive ? .management : .walk) }
+        )
+        .padding(.horizontal, 8)
+        .background(.thickMaterial, in: RoundedRectangle(cornerRadius: AppRadius.control))
+        .background {
+            GeometryReader { geometry in
+                Color.clear.preference(
+                    key: HomeCoordinateRowFrameKey.self,
+                    value: geometry.frame(in: .named("homeOverlay"))
+                )
+            }
+        }
     }
 
     var homeMapTools: some View {
@@ -92,20 +112,6 @@ extension MapHomeView {
                 enterRoute()
                 showsRoutePanel = true
             }
-            if showsRoutePanelActive {
-                homePanelButton(
-                    "参数",
-                    popup: .management,
-                    accessibilityLabel: "路线参数"
-                )
-            } else {
-                homePanelButton(
-                    "走动",
-                    popup: .walk,
-                    showsEnabledDot: physicalWalkStore.isEnabled,
-                    accessibilityLabel: "真实走动"
-                )
-            }
         }
         .padding(4)
         .background(.thickMaterial, in: RoundedRectangle(cornerRadius: AppRadius.control))
@@ -130,92 +136,111 @@ extension MapHomeView {
         homePopup = homePopup == popup ? nil : popup
     }
 
-    private func homePanelButton(
-        _ title: String,
-        popup: HomePopup,
-        showsEnabledDot: Bool = false,
-        accessibilityLabel: String
-    ) -> some View {
-        let selected = homePopup == popup
-        return Button { toggleHomePopup(popup) } label: {
-            HStack(spacing: 6) {
-                if showsEnabledDot {
-                    Circle()
-                        .fill(Color.accentColor)
-                        .frame(width: 7, height: 7)
-                        .accessibilityHidden(true)
-                }
-                Text(title).font(.subheadline.weight(.semibold))
-            }
-            .frame(maxWidth: .infinity, minHeight: 44)
-            .foregroundStyle(selected ? Color.primary : Color.secondary)
-            .background(selected ? Color(uiColor: .secondarySystemGroupedBackground) : .clear,
-                        in: RoundedRectangle(cornerRadius: AppRadius.inset))
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(accessibilityLabel)
-        .accessibilityAddTraits(selected ? .isSelected : [])
-        .accessibilityValue(panelAccessibilityValue(popup: popup, enabled: showsEnabledDot))
-        .accessibilityIdentifier("home.open.\(popup.rawValue)")
-    }
-
-    private func panelAccessibilityValue(popup: HomePopup, enabled: Bool) -> String {
+    private var functionAccessibilityValue: String {
         var parts: [String] = []
-        if popup == .walk { parts.append(enabled ? "已开启" : "已关闭") }
-        parts.append(homePopup == popup ? "已展开" : "已收起")
+        if showsRoutePanelActive {
+            parts.append("路线参数")
+        } else {
+            parts.append("真实走动")
+            parts.append(physicalWalkStore.isEnabled ? "已开启" : "已关闭")
+        }
+        let open = homePopup == .walk || homePopup == .management
+        parts.append(open ? "已展开" : "已收起")
         return parts.joined(separator: "，")
     }
 
-    var homeSpotControls: some View {
-        Group {
-            if homePopup == .walk {
-                ScrollView {
-                    PhysicalWalkHeadingControls(
-                        store: physicalWalkStore,
-                        controller: physicalWalk,
-                        spoofActive: spoofState == .active
-                    )
-                    .frame(maxWidth: .infinity, alignment: .leading)
+    @ViewBuilder
+    var homeChromePopoverOverlay: some View {
+        if let popup = homePopup, coordinateRowFrame.width > 1 {
+            VStack(alignment: .leading, spacing: 0) {
+                Color.clear
+                    .frame(height: max(0, coordinateRowFrame.maxY + 6))
+                    .allowsHitTesting(false)
+                HStack(alignment: .top, spacing: 0) {
+                    Color.clear
+                        .frame(width: max(0, coordinateRowFrame.minX))
+                        .allowsHitTesting(false)
+                    homeChromePopover(popup)
+                        .frame(width: popoverWidth(for: popup), alignment: .topLeading)
                 }
-                .accessibilityIdentifier("home.walk.panel")
-            } else {
-                HomeSpotSwipeLanes(
-                    hasRecents: !recentSelections.items.isEmpty,
-                    favoritesEmpty: favorites.displayedFavorites.isEmpty,
-                    recentBars: {
-                        ForEach(recentSelections.items) { item in recentChip(item) }
-                    },
-                    favoriteBars: {
-                        ForEach(favorites.displayedFavorites) { favorite in favoriteChip(favorite) }
-                    },
-                    onClearRecents: { recentSelections.removeAll() },
-                    onManageFavorites: { activeSheet = .favorites }
-                )
             }
         }
+    }
+
+    private func popoverWidth(for popup: HomePopup) -> CGFloat {
+        popup == .coordinate ? min(260, coordinateRowFrame.width) : coordinateRowFrame.width
+    }
+
+    @ViewBuilder
+    private func homeChromePopover(_ popup: HomePopup) -> some View {
+        switch popup {
+        case .coordinate:
+            HomeCoordinateMenu(
+                selectedSystem: previewCoordinateSystem,
+                mapSystem: displayedMapCoordinateSystem,
+                onSelect: { system in
+                    previewCoordinateSystem = system
+                    homePopup = nil
+                },
+                onCopy: copyPreviewCoordinate
+            )
+        case .walk:
+            HomeToolsPopover(title: HomePopup.walk.title) {
+                PhysicalWalkHeadingControls(
+                    store: physicalWalkStore,
+                    controller: physicalWalk,
+                    spoofActive: spoofState == .active
+                )
+            }
+            .accessibilityIdentifier("home.walk.panel")
+        case .management:
+            HomeToolsPopover(title: HomePopup.management.title) {
+                routePanel(section: .settings)
+            }
+            .accessibilityIdentifier("home.route.parameters")
+        default:
+            EmptyView()
+        }
+    }
+
+    func copyPreviewCoordinate() {
+        MapHomeCoordinateLine.copy(currentSelectionPair, system: previewCoordinateSystem)
+        coordinateCopyGeneration += 1
+        let current = coordinateCopyGeneration
+        withAnimation(.easeInOut(duration: 0.15)) { coordinateCopied = true }
+        homePopup = nil
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+            guard coordinateCopyGeneration == current else { return }
+            withAnimation(.easeInOut(duration: 0.15)) { coordinateCopied = false }
+        }
+    }
+
+    var homeSpotControls: some View {
+        HomeSpotSwipeLanes(
+            hasRecents: !recentSelections.items.isEmpty,
+            favoritesEmpty: favorites.displayedFavorites.isEmpty,
+            recentBars: {
+                ForEach(recentSelections.items) { item in recentChip(item) }
+            },
+            favoriteBars: {
+                ForEach(favorites.displayedFavorites) { favorite in favoriteChip(favorite) }
+            },
+            onClearRecents: { recentSelections.removeAll() },
+            onManageFavorites: { activeSheet = .favorites }
+        )
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
 
     var homeRouteControls: some View {
-        Group {
-            if homePopup == .management {
-                ScrollView {
-                    routePanel(section: .settings)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
-                .accessibilityIdentifier("home.route.parameters")
-            } else {
-                HomeRouteSavedList(
-                    routes: savedRoutes.routes,
-                    selectedID: route.editingSavedRoute?.id,
-                    onSelect: { saved in
-                        let previous = route.phase
-                        settleRouteSimulation(after: route.load(saved), from: previous)
-                    },
-                    onManage: openSavedRoutes
-                )
-            }
-        }
+        HomeRouteSavedList(
+            routes: savedRoutes.routes,
+            selectedID: route.editingSavedRoute?.id,
+            onSelect: { saved in
+                let previous = route.phase
+                settleRouteSimulation(after: route.load(saved), from: previous)
+            },
+            onManage: openSavedRoutes
+        )
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
 
