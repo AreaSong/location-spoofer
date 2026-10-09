@@ -515,7 +515,7 @@ struct RouteCardControls: View {
     let onSave: () -> Void
 
     var body: some View {
-        VStack(spacing: 8) {
+        VStack(spacing: 6) {
             modeAndActionsRow
             speedRow
             repeatAndDriftRow

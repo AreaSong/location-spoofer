@@ -192,6 +192,14 @@ extension SettingsView {
         }
     }
 
+    var thirdPartyStatusColor: Color {
+        switch thirdPartyProxy.connectionState {
+        case .unknown: return .secondary
+        case .connected(let active): return active ? .green : .blue
+        case .failed: return .red
+        }
+    }
+
     var thirdPartyReadback: some View {
         let settings = thirdPartyProxy.activeSettings
         return VStack(alignment: .leading, spacing: 4) {

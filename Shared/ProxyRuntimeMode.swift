@@ -14,6 +14,14 @@ enum ProxyRuntimeMode: String, CaseIterable, Codable, Identifiable {
         case .developerTunnel: return "开发者隧道模式"
         }
     }
+
+    var subtitle: String {
+        switch self {
+        case .localWiFi: return "本地轻量代理，开箱即用（需信任证书）"
+        case .thirdParty: return "配合小火箭 / Surge / Loon 模块持久化"
+        case .developerTunnel: return "直连系统底层注入，无需网络拦截（需配对文件）"
+        }
+    }
 }
 
 @MainActor

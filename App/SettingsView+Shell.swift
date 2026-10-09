@@ -8,7 +8,15 @@ extension SettingsView {
             Section("运行模式") {
                 Picker("模式", selection: runtimeModeBinding) {
                     ForEach(ProxyRuntimeMode.allCases) { mode in
-                        Text(mode.displayName).tag(mode)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(mode.displayName)
+                                .font(.body)
+                            Text(mode.subtitle)
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                        }
+                        .padding(.vertical, 2)
+                        .tag(mode)
                     }
                 }
                 .pickerStyle(.inline)
@@ -50,7 +58,12 @@ extension SettingsView {
                 }
                 if runtimeMode.mode == .localWiFi {
                     HStack {
-                        Label("本机代理", systemImage: proxy.isRunning ? "play.circle.fill" : "stop.circle")
+                        Label {
+                            Text("本机代理")
+                        } icon: {
+                            Image(systemName: proxy.isRunning ? "play.circle.fill" : "stop.circle")
+                                .foregroundStyle(proxy.isRunning ? Color.green : Color.secondary)
+                        }
                         Spacer()
                         Toggle("", isOn: proxyBinding).labelsHidden()
                             .tint(.blue)
@@ -58,16 +71,29 @@ extension SettingsView {
                     }
                 } else if runtimeMode.mode == .developerTunnel {
                     HStack {
-                        Label("本机隧道", systemImage: "network")
+                        Label {
+                            Text("本机隧道")
+                        } icon: {
+                            Image(systemName: "network")
+                                .foregroundStyle(routeLocation.readiness == .ready ? Color.green : Color.orange)
+                        }
                         Spacer()
                         Text(routeLocation.readiness == .ready ? "已就绪" : "未就绪")
-                            .foregroundStyle(.secondary)
+                            .font(.subheadline.weight(.medium))
+                            .foregroundStyle(routeLocation.readiness == .ready ? Color.green : Color.orange)
                     }
                 } else {
                     HStack {
-                        Label("第三方模块", systemImage: thirdPartyStatusIcon)
+                        Label {
+                            Text("第三方模块")
+                        } icon: {
+                            Image(systemName: thirdPartyStatusIcon)
+                                .foregroundStyle(thirdPartyStatusColor)
+                        }
                         Spacer()
-                        Text(thirdPartyStatusText).foregroundStyle(.secondary)
+                        Text(thirdPartyStatusText)
+                            .font(.subheadline.weight(.medium))
+                            .foregroundStyle(thirdPartyStatusColor)
                     }
                     Button {
                         detectThirdPartyConnection()
@@ -82,9 +108,16 @@ extension SettingsView {
                     thirdPartyReadback
                 }
                 HStack {
-                    Label("虚拟定位", systemImage: virtualLocationIsActive ? "location.fill" : "location.slash")
+                    Label {
+                        Text("虚拟定位")
+                    } icon: {
+                        Image(systemName: virtualLocationIsActive ? "location.fill" : "location.slash")
+                            .foregroundStyle(virtualLocationIsActive ? Color.blue : Color.secondary)
+                    }
                     Spacer()
-                    Text(virtualLocationStatusText).foregroundStyle(.secondary)
+                    Text(virtualLocationStatusText)
+                        .font(.subheadline.weight(virtualLocationIsActive ? .semibold : .regular))
+                        .foregroundStyle(virtualLocationIsActive ? Color.blue : Color.secondary)
                 }
                 if runtimeMode.mode != .developerTunnel {
                     Button {
@@ -98,7 +131,12 @@ extension SettingsView {
                         .foregroundStyle(.secondary)
                 }
                 HStack {
-                    Label("地图坐标标准", systemImage: "globe")
+                    Label {
+                        Text("地图坐标标准")
+                    } icon: {
+                        Image(systemName: "globe")
+                            .foregroundStyle(Color.accentColor)
+                    }
                     Spacer()
                     Text(mapCoordinateSystemName).foregroundStyle(.secondary)
                 }
