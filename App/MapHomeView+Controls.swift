@@ -35,18 +35,17 @@ extension MapHomeView {
     }
 
     private var homeZoomAndFunctionRow: some View {
-        HStack(alignment: .top, spacing: 12) {
-            MapZoomControls(
-                scaleLabel: MapZoomMath.viewportScaleLabel(distanceMeters: mapState.viewportMeters),
-                onZoomIn: { mapState.zoom(by: 0.5) },
-                onZoomOut: { mapState.zoom(by: 2) }
-            )
-            if let popup = homePopup, popup == .walk || popup == .management {
-                homeChromePopover(popup)
-                    .frame(minWidth: 0, maxWidth: .infinity, alignment: .topLeading)
-                    .clipped()
-            } else {
-                Spacer(minLength: 0).allowsHitTesting(false)
+        MapZoomControls(
+            scaleLabel: MapZoomMath.viewportScaleLabel(distanceMeters: mapState.viewportMeters),
+            onZoomIn: { mapState.zoom(by: 0.5) },
+            onZoomOut: { mapState.zoom(by: 2) }
+        )
+        .background {
+            GeometryReader { geometry in
+                Color.clear.preference(
+                    key: HomeZoomControlFrameKey.self,
+                    value: geometry.frame(in: .named("homeOverlay"))
+                )
             }
         }
     }
@@ -164,29 +163,59 @@ extension MapHomeView {
 
     @ViewBuilder
     var homeChromePopoverOverlay: some View {
-        if homePopup == .coordinate, coordinateRowFrame.width > 1 {
+        if let popup = homePopup, coordinateRowFrame.width > 1 {
             VStack(alignment: .leading, spacing: 0) {
                 Color.clear
                     .frame(height: max(0, coordinateRowFrame.maxY + 6))
                     .allowsHitTesting(false)
-                HStack(spacing: 0) {
-                    Color.clear
-                        .frame(width: max(0, coordinateRowFrame.minX))
-                        .allowsHitTesting(false)
-                    HomeCoordinateMenu(
-                        selectedSystem: previewCoordinateSystem,
-                        mapSystem: displayedMapCoordinateSystem,
-                        onSelect: { system in
-                            previewCoordinateSystem = system
-                            homePopup = nil
-                        },
-                        onCopy: copyPreviewCoordinate
-                    )
-                    .frame(maxWidth: min(260, coordinateRowFrame.width), alignment: .topLeading)
-                    Spacer(minLength: 0).allowsHitTesting(false)
+                if popup == .coordinate {
+                    HStack(alignment: .top, spacing: 0) {
+                        Color.clear
+                            .frame(width: max(0, coordinateRowFrame.minX))
+                            .allowsHitTesting(false)
+                        HomeCoordinateMenu(
+                            selectedSystem: previewCoordinateSystem,
+                            mapSystem: displayedMapCoordinateSystem,
+                            onSelect: { system in
+                                previewCoordinateSystem = system
+                                homePopup = nil
+                            },
+                            onCopy: copyPreviewCoordinate
+                        )
+                        .frame(maxWidth: min(260, coordinateRowFrame.width), alignment: .topLeading)
+                        Spacer(minLength: 0).allowsHitTesting(false)
+                    }
+                    .fixedSize(horizontal: false, vertical: true)
+                } else if popup == .walk || popup == .management {
+                    HStack(alignment: .top, spacing: 0) {
+                        Color.clear
+                            .frame(width: functionPopoverLeadingX)
+                            .allowsHitTesting(false)
+                        homeChromePopover(popup)
+                            .frame(maxWidth: functionPopoverMaxWidth, alignment: .topLeading)
+                        Spacer(minLength: 0).allowsHitTesting(false)
+                    }
+                    .fixedSize(horizontal: false, vertical: true)
                 }
             }
+            .frame(maxWidth: .infinity, alignment: .topLeading)
+            .fixedSize(horizontal: false, vertical: true)
         }
+    }
+
+    private var functionPopoverLeadingX: CGFloat {
+        HomeChromePlacement.functionLeadingX(
+            coordinateMinX: coordinateRowFrame.minX,
+            zoomFrame: zoomControlFrame
+        )
+    }
+
+    private var functionPopoverMaxWidth: CGFloat {
+        HomeChromePlacement.functionMaxWidth(
+            coordinateMaxX: coordinateRowFrame.maxX,
+            leadingX: functionPopoverLeadingX,
+            cap: AppLayout.homeWalkPopoverMaxWidth
+        )
     }
 
     @ViewBuilder
@@ -202,8 +231,12 @@ extension MapHomeView {
             }
             .accessibilityIdentifier("home.walk.panel")
         case .management:
-            HomeToolsPopover(title: HomePopup.management.title) {
-                routePanel(section: .settings)
+            HomeToolsPopover(compact: true, hugsHorizontally: false) {
+                RouteParameterControls(
+                    route: route,
+                    onExit: requestExitRoute,
+                    onSave: promptSaveRoute
+                )
             }
             .accessibilityIdentifier("home.route.parameters")
         default:

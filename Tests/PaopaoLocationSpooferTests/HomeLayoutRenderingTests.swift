@@ -564,28 +564,86 @@ final class HomeLayoutRenderingTests: XCTestCase {
         window.isHidden = true
     }
 
+    func testFunctionPopoverPinsBelowCoordinateRowInsteadOfCentering() {
+        let route = RoutePlaybackController()
+        route.enter(start: CoordinateConverter.coordinatePair(
+            lat: 22.5, lon: 113.9, mapCoordinateSystem: .wgs84
+        ))
+        let bounds = HomeLayoutBounds()
+        let overlay = VStack(alignment: .leading, spacing: 0) {
+            Color.clear.frame(height: 140)
+            HStack(alignment: .top, spacing: 0) {
+                Color.clear.frame(width: 56)
+                HomeToolsPopover(compact: true, hugsHorizontally: false) {
+                    RouteParameterControls(route: route, onExit: {}, onSave: {})
+                }
+                .background(bounds.measure("route"))
+                Spacer(minLength: 0)
+            }
+            .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+        .fixedSize(horizontal: false, vertical: true)
+        .background(bounds.measure("overlay"))
+        let host = UIHostingController(rootView: overlay.frame(width: 390, height: 852, alignment: .topLeading))
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 852))
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        host.view.frame = window.bounds
+        host.view.layoutIfNeeded()
+        RunLoop.main.run(until: Date().addingTimeInterval(0.2))
+        let chrome = bounds.frames["overlay"] ?? .zero
+        let panel = bounds.frames["route"] ?? .zero
+        XCTAssertGreaterThan(panel.height, 1, "route panel must render, got \(panel)")
+        XCTAssertEqual(
+            panel.minY, chrome.minY + 140, accuracy: 12,
+            "function panel must sit under the coordinate row, overlay=\(chrome) panel=\(panel)"
+        )
+        XCTAssertLessThan(
+            panel.maxY, chrome.minY + 420,
+            "function panel must not drop onto the bottom card, overlay=\(chrome) panel=\(panel)"
+        )
+        window.isHidden = true
+    }
+
     func testRouteParameterPanelOmitsPointOperations() {
         let route = RoutePlaybackController()
         let pair = CoordinateConverter.coordinatePair(
             lat: 22.5, lon: 113.9, mapCoordinateSystem: .wgs84
         )
         route.enter(start: pair)
-        let panel = RoutePlaybackPanel(
-            route: route, clock: route.clock, currentPair: pair,
-            onExit: {}, onSave: {}, onOpenSaved: {}, onRestart: {},
-            embedded: true, section: .settings
-        )
-        let host = UIHostingController(rootView: panel.padding().frame(width: 390, height: 360))
+        route.setEnd(CoordinateConverter.coordinatePair(
+            lat: 22.51, lon: 113.91, mapCoordinateSystem: .wgs84
+        ))
+        let bounds = HomeLayoutBounds()
+        let panel = HomeToolsPopover(compact: true, hugsHorizontally: false) {
+            RouteParameterControls(route: route, onExit: {}, onSave: {})
+        }
+        .background(bounds.measure("route"))
+        let host = UIHostingController(rootView: panel.frame(maxWidth: 309, maxHeight: 400, alignment: .topLeading))
         let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 400))
         window.rootViewController = host
         window.makeKeyAndVisible()
         host.view.frame = window.bounds
         host.view.layoutIfNeeded()
-        RunLoop.main.run(until: Date().addingTimeInterval(0.15))
+        RunLoop.main.run(until: Date().addingTimeInterval(0.2))
         let texts = visibleTexts(in: host.view)
         XCTAssertTrue(texts.contains("步行"), "route parameters must keep travel modes, got \(texts)")
+        XCTAssertTrue(texts.contains("一次"), "route parameters must keep repeat modes, got \(texts)")
+        XCTAssertGreaterThanOrEqual(descendants(of: host.view).compactMap { $0 as? UISlider }.count, 2)
         XCTAssertFalse(texts.contains("设为起点"), "route parameters must not repeat point operations, got \(texts)")
+        XCTAssertFalse(texts.contains("途经点"), "route parameters must not repeat via actions, got \(texts)")
+        XCTAssertFalse(texts.contains("管理与导入路线"), "route parameters must not repeat saved-route management, got \(texts)")
         XCTAssertFalse(texts.contains("完成"), "route parameters must not use a 完成 popup, got \(texts)")
+        XCTAssertLessThan(bounds.frames["route"]?.height ?? .infinity, 250, "route popover must stay compact, got \(bounds.frames["route"] ?? .zero)")
+        let travel = ["步行", "骑行", "驾车"].compactMap { title in
+            descendants(of: host.view).compactMap { $0 as? UIButton }.first { $0.currentTitle == title || $0.accessibilityLabel == title }
+        }
+        if travel.count == 3 {
+            let widths = travel.map { $0.bounds.width }
+            XCTAssertEqual(widths[0], widths[1], accuracy: 8, "travel chips must share the row, got \(widths)")
+            XCTAssertEqual(widths[1], widths[2], accuracy: 8, "travel chips must share the row, got \(widths)")
+        }
         window.isHidden = true
     }
 

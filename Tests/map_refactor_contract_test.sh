@@ -332,11 +332,20 @@ if awk '/private var homeZoomAndFunctionRow/,/private var homeCoordinateSummary/
 else
   fail "zoom controls must sit on the left of the function row"
 fi
-if awk '/private var homeZoomAndFunctionRow/,/private var homeCoordinateSummary/' "$ROOT/App/MapHomeView+Controls.swift" | grep -q 'homeChromePopover'; then
+grep -q 'HomeChromePlacement.functionLeadingX' "$ROOT/App/MapHomeView+Controls.swift" \
+  || fail "function popovers must sit to the right of the zoom controls"
+if awk '/var homeChromePopoverOverlay/,/private var functionPopoverLeadingX/' "$ROOT/App/MapHomeView+Controls.swift" | grep -q 'HStack(alignment: .top'; then
   :
 else
-  fail "function popovers must sit to the right of the zoom controls"
+  fail "function popovers must pin to the top of leftover overlay space"
 fi
+if awk '/var homeChromePopoverOverlay/,/private var functionPopoverLeadingX/' "$ROOT/App/MapHomeView+Controls.swift" | grep -q 'fixedSize(horizontal: false, vertical: true)'; then
+  :
+else
+  fail "function popovers must hug height instead of centering over the bottom card"
+fi
+grep -q 'clipShape(RoundedRectangle(cornerRadius: compactCorner' "$ROOT/App/MapHomeOverlayLayout.swift" \
+  || fail "function popovers must clip to their rounded corners"
 grep -q 'struct HomeCoordinateMenu' "$ROOT/App/MapHomeOverlayLayout.swift" \
   || fail "coordinate taps must open GCJ/WGS/copy without a SwiftUI Menu"
 if grep -E '^[[:space:]]*Menu \{' "$ROOT/App/MapHomeCoordinateLine.swift"; then
@@ -399,8 +408,10 @@ if grep -A40 'var homeRouteControls' "$ROOT/App/MapHomeView+Controls.swift" | gr
 fi
 grep -A40 'func homeChromePopover' "$ROOT/App/MapHomeView+Controls.swift" | grep -q 'PhysicalWalkHeadingControls' \
   || fail "tapping 功能 in spot mode must show walk settings in the floating popover"
-grep -A40 'func homeChromePopover' "$ROOT/App/MapHomeView+Controls.swift" | grep -q 'routePanel(section: .settings)' \
+grep -A40 'func homeChromePopover' "$ROOT/App/MapHomeView+Controls.swift" | grep -q 'RouteParameterControls' \
   || fail "tapping 功能 in route mode must show route parameters in the floating popover"
+grep -A40 'func homeChromePopover' "$ROOT/App/MapHomeView+Controls.swift" | grep -q 'HomeToolsPopover(compact: true, hugsHorizontally: false)' \
+  || fail "route parameters must use the compact chrome beside zoom"
 if awk '/struct HomeToolsPopover/,/struct HomeCoordinateMenu/' "$ROOT/App/MapHomeOverlayLayout.swift" | grep -q 'Button("完成"'; then
   fail "the function popover must not use a 完成 button"
 fi
@@ -523,10 +534,15 @@ grep -q '定点推送前会偏移' "$SETTINGS_VIEW" \
 grep -q 'operation("反转路线"' "$ROOT/App/RoutePlaybackPanel.swift" || fail "route panel must let the user reverse a saved path"
 grep -q 'customSpeed = false' "$ROOT/App/RoutePlaybackPanel.swift" \
   || fail "speed and offset must stay collapsed by default"
-awk '/private var settings:/,/private var management:/' "$ROOT/App/RoutePlaybackPanel.swift" | grep -q 'travelChoices' \
+grep -q 'struct RouteParameterControls' "$ROOT/App/RoutePlaybackPanel.swift" \
   || fail "route parameters must keep travel and speed controls"
-if awk '/private var settings:/,/private var management:/' "$ROOT/App/RoutePlaybackPanel.swift" | grep -q 'points'; then
-  fail "route parameters must not repeat 设为起点 and other point operations"
+if awk '/private func chipRow/,/private func sliderRow/' "$ROOT/App/RoutePlaybackPanel.swift" | grep -q 'frame(maxWidth: .infinity'; then
+  :
+else
+  fail "route travel and repeat chips must fill the popover row"
+fi
+if awk '/struct RouteParameterControls/,/^private enum RouteParamBarWidthKey/' "$ROOT/App/RoutePlaybackPanel.swift" | grep -Eq '管理与导入|设为起点|途经点'; then
+  fail "route parameters must not repeat card actions already in the bottom card"
 fi
 grep -q 'formattedRemaining' "$ROOT/Shared/RoutePlayback.swift" || fail "playback must format remaining distance and time"
 grep -q '还剩' "$ROOT/Shared/RoutePlayback.swift" || fail "walking status must show remaining distance"

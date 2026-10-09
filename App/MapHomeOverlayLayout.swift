@@ -132,6 +132,30 @@ enum HomeCoordinateRowFrameKey: PreferenceKey {
     }
 }
 
+enum HomeZoomControlFrameKey: PreferenceKey {
+    static var defaultValue: CGRect = .zero
+    static func reduce(value: inout CGRect, nextValue: () -> CGRect) {
+        let next = nextValue()
+        if next != .zero { value = next }
+    }
+}
+
+/// 坐标行下方：左边缩放，右边功能浮层，互不遮挡。
+enum HomeChromePlacement {
+    static let gap: CGFloat = 12
+
+    static func functionLeadingX(coordinateMinX: CGFloat, zoomFrame: CGRect) -> CGFloat {
+        let zoomTrailing = zoomFrame.width > 1
+            ? zoomFrame.maxX
+            : coordinateMinX + AppLayout.mapZoomControlSize
+        return zoomTrailing + gap
+    }
+
+    static func functionMaxWidth(coordinateMaxX: CGFloat, leadingX: CGFloat, cap: CGFloat) -> CGFloat {
+        min(cap, max(120, coordinateMaxX - leadingX))
+    }
+}
+
 /// 贴在坐标行下的工具浮层，不用「完成」，点空白地图或再点「功能」关掉。
 struct HomeToolsPopover<Content: View>: View {
     var title: String? = nil
@@ -164,9 +188,10 @@ struct HomeToolsPopover<Content: View>: View {
                 .onPreferenceChange(HomePopoverTitleHeightKey.self) { if $0 > 0 { titleHeight = $0 } }
             }
         }
-        .padding(.horizontal, compact ? 10 : 12)
-        .padding(.vertical, compact ? 6 : 10)
-        .background(.thickMaterial, in: RoundedRectangle(cornerRadius: AppRadius.control, style: .continuous))
+        .padding(.horizontal, 12)
+        .padding(.vertical, compact ? 12 : 10)
+        .background(.thickMaterial, in: RoundedRectangle(cornerRadius: compactCorner, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: compactCorner, style: .continuous))
         .shadow(color: .black.opacity(compact ? 0.1 : 0.16), radius: compact ? 6 : 12, y: compact ? 3 : 6)
         .accessibilityIdentifier("home.tools.popover")
         .fixedSize(horizontal: compact && hugsHorizontally, vertical: compact)
@@ -175,6 +200,10 @@ struct HomeToolsPopover<Content: View>: View {
     private var titleReserve: CGFloat {
         if let title, !title.isEmpty { return titleHeight }
         return 0
+    }
+
+    private var compactCorner: CGFloat {
+        compact ? AppRadius.card : AppRadius.control
     }
 }
 

@@ -220,3 +220,171 @@ struct RoutePlaybackPanel: View {
         }.buttonStyle(.plain)
     }
 }
+
+/// 路线「功能」浮层：只留参数调节。已存路线、途经点和停止在底部卡片，这里不再重复。
+struct RouteParameterControls: View {
+    @ObservedObject var route: RoutePlaybackController
+    let onExit: () -> Void
+    let onSave: () -> Void
+    @State private var showsInfo = false
+    @State private var barWidth: CGFloat = 0
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            headerRow
+                .background {
+                    GeometryReader { geometry in
+                        Color.clear.preference(key: RouteParamBarWidthKey.self, value: geometry.size.width)
+                    }
+                }
+            if showsInfo {
+                Text(Self.infoText)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: panelWidth, alignment: .leading)
+                    .accessibilityHidden(true)
+            }
+            chipRow(Array(RouteTravelMode.allCases), selected: route.travelMode, title: \.displayName) {
+                route.applyTravelMode($0)
+            }
+            .disabled(route.locksPathEdits || route.isRouting)
+            sliderRow(
+                label: String(format: "%.0f公里", route.speedKilometersPerHour),
+                value: speedBinding,
+                range: 1...route.travelMode.maximumKilometersPerHour,
+                step: 0.5,
+                accessibilityLabel: "速度，公里每小时"
+            )
+            chipRow(Array(RouteRepeatMode.allCases), selected: route.repeatMode, title: \.displayName) {
+                route.applyRepeatMode($0)
+            }
+            sliderRow(
+                label: "\(Int(route.offsetMeters.rounded()))米",
+                value: offsetBinding,
+                range: 0...80,
+                step: 5,
+                accessibilityLabel: "位置偏移，米"
+            )
+            actionRow
+        }
+        .onPreferenceChange(RouteParamBarWidthKey.self) { if $0 > 1 { barWidth = $0 } }
+        .task(id: showsInfo) {
+            guard showsInfo else { return }
+            try? await Task.sleep(nanoseconds: 2_400_000_000)
+            showsInfo = false
+        }
+    }
+
+    static let infoText = "出行会重新规划路径。速度、重复和偏移立即生效。已存路线在下方卡片里管理。"
+
+    private var panelWidth: CGFloat { barWidth > 1 ? barWidth : 220 }
+
+    private var headerRow: some View {
+        HStack(spacing: 6) {
+            Text("路线参数")
+                .font(.subheadline.weight(.semibold))
+            Button {
+                showsInfo.toggle()
+            } label: {
+                Image(systemName: showsInfo ? "exclamationmark.circle.fill" : "exclamationmark.circle")
+                    .font(.system(size: 15, weight: .medium))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 28, height: 32)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("路线参数说明")
+            .accessibilityValue(Self.infoText)
+            .accessibilityIdentifier("home.route.info")
+            Spacer(minLength: 0)
+        }
+    }
+
+    private func chipRow<Item: Hashable>(
+        _ items: [Item],
+        selected: Item,
+        title: KeyPath<Item, String>,
+        action: @escaping (Item) -> Void
+    ) -> some View {
+        HStack(spacing: 4) {
+            ForEach(items, id: \.self) { item in
+                let isSelected = item == selected
+                Button(item[keyPath: title]) { action(item) }
+                    .font(.caption.weight(.medium))
+                    .lineLimit(1)
+                    .frame(maxWidth: .infinity, minHeight: 32)
+                    .foregroundStyle(isSelected ? Color.white : Color.primary)
+                    .background(
+                        isSelected ? Color.accentColor : Color.secondary.opacity(0.12),
+                        in: RoundedRectangle(cornerRadius: AppRadius.inset, style: .continuous)
+                    )
+                    .buttonStyle(.plain)
+                    .accessibilityAddTraits(isSelected ? .isSelected : [])
+            }
+        }
+        .frame(width: panelWidth)
+    }
+
+    private func sliderRow(
+        label: String,
+        value: Binding<Double>,
+        range: ClosedRange<Double>,
+        step: Double,
+        accessibilityLabel: String
+    ) -> some View {
+        Color.clear
+            .frame(width: panelWidth, height: 32)
+            .overlay {
+                HStack(spacing: 6) {
+                    Text(label)
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
+                        .frame(minWidth: 48, alignment: .leading)
+                    Slider(value: value, in: range, step: step)
+                        .accessibilityLabel(accessibilityLabel)
+                }
+            }
+    }
+
+    private var actionRow: some View {
+        HStack(spacing: 8) {
+            if route.canReverse {
+                Button("反转", action: { route.reverseDirection() })
+                    .accessibilityLabel("反转路线")
+            }
+            if route.canPlay && !route.isRouting && !route.waitingForActivation && route.phase != .playing {
+                Button("保存", action: onSave)
+                    .accessibilityLabel("保存路线")
+            }
+            Spacer(minLength: 0)
+            Button("退出", action: onExit)
+                .foregroundStyle(.red)
+                .accessibilityLabel("退出路线")
+        }
+        .font(.caption.weight(.medium))
+        .frame(minHeight: 32)
+        .buttonStyle(.plain)
+    }
+
+    private var speedBinding: Binding<Double> {
+        Binding(
+            get: { route.speedKilometersPerHour },
+            set: { route.setSpeedKilometersPerHour($0) }
+        )
+    }
+
+    private var offsetBinding: Binding<Double> {
+        Binding(
+            get: { route.offsetMeters },
+            set: { route.setOffsetMeters($0) }
+        )
+    }
+}
+
+private enum RouteParamBarWidthKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
+}

@@ -106,6 +106,7 @@ struct MapHomeView: View {
     @State var coordinateCopied = false
     @State var coordinateCopyGeneration = 0
     @State var coordinateRowFrame: CGRect = .zero
+    @State var zoomControlFrame: CGRect = .zero
     @State var showExitRouteConfirm = false
     @State var developerLocationError = ""
     @State var lastDeveloperTunnelRecoveryAt: Date?
@@ -290,6 +291,7 @@ struct MapHomeView: View {
             homeChromePopoverOverlay
         }
         .onPreferenceChange(HomeCoordinateRowFrameKey.self) { coordinateRowFrame = $0 }
+        .onPreferenceChange(HomeZoomControlFrameKey.self) { zoomControlFrame = $0 }
         .ignoresSafeArea(.keyboard)
         .navigationBarHidden(true)
         .onChange(of: showsRoutePanelActive) { _ in homePopup = nil }
