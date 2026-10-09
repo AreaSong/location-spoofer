@@ -115,6 +115,28 @@ final class RandomRadiusStore: ObservableObject {
 }
 
 @MainActor
+final class SmoothCruiseStore: ObservableObject {
+    static let shared = SmoothCruiseStore()
+
+    private enum Key {
+        static let isEnabled = "smoothCruise.isEnabled"
+    }
+
+    @Published private(set) var isEnabled: Bool
+    private let defaults: UserDefaults
+
+    init(defaults: UserDefaults = AppGroup.defaults) {
+        self.defaults = defaults
+        self.isEnabled = defaults.object(forKey: Key.isEnabled) as? Bool ?? false
+    }
+
+    func setEnabled(_ enabled: Bool) {
+        isEnabled = enabled
+        defaults.set(enabled, forKey: Key.isEnabled)
+    }
+}
+
+@MainActor
 final class LocationAccuracyStore: ObservableObject {
     static let shared = LocationAccuracyStore()
     static let minimumMeters = LocationAccuracy.minimumMeters

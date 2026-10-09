@@ -36,6 +36,7 @@ struct SettingsView: View {
     @ObservedObject var motionSimulation = MotionSimulationStore.shared
     @ObservedObject var physicalWalk = PhysicalWalkStore.shared
     @ObservedObject var randomRadius = RandomRadiusStore.shared
+    @ObservedObject var smoothCruise = SmoothCruiseStore.shared
     @ObservedObject var locationAccuracy = LocationAccuracyStore.shared
     @ObservedObject var moduleSource = ThirdPartyModuleSourceStore.shared
     @ObservedObject var moduleServer = ThirdPartyModuleServer.shared

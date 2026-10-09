@@ -22,6 +22,13 @@ extension SettingsView {
         )
     }
 
+    var smoothCruiseBinding: Binding<Bool> {
+        Binding(
+            get: { smoothCruise.isEnabled },
+            set: { smoothCruise.setEnabled($0) }
+        )
+    }
+
     var simulationControlsDisabled: Bool {
         modeOperationRunning || actions.state.isBusy || thirdPartyProxy.isRequesting
     }
@@ -29,6 +36,12 @@ extension SettingsView {
     @ViewBuilder
     var locationSimulationSection: some View {
         Section("定位模拟") {
+            Toggle("平滑巡航切换（防风控）", isOn: smoothCruiseBinding)
+                .disabled(simulationControlsDisabled)
+            Text("开启后，在已定点状态下切换至新地点时，将在 1.5 秒内平滑过渡推进，防止瞬间位移触发第三方应用风控。")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+
             Toggle("真实走动", isOn: physicalWalkBinding)
                 .disabled(simulationControlsDisabled)
             Text("默认扇形跟系统地图朝向一致。打开「初始指向」后，滑条和 ±15° 才设定自定义初始朝向；之后转动手机会带动扇形。打开真实走动后沿当前扇形迈步。")

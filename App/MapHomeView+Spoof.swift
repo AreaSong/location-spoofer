@@ -223,9 +223,70 @@ extension MapHomeView {
             }
             return
         }
-        session.begin(target: overrideTarget ?? currentSelectionFavorite, isRouteActivation: isRouteActivation)
+
+        let target = overrideTarget ?? currentSelectionFavorite
+        if shouldPerformSmoothCruise(to: target, isRouteActivation: isRouteActivation) {
+            performSmoothCruiseTeleport(to: target)
+            return
+        }
+
+        session.begin(target: target, isRouteActivation: isRouteActivation)
         if spoofState != .verifying {
             spotSwitchPending = false
+        }
+    }
+
+    private func shouldPerformSmoothCruise(to target: FavoriteLocation, isRouteActivation: Bool) -> Bool {
+        guard SmoothCruiseStore.shared.isEnabled,
+              spoofState == .active,
+              !isRouteActivation,
+              let fromLat = session.writtenLatitude,
+              let fromLon = session.writtenLongitude else {
+            return false
+        }
+        let from = CLLocation(latitude: fromLat, longitude: fromLon)
+        let to = CLLocation(latitude: target.coordinatePair.wgs84.latitude, longitude: target.coordinatePair.wgs84.longitude)
+        let distance = from.distance(from: to)
+        return distance >= 50 && distance <= 500_000
+    }
+
+    private func performSmoothCruiseTeleport(to target: FavoriteLocation) {
+        guard let fromLat = session.writtenLatitude,
+              let fromLon = session.writtenLongitude else {
+            session.begin(target: target)
+            return
+        }
+        let toLat = target.coordinatePair.wgs84.latitude
+        let toLon = target.coordinatePair.wgs84.longitude
+        spotSwitchPending = true
+
+        Task { @MainActor in
+            let steps = 12
+            let durationSeconds: Double = 1.4
+            let stepInterval = UInt64((durationSeconds / Double(steps)) * 1_000_000_000)
+
+            for step in 1..<steps {
+                guard spoofState == .active, !Task.isCancelled else { break }
+                let progress = Double(step) / Double(steps)
+                let eased = (1 - cos(progress * .pi)) / 2
+                let curLat = fromLat + (toLat - fromLat) * eased
+                let curLon = fromLon + (toLon - fromLon) * eased
+                let stepFavorite = FavoriteLocation(
+                    name: target.name,
+                    coordinatePair: CoordinateConverter.coordinatePair(
+                        lat: curLat,
+                        lon: curLon,
+                        mapCoordinateSystem: .wgs84
+                    ),
+                    accuracy: target.accuracy
+                )
+                session.begin(target: stepFavorite)
+                try? await Task.sleep(nanoseconds: stepInterval)
+            }
+            guard !Task.isCancelled else { return }
+            session.begin(target: target)
+            spotSwitchPending = false
+            Haptics.success()
         }
     }
 

@@ -36,7 +36,8 @@ struct MapHomeBottomCard<SpotContent: View, RoutePanel: View, Caption: View>: Vi
     @State private var showsStatusDetail = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 6) {
+            pullHandle
             locationHeader
             detailContent
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
@@ -58,6 +59,19 @@ struct MapHomeBottomCard<SpotContent: View, RoutePanel: View, Caption: View>: Vi
                 .clipShape(RoundedRectangle(cornerRadius: AppRadius.card, style: .continuous))
         }
         .shadow(color: .black.opacity(0.14), radius: 14, y: 6)
+    }
+
+    private var pullHandle: some View {
+        HStack {
+            Spacer()
+            Capsule()
+                .fill(Color.secondary.opacity(0.24))
+                .frame(width: 36, height: 4)
+            Spacer()
+        }
+        .padding(.top, -2)
+        .padding(.bottom, -2)
+        .accessibilityHidden(true)
     }
 
     private var locationHeader: some View {
