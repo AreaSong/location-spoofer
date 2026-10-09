@@ -305,6 +305,26 @@ final class PhysicalWalkDisplacementTests: XCTestCase {
             "已开启，走起来虚拟点才会移动。"
         )
         XCTAssertEqual(
+            PhysicalWalkStatusCopy.homePanelInfo(
+                isEnabled: false,
+                spoofActive: false,
+                status: .idle,
+                movedMeters: 0,
+                failureMessage: ""
+            ),
+            "打开后，你走动时虚拟点沿扇形方向移动。初始指向可自定义方向。 " + PhysicalWalkStatusCopy.strideHelp
+        )
+        XCTAssertEqual(
+            PhysicalWalkStatusCopy.homePanelInfo(
+                isEnabled: true,
+                spoofActive: true,
+                status: .idle,
+                movedMeters: 0,
+                failureMessage: "需要运动与健身权限才能真实走动。"
+            ),
+            "需要运动与健身权限才能真实走动。"
+        )
+        XCTAssertEqual(
             PhysicalWalkStatusCopy.peek(
                 isEnabled: true,
                 spoofActive: true,

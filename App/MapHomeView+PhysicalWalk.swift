@@ -121,81 +121,145 @@ struct PhysicalWalkHeadingControls: View {
     @ObservedObject var store: PhysicalWalkStore
     @ObservedObject var controller: PhysicalWalkController
     let spoofActive: Bool
+    @State private var showsInfo = false
+    @State private var barWidth: CGFloat = 0
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Toggle(isOn: enabledBinding) {
-                Text("开启")
-            }
-            .font(.subheadline)
-            .accessibilityLabel("真实走动")
-            walkHint
-            if store.isEnabled {
-                Toggle("初始指向", isOn: customHeadingBinding)
-                    .font(.subheadline)
-                headingAdjustment
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(String(format: "计步兜底步长 %.2f 米", store.strideMeters))
-                        .font(.caption.weight(.semibold))
-                    Slider(value: strideBinding,
-                           in: PhysicalWalkDisplacement.minimumStrideMeters...PhysicalWalkDisplacement.maximumStrideMeters,
-                           step: 0.02)
-                        .accessibilityLabel("计步兜底步长")
-                    Text("计步器没有距离时，按这个步长把步数换成米。")
-                        .font(.caption).foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: 2) {
+            headerRow
+                .background {
+                    GeometryReader { geometry in
+                        Color.clear.preference(key: WalkBarWidthKey.self, value: geometry.size.width)
+                    }
                 }
+            if showsInfo {
+                infoTip
+            }
+            if !store.lastFailureMessage.isEmpty {
+                Text(store.lastFailureMessage)
+                    .font(.caption)
+                    .foregroundStyle(.red)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if store.isEnabled {
+                enabledRows
+            }
+        }
+        .onPreferenceChange(WalkBarWidthKey.self) { if $0 > 1 { barWidth = $0 } }
+        .task(id: showsInfo) {
+            guard showsInfo else { return }
+            try? await Task.sleep(nanoseconds: 2_400_000_000)
+            showsInfo = false
+        }
+    }
+
+    private var panelWidth: CGFloat {
+        barWidth > 1 ? barWidth : 220
+    }
+
+    private var enabledRows: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            if store.isCustomHeadingEnabled {
+                headingAdjustment
+            }
+            strideRow
+        }
+    }
+
+    private var headerRow: some View {
+        HStack(spacing: 6) {
+            Text("真实走动")
+                .font(.subheadline.weight(.semibold))
+                .fixedSize()
+                .layoutPriority(2)
+                .accessibilityHidden(true)
+            infoButton
+            WalkCompactToggle(title: "开启", isOn: enabledBinding, accessibilityLabel: "真实走动")
+            if store.isEnabled {
+                WalkCompactToggle(title: "初始指向", isOn: customHeadingBinding, accessibilityLabel: "初始指向")
             }
         }
     }
 
+    private var infoButton: some View {
+        Button {
+            showsInfo.toggle()
+        } label: {
+            Image(systemName: showsInfo ? "exclamationmark.circle.fill" : "exclamationmark.circle")
+                .font(.system(size: 15, weight: .medium))
+                .foregroundStyle(.secondary)
+                .frame(width: 28, height: 36)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("真实走动说明")
+        .accessibilityValue(infoText)
+        .accessibilityIdentifier("home.walk.info")
+    }
+
+    private var infoTip: some View {
+        Text(infoText)
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .lineLimit(3)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: panelWidth, alignment: .leading)
+            .accessibilityHidden(true)
+    }
+
+    private var infoText: String {
+        PhysicalWalkStatusCopy.homePanelInfo(
+            isEnabled: store.isEnabled,
+            spoofActive: spoofActive,
+            status: controller.status,
+            movedMeters: controller.movedMeters,
+            failureMessage: store.lastFailureMessage,
+            headingDegrees: controller.activeHeadingDegrees,
+            headingLocked: store.isCustomHeadingEnabled
+        )
+    }
+
     private var headingAdjustment: some View {
-        VStack(spacing: 8) {
-            Text(PhysicalWalkHeadingLock.labeledDegrees(controller.activeHeadingDegrees))
-                .font(.subheadline.monospacedDigit())
-                .frame(maxWidth: .infinity, alignment: .leading)
-            if store.isCustomHeadingEnabled {
-                HStack(spacing: 12) {
+        Color.clear
+            .frame(width: panelWidth, height: 36)
+            .overlay {
+                HStack(spacing: 4) {
+                    Text(PhysicalWalkHeadingLock.labeledDegrees(controller.activeHeadingDegrees))
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
+                        .frame(minWidth: 52, alignment: .leading)
                     Button("−15°") { nudgeInitialHeading(by: -15) }
-                        .frame(minWidth: 44, minHeight: 44)
+                        .font(.caption)
+                        .frame(minWidth: 36, minHeight: 36)
                         .accessibilityLabel("初始朝向减少 15 度")
                     Slider(value: headingBinding, in: 0...359, step: 1)
                         .accessibilityLabel("初始朝向")
                     Button("+15°") { nudgeInitialHeading(by: 15) }
-                        .frame(minWidth: 44, minHeight: 44)
+                        .font(.caption)
+                        .frame(minWidth: 36, minHeight: 36)
                         .accessibilityLabel("初始朝向增加 15 度")
                 }
             }
-        }
     }
 
-    @ViewBuilder
-    private var walkHint: some View {
-        if !store.lastFailureMessage.isEmpty {
-            Text(store.lastFailureMessage)
-                .font(.caption)
-                .foregroundStyle(.red)
-                .fixedSize(horizontal: false, vertical: true)
-        } else if store.isEnabled && !spoofActive {
-            Text("先开启虚拟定位")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        } else if !store.isEnabled {
-            Text("打开真实走动后，走路才会移动坐标")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        } else if controller.activeHeadingDegrees == nil {
-            Text(PhysicalWalkStatusCopy.detail(
-                isEnabled: true, spoofActive: spoofActive, status: .waitingForHeading,
-                movedMeters: controller.movedMeters, failureMessage: ""
-            ))
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-        } else if !store.isCustomHeadingEnabled {
-            Text("扇形跟系统地图朝向一致")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        }
+    private var strideRow: some View {
+        Color.clear
+            .frame(width: panelWidth, height: 36)
+            .overlay {
+                HStack(spacing: 6) {
+                    Text(String(format: "%.2f米", store.strideMeters))
+                        .font(.caption.monospacedDigit())
+                        .frame(minWidth: 44, alignment: .leading)
+                    Slider(
+                        value: strideBinding,
+                        in: PhysicalWalkDisplacement.minimumStrideMeters...PhysicalWalkDisplacement.maximumStrideMeters,
+                        step: 0.02
+                    )
+                    .accessibilityLabel("计步兜底步长")
+                }
+            }
     }
 
     private var enabledBinding: Binding<Bool> {
@@ -238,4 +302,35 @@ struct PhysicalWalkHeadingControls: View {
         controller.lockHeading(degrees: degrees)
         store.setInitialHeadingDegrees(controller.initialHeadingDegrees)
     }
+}
+
+private enum WalkSwitchLayout {
+    static let scale: CGFloat = 0.7
+    static let width: CGFloat = 44
+    static let height: CGFloat = 22
+}
+
+private struct WalkCompactToggle: View {
+    let title: String
+    @Binding var isOn: Bool
+    let accessibilityLabel: String
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Text(title)
+                .font(.caption)
+                .lineLimit(1)
+                .fixedSize()
+            Toggle("", isOn: $isOn)
+                .labelsHidden()
+                .scaleEffect(WalkSwitchLayout.scale)
+                .frame(width: WalkSwitchLayout.width, height: WalkSwitchLayout.height)
+                .accessibilityLabel(accessibilityLabel)
+        }
+    }
+}
+
+private enum WalkBarWidthKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
 }

@@ -221,6 +221,29 @@ enum PhysicalWalkStatusCopy {
         }
     }
 
+    static let strideHelp = "计步器没有距离时，按步长把步数换成米。"
+
+    static func homePanelInfo(
+        isEnabled: Bool,
+        spoofActive: Bool,
+        status: PhysicalWalkStatus,
+        movedMeters: Double,
+        failureMessage: String,
+        headingDegrees: Double? = nil,
+        headingLocked: Bool = false
+    ) -> String {
+        if !failureMessage.isEmpty { return failureMessage }
+        return detail(
+            isEnabled: isEnabled,
+            spoofActive: spoofActive,
+            status: status,
+            movedMeters: movedMeters,
+            failureMessage: "",
+            headingDegrees: headingDegrees,
+            headingLocked: headingLocked
+        ) + " " + strideHelp
+    }
+
     static func chipSubtitle(isEnabled: Bool, isTracking: Bool) -> String? {
         guard isEnabled else { return nil }
         return isTracking ? "走动中" : "已开"

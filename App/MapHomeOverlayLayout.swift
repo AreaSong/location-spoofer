@@ -134,31 +134,47 @@ enum HomeCoordinateRowFrameKey: PreferenceKey {
 
 /// 贴在坐标行下的工具浮层，不用「完成」，点空白地图或再点「功能」关掉。
 struct HomeToolsPopover<Content: View>: View {
-    let title: String
+    var title: String? = nil
+    var compact = false
+    var hugsHorizontally = true
     var maxHeight: CGFloat = 360
     @ViewBuilder let content: () -> Content
     @State private var titleHeight: CGFloat = 24
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(title)
-                .font(.subheadline.weight(.semibold))
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background {
-                    GeometryReader { geometry in
-                        Color.clear.preference(key: HomePopoverTitleHeightKey.self, value: geometry.size.height)
+        Group {
+            if compact {
+                content()
+            } else {
+                VStack(alignment: .leading, spacing: 8) {
+                    if let title, !title.isEmpty {
+                        Text(title)
+                            .font(.subheadline.weight(.semibold))
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background {
+                                GeometryReader { geometry in
+                                    Color.clear.preference(key: HomePopoverTitleHeightKey.self, value: geometry.size.height)
+                                }
+                            }
+                    }
+                    HomeFittingScrollView(maxHeight: max(44, maxHeight - titleReserve - 28)) {
+                        content()
                     }
                 }
-            HomeFittingScrollView(maxHeight: max(44, maxHeight - titleHeight - 28)) {
-                content()
+                .onPreferenceChange(HomePopoverTitleHeightKey.self) { if $0 > 0 { titleHeight = $0 } }
             }
         }
-        .onPreferenceChange(HomePopoverTitleHeightKey.self) { if $0 > 0 { titleHeight = $0 } }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 10)
+        .padding(.horizontal, compact ? 10 : 12)
+        .padding(.vertical, compact ? 6 : 10)
         .background(.thickMaterial, in: RoundedRectangle(cornerRadius: AppRadius.control, style: .continuous))
-        .shadow(color: .black.opacity(0.16), radius: 12, y: 6)
+        .shadow(color: .black.opacity(compact ? 0.1 : 0.16), radius: compact ? 6 : 12, y: compact ? 3 : 6)
         .accessibilityIdentifier("home.tools.popover")
+        .fixedSize(horizontal: compact && hugsHorizontally, vertical: compact)
+    }
+
+    private var titleReserve: CGFloat {
+        if let title, !title.isEmpty { return titleHeight }
+        return 0
     }
 }
 

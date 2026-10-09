@@ -122,12 +122,27 @@ grep -q 'Label("真实走动"' "$ROOT/App/MapHomeCoordinateLine.swift" \
   || fail "physical walking must have a named entry in location details"
 grep -q 'secondaryButton' "$ROOT/App/MapHomeBottomCard.swift" \
   || fail "collapsed bottom card must keep stop and route-exit controls visible"
-grep -q 'Toggle("初始指向"' "$ROOT/App/MapHomeView+PhysicalWalk.swift" \
+grep -q 'WalkCompactToggle(title: "初始指向"' "$ROOT/App/MapHomeView+PhysicalWalk.swift" \
   || fail "custom heading must be a dedicated toggle, defaulting off"
-grep -q 'Text("开启")' "$ROOT/App/MapHomeView+PhysicalWalk.swift" \
+grep -q 'WalkCompactToggle(title: "开启"' "$ROOT/App/MapHomeView+PhysicalWalk.swift" \
   || fail "physical walk settings must retain the explicit enable toggle"
-grep -q 'accessibilityLabel("真实走动")' "$ROOT/App/MapHomeView+PhysicalWalk.swift" \
+grep -q 'accessibilityLabel: "真实走动"' "$ROOT/App/MapHomeView+PhysicalWalk.swift" \
   || fail "the walk enable toggle must keep the 真实走动 accessibility name"
+grep -q 'home.walk.info' "$ROOT/App/MapHomeView+PhysicalWalk.swift" \
+  || fail "walk explanations must sit behind the info control"
+grep -q 'WalkSwitchLayout.scale' "$ROOT/App/MapHomeView+PhysicalWalk.swift" \
+  || fail "walk switches must use a compact scale"
+grep -q 'homePanelInfo' "$ROOT/Shared/PhysicalWalkDisplacement.swift" \
+  || fail "walk info copy must stay in the shared status helper"
+if grep -q 'Text("计步器没有距离时' "$ROOT/App/MapHomeView+PhysicalWalk.swift"; then
+  fail "stride help must not occupy a permanent caption in the walk panel"
+fi
+if grep -q 'Text("扇形跟系统地图朝向一致")' "$ROOT/App/MapHomeView+PhysicalWalk.swift"; then
+  fail "compass help must not occupy a permanent caption in the walk panel"
+fi
+if grep -q 'Text("打开真实走动后' "$ROOT/App/MapHomeView+PhysicalWalk.swift"; then
+  fail "walk how-to copy must not occupy a permanent caption in the walk panel"
+fi
 grep -q 'isCustomHeadingEnabled' "$ROOT/Shared/PhysicalWalkStore.swift" \
   || fail "custom heading on/off must persist separately from physical walking"
 grep -q 'latestMapHeadingDegrees' "$ROOT/App/PhysicalWalkSensors.swift" \
@@ -301,6 +316,27 @@ grep -q 'Text("功能")' "$ROOT/App/MapHomeCoordinateLine.swift" \
   || fail "the coordinate row must keep the 功能 label"
 grep -q 'struct HomeToolsPopover' "$ROOT/App/MapHomeOverlayLayout.swift" \
   || fail "walk and route parameters must open as a floating popover"
+grep -q 'homeWalkPopoverMaxWidth' "$ROOT/App/AppStyle.swift" \
+  || fail "the walk popover must keep a compact max width"
+grep -q 'HomeToolsPopover(compact: true, hugsHorizontally: false)' "$ROOT/App/MapHomeView+Controls.swift" \
+  || fail "the walk popover must use the compact chrome without covering zoom"
+grep -q 'homeZoomAndFunctionRow' "$ROOT/App/MapHomeView+Controls.swift" \
+  || fail "zoom and function panel must share one row"
+if awk '/struct MapZoomControls/,/^struct CapsuleChipStyle/' "$ROOT/App/AppStyle.swift" | grep -q 'fixedSize()'; then
+  :
+else
+  fail "zoom controls must keep a compact stack beside the function panel"
+fi
+if awk '/private var homeZoomAndFunctionRow/,/private var homeCoordinateSummary/' "$ROOT/App/MapHomeView+Controls.swift" | grep -q 'MapZoomControls'; then
+  :
+else
+  fail "zoom controls must sit on the left of the function row"
+fi
+if awk '/private var homeZoomAndFunctionRow/,/private var homeCoordinateSummary/' "$ROOT/App/MapHomeView+Controls.swift" | grep -q 'homeChromePopover'; then
+  :
+else
+  fail "function popovers must sit to the right of the zoom controls"
+fi
 grep -q 'struct HomeCoordinateMenu' "$ROOT/App/MapHomeOverlayLayout.swift" \
   || fail "coordinate taps must open GCJ/WGS/copy without a SwiftUI Menu"
 if grep -E '^[[:space:]]*Menu \{' "$ROOT/App/MapHomeCoordinateLine.swift"; then

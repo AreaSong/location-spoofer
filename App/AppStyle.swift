@@ -29,6 +29,8 @@ enum AppLayout {
     /// 图层 / 系统地图 / 回到定位 三个圆钮加间距，贴在定点/路线条右上角。
     static let mapToolButtonSize: CGFloat = 48
     static let mapToolStackSpacing: CGFloat = 8
+    /// 功能面板在缩放条右侧的宽度上限。
+    static let homeWalkPopoverMaxWidth: CGFloat = 340
 }
 
 /// 地图页顶部圆形图标按钮。直接打开目标页，避免 SwiftUI Menu 叠在 MKMapView 上时第二次点击被地图手势吃掉。
@@ -102,6 +104,7 @@ struct MapZoomControls: View {
         )
         .shadow(color: .black.opacity(0.18), radius: 7, y: 3)
         .buttonStyle(.plain)
+        .fixedSize()
         .accessibilityIdentifier("home.zoom")
     }
 }

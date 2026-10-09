@@ -30,11 +30,24 @@ extension MapHomeView {
                     .onAppear { pauseRouteIfLocationBlocked() }
             }
             homeCoordinateSummary
+            homeZoomAndFunctionRow
+        }
+    }
+
+    private var homeZoomAndFunctionRow: some View {
+        HStack(alignment: .top, spacing: 12) {
             MapZoomControls(
                 scaleLabel: MapZoomMath.viewportScaleLabel(distanceMeters: mapState.viewportMeters),
                 onZoomIn: { mapState.zoom(by: 0.5) },
                 onZoomOut: { mapState.zoom(by: 2) }
             )
+            if let popup = homePopup, popup == .walk || popup == .management {
+                homeChromePopover(popup)
+                    .frame(minWidth: 0, maxWidth: .infinity, alignment: .topLeading)
+                    .clipped()
+            } else {
+                Spacer(minLength: 0).allowsHitTesting(false)
+            }
         }
     }
 
@@ -151,41 +164,36 @@ extension MapHomeView {
 
     @ViewBuilder
     var homeChromePopoverOverlay: some View {
-        if let popup = homePopup, coordinateRowFrame.width > 1 {
+        if homePopup == .coordinate, coordinateRowFrame.width > 1 {
             VStack(alignment: .leading, spacing: 0) {
                 Color.clear
                     .frame(height: max(0, coordinateRowFrame.maxY + 6))
                     .allowsHitTesting(false)
-                HStack(alignment: .top, spacing: 0) {
+                HStack(spacing: 0) {
                     Color.clear
                         .frame(width: max(0, coordinateRowFrame.minX))
                         .allowsHitTesting(false)
-                    homeChromePopover(popup)
-                        .frame(width: popoverWidth(for: popup), alignment: .topLeading)
+                    HomeCoordinateMenu(
+                        selectedSystem: previewCoordinateSystem,
+                        mapSystem: displayedMapCoordinateSystem,
+                        onSelect: { system in
+                            previewCoordinateSystem = system
+                            homePopup = nil
+                        },
+                        onCopy: copyPreviewCoordinate
+                    )
+                    .frame(maxWidth: min(260, coordinateRowFrame.width), alignment: .topLeading)
+                    Spacer(minLength: 0).allowsHitTesting(false)
                 }
             }
         }
     }
 
-    private func popoverWidth(for popup: HomePopup) -> CGFloat {
-        popup == .coordinate ? min(260, coordinateRowFrame.width) : coordinateRowFrame.width
-    }
-
     @ViewBuilder
     private func homeChromePopover(_ popup: HomePopup) -> some View {
         switch popup {
-        case .coordinate:
-            HomeCoordinateMenu(
-                selectedSystem: previewCoordinateSystem,
-                mapSystem: displayedMapCoordinateSystem,
-                onSelect: { system in
-                    previewCoordinateSystem = system
-                    homePopup = nil
-                },
-                onCopy: copyPreviewCoordinate
-            )
         case .walk:
-            HomeToolsPopover(title: HomePopup.walk.title) {
+            HomeToolsPopover(compact: true, hugsHorizontally: false) {
                 PhysicalWalkHeadingControls(
                     store: physicalWalkStore,
                     controller: physicalWalk,

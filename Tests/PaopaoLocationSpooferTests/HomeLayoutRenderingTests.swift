@@ -23,6 +23,48 @@ final class HomeLayoutRenderingTests: XCTestCase {
         }
     }
 
+    func testFunctionPopoverSitsToTheRightOfZoomControls() {
+        let suite = "WalkBesideZoom.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let store = PhysicalWalkStore(defaults: defaults)
+        store.setEnabled(true)
+        store.setCustomHeadingEnabled(true)
+        let bounds = HomeLayoutBounds()
+        let row = HStack(alignment: .top, spacing: 12) {
+            MapZoomControls(scaleLabel: "50米", onZoomIn: {}, onZoomOut: {})
+                .background(bounds.measure("zoom"))
+            HomeToolsPopover(compact: true, hugsHorizontally: false) {
+                PhysicalWalkHeadingControls(
+                    store: store, controller: PhysicalWalkController(), spoofActive: true
+                )
+            }
+            .frame(minWidth: 0, maxWidth: .infinity, alignment: .topLeading)
+            .clipped()
+            .background(bounds.measure("walk"))
+        }
+        .frame(width: 369, alignment: .leading)
+        let host = UIHostingController(rootView: row.frame(maxHeight: 400, alignment: .topLeading))
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 400))
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        host.view.frame = window.bounds
+        host.view.layoutIfNeeded()
+        RunLoop.main.run(until: Date().addingTimeInterval(0.2))
+        let zoom = bounds.frames["zoom"] ?? .zero
+        let walk = bounds.frames["walk"] ?? .zero
+        XCTAssertGreaterThan(zoom.width, 1, "zoom controls must render, got \(zoom)")
+        XCTAssertGreaterThan(walk.width, 1, "walk panel must render, got \(walk)")
+        XCTAssertGreaterThanOrEqual(walk.minX, zoom.maxX + 11, "function panel must leave a gap after zoom, zoom=\(zoom) walk=\(walk)")
+        XCTAssertGreaterThanOrEqual(zoom.width, AppLayout.mapZoomControlSize - 1, "zoom card must stay fully visible, got \(zoom)")
+        XCTAssertLessThan(zoom.height, 150, "zoom controls must keep their compact stack, got \(zoom)")
+        XCTAssertGreaterThanOrEqual(
+            descendants(of: host.view).compactMap { $0 as? UISlider }.count, 2,
+            "walk panel must keep heading and stride sliders"
+        )
+        window.isHidden = true
+    }
+
     func testBoundedPopupKeepsLargeHeaderInsideItsHeight() {
         for typeSize in [DynamicTypeSize.large, .accessibility5] {
             let bounds = HomeLayoutBounds()
@@ -440,6 +482,85 @@ final class HomeLayoutRenderingTests: XCTestCase {
         XCTAssertFalse(descendants(of: host.view).compactMap { $0 as? UISwitch }.isEmpty,
                        "walk panel must keep an enable switch")
         XCTAssertFalse(visibleTexts(in: host.view).contains("完成"))
+        XCTAssertTrue(
+            visibleTexts(in: host.view).contains("真实走动说明"),
+            "walk explanations must sit behind the info control"
+        )
+        let labels = descendants(of: host.view).compactMap { $0 as? UILabel }.compactMap(\.text)
+        XCTAssertFalse(labels.contains { $0.contains("计步器没有距离") })
+        XCTAssertFalse(labels.contains { $0.contains("扇形跟系统地图") })
+        let switches = descendants(of: host.view).compactMap { $0 as? UISwitch }
+        for item in switches {
+            let frame = item.convert(item.bounds, to: host.view)
+            XCTAssertLessThan(frame.width, 52, "walk switches must stay compact, got \(frame)")
+        }
+        window.isHidden = true
+    }
+
+    func testWalkPanelHugsContentInsteadOfFillingTheCoordinateRow() {
+        let suite = "WalkPanelHug.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let store = PhysicalWalkStore(defaults: defaults)
+        let bounds = HomeLayoutBounds()
+        let panel = HomeToolsPopover(compact: true) {
+            PhysicalWalkHeadingControls(
+                store: store, controller: PhysicalWalkController(), spoofActive: true
+            )
+        }
+        .background {
+            GeometryReader { geometry in
+                Color.clear.onAppear { bounds.frames["walk"] = geometry.frame(in: .global) }
+                    .onChange(of: geometry.frame(in: .global)) { bounds.frames["walk"] = $0 }
+            }
+        }
+        let host = UIHostingController(rootView: panel.frame(maxWidth: 390, maxHeight: 400, alignment: .topTrailing))
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 400))
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        host.view.frame = window.bounds
+        host.view.layoutIfNeeded()
+        RunLoop.main.run(until: Date().addingTimeInterval(0.15))
+        let frame = bounds.frames["walk"] ?? .zero
+        XCTAssertLessThan(frame.width, 260, "walk popover must hug content, got \(frame)")
+        XCTAssertLessThan(frame.height, 80, "closed walk popover must stay a single compact bar, got \(frame)")
+        window.isHidden = true
+    }
+
+    func testWalkPanelKeepsCompactSlidersWhenEnabled() {
+        let suite = "WalkPanelSlider.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let store = PhysicalWalkStore(defaults: defaults)
+        store.setEnabled(true)
+        store.setCustomHeadingEnabled(true)
+        let bounds = HomeLayoutBounds()
+        let panel = HomeToolsPopover(compact: true) {
+            PhysicalWalkHeadingControls(
+                store: store, controller: PhysicalWalkController(), spoofActive: true
+            )
+        }
+        .background {
+            GeometryReader { geometry in
+                Color.clear.onAppear { bounds.frames["walk"] = geometry.frame(in: .global) }
+                    .onChange(of: geometry.frame(in: .global)) { bounds.frames["walk"] = $0 }
+            }
+        }
+        let host = UIHostingController(rootView: panel.frame(maxWidth: 390, maxHeight: 400, alignment: .topTrailing))
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 400))
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        host.view.frame = window.bounds
+        host.view.layoutIfNeeded()
+        RunLoop.main.run(until: Date().addingTimeInterval(0.15))
+        let sliders = descendants(of: host.view).compactMap { $0 as? UISlider }
+        XCTAssertGreaterThanOrEqual(sliders.count, 2, "heading and stride must keep sliders")
+        XCTAssertLessThan(bounds.frames["walk"]?.width ?? .infinity, 390, "walk toggles must share one compact bar")
+        let labels = descendants(of: host.view).compactMap { $0 as? UILabel }.compactMap(\.text)
+        XCTAssertTrue(
+            visibleTexts(in: host.view).contains { $0.contains("初始指向") },
+            "heading lock label must stay on one line, got \(visibleTexts(in: host.view))"
+        )
         window.isHidden = true
     }
 
@@ -619,4 +740,11 @@ private struct HomeLayoutFixture: View {
 @MainActor
 private final class HomeLayoutBounds {
     var frames: [String: CGRect] = [:]
+
+    func measure(_ key: String) -> some View {
+        GeometryReader { geometry in
+            Color.clear.onAppear { self.frames[key] = geometry.frame(in: .global) }
+                .onChange(of: geometry.frame(in: .global)) { self.frames[key] = $0 }
+        }
+    }
 }
