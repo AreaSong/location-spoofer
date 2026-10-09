@@ -268,7 +268,7 @@ struct RouteParameterControls: View {
             .disabled(route.locksPathEdits || route.isRouting)
             sliderRow(
                 icon: "gauge.with.dots.needle.bottom.50percent",
-                label: String(format: "%.0f公里", route.speedKilometersPerHour),
+                label: String(format: "%.1f km/h", route.speedKilometersPerHour),
                 value: speedBinding,
                 range: 1...route.travelMode.maximumKilometersPerHour,
                 step: 0.5,
@@ -284,11 +284,11 @@ struct RouteParameterControls: View {
             }
             sliderRow(
                 icon: "shield.lefthalf.filled",
-                label: "\(Int(route.offsetMeters.rounded()))米",
+                label: route.offsetMeters < 0.5 ? "0m" : "±\(Int(route.offsetMeters.rounded()))m",
                 value: offsetBinding,
-                range: 0...80,
+                range: 0...50,
                 step: 5,
-                accessibilityLabel: "位置偏移，米"
+                accessibilityLabel: "防检测随机位置偏移，米"
             )
             actionRow
         }
@@ -507,4 +507,217 @@ struct RouteParameterControls: View {
 private enum RouteParamBarWidthKey: PreferenceKey {
     static var defaultValue: CGFloat = 0
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
+}
+
+/// 底部卡片内嵌的沉浸式路线控制面板：出行方式、速度控制、重复模式与防检漂移。
+struct RouteCardControls: View {
+    @ObservedObject var route: RoutePlaybackController
+    let onSave: () -> Void
+
+    var body: some View {
+        VStack(spacing: 8) {
+            modeAndActionsRow
+            speedRow
+            repeatAndDriftRow
+        }
+        .frame(maxWidth: .infinity, alignment: .top)
+    }
+
+    private var modeAndActionsRow: some View {
+        HStack(spacing: 8) {
+            // 出行方式 Segment
+            HStack(spacing: 2) {
+                ForEach(RouteTravelMode.allCases) { mode in
+                    let isSelected = route.travelMode == mode
+                    Button {
+                        Haptics.selection()
+                        route.applyTravelMode(mode)
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: mode.symbolName)
+                                .font(.system(size: 11, weight: .medium))
+                            Text(mode.displayName)
+                                .font(.caption.weight(isSelected ? .semibold : .medium))
+                                .lineLimit(1)
+                        }
+                        .frame(maxWidth: .infinity, minHeight: 28, maxHeight: 28)
+                        .foregroundStyle(isSelected ? Color.primary : Color.secondary)
+                        .background {
+                            if isSelected {
+                                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                                    .fill(Color(uiColor: .systemBackground))
+                                    .shadow(color: .black.opacity(0.12), radius: 2.5, y: 1)
+                            }
+                        }
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(mode.displayName)
+                    .accessibilityAddTraits(isSelected ? .isSelected : [])
+                }
+            }
+            .padding(2)
+            .background(Color.secondary.opacity(0.10), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+            .disabled(route.locksPathEdits || route.isRouting)
+
+            if route.canReverse {
+                Button {
+                    Haptics.selection()
+                    route.reverseDirection()
+                } label: {
+                    HStack(spacing: 3) {
+                        Image(systemName: "arrow.left.arrow.right")
+                            .font(.system(size: 10, weight: .semibold))
+                        Text("反转")
+                            .font(.caption.weight(.medium))
+                    }
+                    .padding(.horizontal, 9)
+                    .frame(minHeight: 28)
+                    .background(Color.secondary.opacity(0.12), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(HomeInteractiveButtonStyle())
+                .accessibilityLabel("反转路线方向")
+            }
+
+            if route.canPlay && !route.isRouting && !route.waitingForActivation && route.phase != .playing {
+                Button {
+                    Haptics.selection()
+                    onSave()
+                } label: {
+                    HStack(spacing: 3) {
+                        Image(systemName: "square.and.arrow.down")
+                            .font(.system(size: 10, weight: .semibold))
+                        Text("保存")
+                            .font(.caption.weight(.medium))
+                    }
+                    .padding(.horizontal, 9)
+                    .frame(minHeight: 28)
+                    .background(Color.secondary.opacity(0.12), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(HomeInteractiveButtonStyle())
+                .accessibilityLabel("保存路线")
+            }
+        }
+    }
+
+    private var speedRow: some View {
+        HStack(spacing: 8) {
+            HStack(spacing: 4) {
+                Image(systemName: "gauge.with.dots.needle.bottom.50percent")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(Color.secondary)
+                    .frame(width: 14)
+                Text("速度")
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(Color.secondary)
+            }
+            .frame(width: 48, alignment: .leading)
+
+            Slider(
+                value: speedBinding,
+                in: 1...route.travelMode.maximumKilometersPerHour,
+                step: 0.5
+            )
+            .tint(Color.accentColor)
+            .accessibilityLabel("路线速度")
+
+            Text(String(format: "%.1f km/h", route.speedKilometersPerHour))
+                .font(.caption2.monospacedDigit().weight(.semibold))
+                .foregroundStyle(Color.primary)
+                .padding(.horizontal, 7)
+                .padding(.vertical, 3)
+                .background(Color.secondary.opacity(0.12), in: Capsule())
+                .frame(minWidth: 64, alignment: .trailing)
+        }
+        .frame(minHeight: 28)
+    }
+
+    private var repeatAndDriftRow: some View {
+        HStack(spacing: 10) {
+            // 重复模式
+            HStack(spacing: 2) {
+                ForEach(RouteRepeatMode.allCases) { mode in
+                    let isSelected = route.repeatMode == mode
+                    Button {
+                        Haptics.selection()
+                        route.applyRepeatMode(mode)
+                    } label: {
+                        HStack(spacing: 2) {
+                            Image(systemName: repeatIcon(mode))
+                                .font(.system(size: 9, weight: .medium))
+                            Text(mode.displayName)
+                                .font(.caption2.weight(isSelected ? .semibold : .medium))
+                        }
+                        .padding(.horizontal, 6)
+                        .frame(minHeight: 26)
+                        .foregroundStyle(isSelected ? Color.primary : Color.secondary)
+                        .background {
+                            if isSelected {
+                                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                    .fill(Color(uiColor: .systemBackground))
+                                    .shadow(color: .black.opacity(0.12), radius: 2, y: 1)
+                            }
+                        }
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(mode.displayName)
+                    .accessibilityAddTraits(isSelected ? .isSelected : [])
+                }
+            }
+            .padding(2)
+            .background(Color.secondary.opacity(0.10), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+
+            // 防风控漂移
+            HStack(spacing: 4) {
+                Image(systemName: "shield.lefthalf.filled")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(Color.secondary)
+                Text("漂移")
+                    .font(.caption2.weight(.medium))
+                    .foregroundStyle(Color.secondary)
+
+                Slider(
+                    value: offsetBinding,
+                    in: 0...50,
+                    step: 5
+                )
+                .tint(Color.accentColor)
+                .accessibilityLabel("防检测随机漂移扰动，米")
+
+                Text(route.offsetMeters < 0.5 ? "0m" : "±\(Int(route.offsetMeters.rounded()))m")
+                    .font(.caption2.monospacedDigit().weight(.semibold))
+                    .foregroundStyle(route.offsetMeters > 0 ? Color.accentColor : Color.primary)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 3)
+                    .background(Color.secondary.opacity(0.12), in: Capsule())
+                    .frame(minWidth: 44, alignment: .trailing)
+            }
+        }
+        .frame(minHeight: 28)
+    }
+
+    private func repeatIcon(_ mode: RouteRepeatMode) -> String {
+        switch mode {
+        case .once: return "arrow.right"
+        case .roundTrip: return "arrow.left.arrow.right"
+        case .loop: return "repeat"
+        }
+    }
+
+    private var speedBinding: Binding<Double> {
+        Binding(
+            get: { route.speedKilometersPerHour },
+            set: { route.setSpeedKilometersPerHour($0) }
+        )
+    }
+
+    private var offsetBinding: Binding<Double> {
+        Binding(
+            get: { route.offsetMeters },
+            set: { route.setOffsetMeters($0) }
+        )
+    }
 }

@@ -103,21 +103,22 @@ extension SettingsView {
                     Text(mapCoordinateSystemName).foregroundStyle(.secondary)
                 }
                 if mapCoordinateSystemUsedFallback {
-                    Text("检测未命中白名单，当前按国内标准显示")
+                    Text("当前位于国内服务区，已自动按国内标准对齐显示")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
             }
 
-            locationSimulationSection
             if runtimeMode.mode == .developerTunnel {
                 RouteLocationSettingsSection(session: session)
+            } else if runtimeMode.mode == .thirdParty {
+                thirdPartyConfigurationSection
             }
+
+            locationSimulationSection
             favoriteBackupSection
 
-            if runtimeMode.mode == .thirdParty {
-                thirdPartyConfigurationSection
-            } else {
+            if runtimeMode.mode != .thirdParty {
                 Section("说明") {
                     Button {
                         activeTip = .activation

@@ -186,8 +186,7 @@ extension SettingsView {
             mode: runtimeMode.mode,
             controlsDisabled: simulationControlsDisabled
         ) { title, message in
-            proxyOperationAlertTitle = title
-            proxyOperationError = message
+            setProxyOperationAlert(title: title, message: message)
         }
     }
 }

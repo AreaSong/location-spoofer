@@ -469,9 +469,6 @@ struct MapHomeView: View {
             if UserDefaults.standard.bool(forKey: "uiPreviewRoutePopup") {
                 enterRoute()
                 showsRoutePanel = true
-                DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
-                    homePopup = .management
-                }
             }
             #endif
             if let session = route.sessionStore.load(), route.phase == .inactive {
@@ -810,7 +807,8 @@ struct MapHomeView: View {
             onSecondaryTap: { homePopup = nil; handleHomeSecondaryTap() },
             viaTitle: homeViaActionTitle,
             viaDisabled: homeViaActionDisabled,
-            onViaTap: { homePopup = nil; handleHomeViaTap() }
+            onViaTap: { homePopup = nil; handleHomeViaTap() },
+            onOpenSaved: openSavedRoutes
         )
     }
 

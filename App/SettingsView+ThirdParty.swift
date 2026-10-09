@@ -179,8 +179,7 @@ extension SettingsView {
             setup: setup,
             onDismiss: { dismiss() },
             onError: { title, message in
-                proxyOperationAlertTitle = title
-                proxyOperationError = message
+                setProxyOperationAlert(title: title, message: message)
             }
         )
     }

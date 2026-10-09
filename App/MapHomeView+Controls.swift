@@ -56,13 +56,13 @@ extension MapHomeView {
             mapSystem: displayedMapCoordinateSystem,
             selectedSystem: previewCoordinateSystem,
             copied: coordinateCopied,
-            showsFunction: true,
-            functionSelected: homePopup == .walk || homePopup == .management,
-            functionEnabledDot: !showsRoutePanelActive && physicalWalkStore.isEnabled,
+            showsFunction: !showsRoutePanelActive,
+            functionSelected: homePopup == .walk,
+            functionEnabledDot: physicalWalkStore.isEnabled,
             functionAccessibilityLabel: "功能",
             functionAccessibilityValue: functionAccessibilityValue,
             onCoordinateTap: { toggleHomePopup(.coordinate) },
-            onFunctionTap: { toggleHomePopup(showsRoutePanelActive ? .management : .walk) }
+            onFunctionTap: { toggleHomePopup(.walk) }
         )
         .padding(.horizontal, 8)
         .background(.thickMaterial, in: RoundedRectangle(cornerRadius: AppRadius.control))
@@ -218,13 +218,9 @@ extension MapHomeView {
 
     private var functionAccessibilityValue: String {
         var parts: [String] = []
-        if showsRoutePanelActive {
-            parts.append("路线参数")
-        } else {
-            parts.append("真实走动")
-            parts.append(physicalWalkStore.isEnabled ? "已开启" : "已关闭")
-        }
-        let open = homePopup == .walk || homePopup == .management
+        parts.append("真实走动")
+        parts.append(physicalWalkStore.isEnabled ? "已开启" : "已关闭")
+        let open = homePopup == .walk
         parts.append(open ? "已展开" : "已收起")
         return parts.joined(separator: "，")
     }
@@ -257,7 +253,7 @@ extension MapHomeView {
                         Spacer(minLength: 0).allowsHitTesting(false)
                     }
                     .fixedSize(horizontal: false, vertical: true)
-                } else if popup == .walk || popup == .management {
+                } else if popup == .walk {
                     HStack(alignment: .top, spacing: 0) {
                         Color.clear
                             .frame(width: functionPopoverLeadingX)
@@ -302,15 +298,6 @@ extension MapHomeView {
                 )
             }
             .accessibilityIdentifier("home.walk.panel")
-        case .management:
-            HomeToolsPopover(compact: true, hugsHorizontally: false) {
-                RouteParameterControls(
-                    route: route,
-                    onExit: requestExitRoute,
-                    onSave: promptSaveRoute
-                )
-            }
-            .accessibilityIdentifier("home.route.parameters")
         default:
             EmptyView()
         }
@@ -346,14 +333,9 @@ extension MapHomeView {
     }
 
     var homeRouteControls: some View {
-        HomeRouteSavedList(
-            routes: savedRoutes.routes,
-            selectedID: route.editingSavedRoute?.id,
-            onSelect: { saved in
-                let previous = route.phase
-                settleRouteSimulation(after: route.load(saved), from: previous)
-            },
-            onManage: openSavedRoutes
+        RouteCardControls(
+            route: route,
+            onSave: promptSaveRoute
         )
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }

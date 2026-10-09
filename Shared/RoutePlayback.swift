@@ -36,8 +36,9 @@ enum RouteTravelMode: String, CaseIterable, Identifiable, Codable {
 
     var maximumKilometersPerHour: Double {
         switch self {
-        case .walk, .bike: return 40
-        case .drive: return 80
+        case .walk: return 12
+        case .bike: return 35
+        case .drive: return 120
         }
     }
 
@@ -51,15 +52,14 @@ enum RouteTravelMode: String, CaseIterable, Identifiable, Codable {
             ]
         case .bike:
             return [
-                RouteSpeedPreset(title: "8", kilometersPerHour: 8),
+                RouteSpeedPreset(title: "10", kilometersPerHour: 10),
                 RouteSpeedPreset(title: "15", kilometersPerHour: 15),
-                RouteSpeedPreset(title: "20", kilometersPerHour: 20)
+                RouteSpeedPreset(title: "25", kilometersPerHour: 25)
             ]
         case .drive:
             return [
                 RouteSpeedPreset(title: "30", kilometersPerHour: 30),
-                RouteSpeedPreset(title: "40", kilometersPerHour: 40),
-                RouteSpeedPreset(title: "60", kilometersPerHour: 60),
+                RouteSpeedPreset(title: "50", kilometersPerHour: 50),
                 RouteSpeedPreset(title: "80", kilometersPerHour: 80)
             ]
         }

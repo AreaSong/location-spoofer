@@ -38,8 +38,8 @@ struct SettingsView: View {
     @State var activeTip: TipKind?
     @State var proxyOperationError = ""
     @State var proxyOperationAlertTitle = "代理操作失败"
-    @State var modeOperationRunning = false
     @State var thirdPartyClearRecovery: ThirdPartyModeSwitchRecovery?
+    @State var modeOperationRunning = false
     @State var showCertificateResetConfirmation = false
     @State var githubDestination: SafariDestination?
     @State var isCheckingForUpdates = false
@@ -53,6 +53,11 @@ struct SettingsView: View {
         settingsPage
     }
 
+
+    func setProxyOperationAlert(title: String, message: String) {
+        proxyOperationAlertTitle = title
+        proxyOperationError = message
+    }
 
     func valueRow(_ title: String, value: String) -> some View {
         HStack { Text(title); Spacer(); Text(value).font(.footnote.monospaced()).foregroundStyle(.secondary) }

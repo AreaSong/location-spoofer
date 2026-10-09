@@ -79,6 +79,10 @@ struct FavoriteBackupSection: View {
             favoriteImport.report("剪贴板里没有收藏备份")
             return
         }
+        guard text.utf8.count <= 512 * 1024 else {
+            favoriteImport.report("剪贴板内容过大（超过 512KB），请通过文件导入")
+            return
+        }
         favoriteImport.start(.clipboard(text), isPageActive: isAllowedToImport) { prepared in
             let result = favorites.importPrepared(prepared)
             RuntimeLogger.info("APP", "收藏", "已合并导入收藏", details: [

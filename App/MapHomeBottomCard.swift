@@ -32,6 +32,7 @@ struct MapHomeBottomCard<SpotContent: View, RoutePanel: View, Caption: View>: Vi
     var viaTitle: String? = nil
     var viaDisabled: Bool = false
     var onViaTap: () -> Void = {}
+    var onOpenSaved: (() -> Void)? = nil
     @Environment(\.dynamicTypeSize) private var typeSize
     @State private var showsStatusDetail = false
 
@@ -87,9 +88,12 @@ struct MapHomeBottomCard<SpotContent: View, RoutePanel: View, Caption: View>: Vi
     private var titleRow: some View {
         if typeSize.isAccessibilitySize {
             VStack(alignment: .leading, spacing: 6) {
-                HStack(alignment: .center, spacing: 0) {
+                HStack(alignment: .center, spacing: 6) {
                     titleText
                     statusDetailButton
+                    if showsRoute, let onOpenSaved {
+                        savedRoutesButton(onOpenSaved)
+                    }
                 }
                 HStack(spacing: 8) {
                     runtimeStatusButton
@@ -102,12 +106,35 @@ struct MapHomeBottomCard<SpotContent: View, RoutePanel: View, Caption: View>: Vi
             HStack(alignment: .center, spacing: 6) {
                 titleText
                 statusDetailButton
+                if showsRoute, let onOpenSaved {
+                    savedRoutesButton(onOpenSaved)
+                }
                 Spacer(minLength: 8)
                 runtimeStatusButton
                 if showsSpotHelp { helpButton }
                 if !showsRoute { favoriteButton }
             }
         }
+    }
+
+    private func savedRoutesButton(_ action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 3) {
+                Image(systemName: "folder")
+                    .font(.system(size: 11, weight: .semibold))
+                Text("已存")
+                    .font(.caption2.weight(.semibold))
+            }
+            .foregroundStyle(Color.accentColor)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(Color.accentColor.opacity(0.12), in: Capsule())
+            .frame(minHeight: 32)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(HomeInteractiveButtonStyle())
+        .accessibilityLabel("打开已存路线管理")
+        .accessibilityIdentifier("home.route.openSaved")
     }
 
     private var titleText: some View {
