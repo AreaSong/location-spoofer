@@ -124,16 +124,25 @@ extension MapHomeView {
         HStack(spacing: 2) {
             homeModeButton("定点", selected: !showsRoutePanelActive) {
                 homePopup = nil
-                showsRoutePanel = false
+                withAnimation(.spring(response: 0.28, dampingFraction: 0.8)) {
+                    showsRoutePanel = false
+                }
             }
             homeModeButton("路线", selected: showsRoutePanelActive) {
                 homePopup = nil
                 enterRoute()
-                showsRoutePanel = true
+                withAnimation(.spring(response: 0.28, dampingFraction: 0.8)) {
+                    showsRoutePanel = true
+                }
             }
         }
         .padding(4)
         .background(.thickMaterial, in: RoundedRectangle(cornerRadius: AppRadius.control))
+        .overlay(
+            RoundedRectangle(cornerRadius: AppRadius.control)
+                .stroke(Color.primary.opacity(0.06), lineWidth: 0.5)
+        )
+        .shadow(color: .black.opacity(0.10), radius: 8, y: 3)
         .fixedSize(horizontal: false, vertical: true)
         .accessibilityIdentifier("home.modeBar")
     }
@@ -143,11 +152,26 @@ extension MapHomeView {
             if !selected { Haptics.selection() }
             action()
         } label: {
-            Text(title).font(.subheadline.weight(.semibold))
-                .frame(maxWidth: .infinity, minHeight: 44)
-                .foregroundStyle(selected ? Color.primary : Color.secondary)
-                .background(selected ? Color(uiColor: .secondarySystemGroupedBackground) : .clear,
-                            in: RoundedRectangle(cornerRadius: AppRadius.inset))
+            HStack(spacing: 6) {
+                Image(systemName: title == "定点" ? "mappin.and.ellipse" : "arrow.triangle.swap")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(selected ? Color.accentColor : Color.secondary)
+                Text(title)
+                    .font(.subheadline.weight(.semibold))
+            }
+            .frame(maxWidth: .infinity, minHeight: 44)
+            .foregroundStyle(selected ? Color.primary : Color.secondary)
+            .background(
+                Group {
+                    if selected {
+                        RoundedRectangle(cornerRadius: AppRadius.inset)
+                            .fill(Color(uiColor: .secondarySystemGroupedBackground))
+                            .shadow(color: .black.opacity(0.08), radius: 3, y: 1.5)
+                    } else {
+                        Color.clear
+                    }
+                }
+            )
         }
         .buttonStyle(.plain)
         .accessibilityAddTraits(selected ? .isSelected : [])

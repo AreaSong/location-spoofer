@@ -94,13 +94,17 @@ struct HomeSpotSwipeLanes<RecentBars: View, FavoriteBars: View>: View {
     }
 
     private func laneAction(_ title: String, action: @escaping () -> Void) -> some View {
-        Button(title, action: action)
-            .font(.caption.weight(.medium))
-            .foregroundStyle(.secondary)
-            .padding(.horizontal, 10)
-            .frame(minWidth: 44, minHeight: 44)
-            .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: AppRadius.inset))
-            .buttonStyle(.plain)
+        Button(action: action) {
+            Text(title)
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(Color.accentColor)
+                .padding(.horizontal, 9)
+                .frame(height: 28)
+                .background(Color.accentColor.opacity(0.10), in: Capsule())
+                .frame(minWidth: 44, minHeight: 44)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(HomeInteractiveButtonStyle())
     }
 }
 

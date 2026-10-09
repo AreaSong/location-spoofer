@@ -111,32 +111,38 @@ struct MapHomeBottomCard<SpotContent: View, RoutePanel: View, Caption: View>: Vi
     }
 
     private var titleText: some View {
-        Text(displayName)
-            .font(.headline)
-            .lineLimit(typeSize.isAccessibilitySize ? 3 : 1)
-            .truncationMode(.tail)
-            .frame(minWidth: 0, alignment: .leading)
-            .fixedSize(horizontal: false, vertical: true)
-            .background {
-                GeometryReader { geometry in
-                    Color.clear.preference(key: HomeCardTitleFrameKey.self, value: geometry.frame(in: .global))
-                }
+        HStack(spacing: 5) {
+            Image(systemName: showsRoute ? "arrow.triangle.swap" : "mappin.circle.fill")
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(Color.accentColor)
+                .accessibilityHidden(true)
+            Text(displayName)
+                .font(.headline)
+                .lineLimit(typeSize.isAccessibilitySize ? 3 : 1)
+                .truncationMode(.tail)
+        }
+        .frame(minWidth: 0, alignment: .leading)
+        .fixedSize(horizontal: false, vertical: true)
+        .background {
+            GeometryReader { geometry in
+                Color.clear.preference(key: HomeCardTitleFrameKey.self, value: geometry.frame(in: .global))
             }
-            .accessibilityIdentifier("home.cardTitle")
-            .accessibilityValue(selectionStatus)
+        }
+        .accessibilityIdentifier("home.cardTitle")
+        .accessibilityValue(selectionStatus)
     }
 
     private var statusDetailButton: some View {
         Button {
             showsStatusDetail.toggle()
         } label: {
-            Image(systemName: showsStatusDetail ? "exclamationmark.circle.fill" : "exclamationmark.circle")
-                .font(.system(size: 17, weight: .medium))
+            Image(systemName: showsStatusDetail ? "info.circle.fill" : "info.circle")
+                .font(.system(size: 16, weight: .medium))
                 .foregroundStyle(.secondary)
-                .frame(width: 44, height: 44)
+                .frame(width: 32, height: 44)
                 .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(HomeInteractiveButtonStyle())
         .layoutPriority(1)
         .accessibilityLabel(selectionStatus)
         .accessibilityIdentifier("home.statusDetail")

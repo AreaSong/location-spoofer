@@ -72,17 +72,20 @@ struct MapHomeCoordinateLine: View {
         Button {
             onFunctionTap?()
         } label: {
-            HStack(spacing: 6) {
+            HStack(spacing: 5) {
                 if functionEnabledDot {
                     Circle()
                         .fill(Color.accentColor)
                         .frame(width: 7, height: 7)
                         .accessibilityHidden(true)
                 }
+                Image(systemName: "slider.horizontal.3")
+                    .font(.caption.weight(.semibold))
+                    .accessibilityHidden(true)
                 Text("功能")
                     .font(.subheadline.weight(.semibold))
             }
-            .padding(.horizontal, 12)
+            .padding(.horizontal, 10)
             .frame(minHeight: 44)
             .foregroundStyle(functionSelected ? Color.primary : Color.secondary)
             .background(
@@ -91,9 +94,13 @@ struct MapHomeCoordinateLine: View {
                     : Color.secondary.opacity(0.12),
                 in: RoundedRectangle(cornerRadius: AppRadius.inset, style: .continuous)
             )
+            .overlay(
+                RoundedRectangle(cornerRadius: AppRadius.inset, style: .continuous)
+                    .stroke(functionSelected ? Color.accentColor.opacity(0.4) : Color.clear, lineWidth: 1)
+            )
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(HomeInteractiveButtonStyle())
         .fixedSize(horizontal: true, vertical: false)
         .accessibilityLabel(functionAccessibilityLabel)
         .accessibilityValue(functionAccessibilityValue)

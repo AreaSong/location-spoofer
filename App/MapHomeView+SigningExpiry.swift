@@ -32,11 +32,16 @@ struct HomeSettingsButton: View {
                         .lineLimit(1)
                 }
             }
-            .frame(width: 52, height: 52)
+            .frame(width: AppLayout.mapToolButtonSize, height: AppLayout.mapToolButtonSize)
             .background(.regularMaterial, in: Circle())
+            .overlay(
+                Circle()
+                    .stroke(Color.primary.opacity(0.08), lineWidth: 0.5)
+            )
+            .shadow(color: .black.opacity(0.14), radius: 9, y: 4)
             .contentShape(Circle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(MapChromeIconStyle())
         .accessibilityLabel("设置")
         .accessibilityValue(status.expirationDate.flatMap { SigningExpiryCountdown.text(until: $0, now: now) }
                             ?? status.settingsMessage ?? "")

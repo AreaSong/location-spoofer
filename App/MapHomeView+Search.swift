@@ -24,17 +24,17 @@ extension MapHomeView {
             }
             .font(.caption)
             .padding(.horizontal, 10)
-            .frame(minWidth: 120, minHeight: 44, alignment: .leading)
+            .frame(minWidth: 88, maxWidth: 172, minHeight: 44, alignment: .leading)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(HomeInteractiveButtonStyle())
         .background(
             (selected ? Color.accentColor.opacity(0.16) : Color.secondary.opacity(0.12)),
             in: RoundedRectangle(cornerRadius: AppRadius.inset)
         )
         .overlay(
             RoundedRectangle(cornerRadius: AppRadius.inset)
-                .stroke(selected ? Color.accentColor.opacity(0.7) : Color.clear)
+                .stroke(selected ? Color.accentColor.opacity(0.7) : Color.primary.opacity(0.06), lineWidth: selected ? 1 : 0.5)
         )
         .accessibilityLabel(selected ? "\(f.name)，已选中" : f.name)
     }
@@ -42,21 +42,26 @@ extension MapHomeView {
     func recentChip(_ item: RecentSelection) -> some View {
         HStack(spacing: 0) {
             Button { selectRecent(item) } label: {
-                Text(compactChipTitle(item.name))
-                    .font(.caption)
-                    .lineLimit(1)
-                    .padding(.leading, 10)
-                    .padding(.trailing, 4)
-                    .frame(minWidth: 88, minHeight: 44, alignment: .leading)
-                    .contentShape(Rectangle())
+                HStack(spacing: 5) {
+                    Image(systemName: "clock")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                    Text(compactChipTitle(item.name))
+                        .font(.caption)
+                        .lineLimit(1)
+                }
+                .padding(.leading, 8)
+                .padding(.trailing, 4)
+                .frame(minWidth: 80, maxWidth: 168, minHeight: 44, alignment: .leading)
+                .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(HomeInteractiveButtonStyle())
             Button {
                 recentSelections.remove(item)
             } label: {
                 Image(systemName: "xmark")
                     .font(.caption2.weight(.semibold))
-                    .frame(width: 32, height: 44)
+                    .frame(width: 28, height: 44)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -64,6 +69,10 @@ extension MapHomeView {
             .accessibilityLabel("从最近选点中删除")
         }
         .background(Color.secondary.opacity(0.12), in: RoundedRectangle(cornerRadius: AppRadius.inset))
+        .overlay(
+            RoundedRectangle(cornerRadius: AppRadius.inset)
+                .stroke(Color.primary.opacity(0.06), lineWidth: 0.5)
+        )
     }
 
     /// 芯片只展示缩写，完整名称留给无障碍和标题。
@@ -73,7 +82,7 @@ extension MapHomeView {
         guard parts.count == 2, let latitude = Double(parts[0]), let longitude = Double(parts[1]) else {
             return name
         }
-        return String(format: "%.3f,%.3f", latitude, longitude)
+        return String(format: "%.3f, %.3f", latitude, longitude)
     }
 
     func rememberDiscreteSelection(name: String, coordinatePair: CoordinatePair) {
