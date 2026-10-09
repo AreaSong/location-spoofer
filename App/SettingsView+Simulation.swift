@@ -121,13 +121,18 @@ extension SettingsView {
                 )
                 .disabled(simulationControlsDisabled)
             }
+            .transition(.opacity.combined(with: .move(edge: .top)))
         }
     }
 
     var randomRadiusBinding: Binding<Bool> {
         Binding(
             get: { randomRadius.isEnabled },
-            set: { randomRadius.setEnabled($0) }
+            set: { newValue in
+                withAnimation(.spring(response: 0.32, dampingFraction: 0.82)) {
+                    randomRadius.setEnabled(newValue)
+                }
+            }
         )
     }
 

@@ -117,61 +117,85 @@ extension MapHomeView {
             .disabled(realtimeButtonTask != nil || realtimeRequestTask != nil || realtime.isRequesting)
         }
         .fixedSize()
+        .padding(.bottom, 12)
         .accessibilityIdentifier("home.mapTools")
     }
 
     var homeModeAndEntries: some View {
-        HStack(spacing: 2) {
-            homeModeButton("定点", selected: !showsRoutePanelActive) {
-                homePopup = nil
-                withAnimation(.spring(response: 0.28, dampingFraction: 0.8)) {
-                    showsRoutePanel = false
+        HStack {
+            Spacer(minLength: 0)
+            HStack(spacing: 2) {
+                homeModeButton(
+                    "定点",
+                    icon: "mappin.and.ellipse",
+                    selected: !showsRoutePanelActive
+                ) {
+                    homePopup = nil
+                    withAnimation(.spring(response: 0.28, dampingFraction: 0.8)) {
+                        showsRoutePanel = false
+                    }
+                }
+                homeModeButton(
+                    "路线",
+                    icon: "arrow.triangle.swap",
+                    selected: showsRoutePanelActive,
+                    showBadge: route.phase == .playing || route.phase == .paused
+                ) {
+                    homePopup = nil
+                    enterRoute()
+                    withAnimation(.spring(response: 0.28, dampingFraction: 0.8)) {
+                        showsRoutePanel = true
+                    }
                 }
             }
-            homeModeButton("路线", selected: showsRoutePanelActive) {
-                homePopup = nil
-                enterRoute()
-                withAnimation(.spring(response: 0.28, dampingFraction: 0.8)) {
-                    showsRoutePanel = true
-                }
-            }
+            .padding(3)
+            .frame(width: 216, height: 40)
+            .background(.thickMaterial, in: Capsule())
+            .overlay(
+                Capsule()
+                    .stroke(Color.primary.opacity(0.08), lineWidth: 0.5)
+            )
+            .shadow(color: .black.opacity(0.12), radius: 8, y: 3)
+            Spacer(minLength: 0)
         }
-        .padding(4)
-        .background(.thickMaterial, in: RoundedRectangle(cornerRadius: AppRadius.control))
-        .overlay(
-            RoundedRectangle(cornerRadius: AppRadius.control)
-                .stroke(Color.primary.opacity(0.06), lineWidth: 0.5)
-        )
-        .shadow(color: .black.opacity(0.10), radius: 8, y: 3)
-        .fixedSize(horizontal: false, vertical: true)
+        .frame(maxWidth: .infinity)
         .accessibilityIdentifier("home.modeBar")
     }
 
-    private func homeModeButton(_ title: String, selected: Bool, action: @escaping () -> Void) -> some View {
+    private func homeModeButton(
+        _ title: String,
+        icon: String,
+        selected: Bool,
+        showBadge: Bool = false,
+        action: @escaping () -> Void
+    ) -> some View {
         Button {
             if !selected { Haptics.selection() }
             action()
         } label: {
-            HStack(spacing: 6) {
-                Image(systemName: title == "定点" ? "mappin.and.ellipse" : "arrow.triangle.swap")
+            HStack(spacing: 5) {
+                Image(systemName: icon)
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(selected ? Color.accentColor : Color.secondary)
                 Text(title)
                     .font(.subheadline.weight(.semibold))
-            }
-            .frame(maxWidth: .infinity, minHeight: 44)
-            .foregroundStyle(selected ? Color.primary : Color.secondary)
-            .background(
-                Group {
-                    if selected {
-                        RoundedRectangle(cornerRadius: AppRadius.inset)
-                            .fill(Color(uiColor: .secondarySystemGroupedBackground))
-                            .shadow(color: .black.opacity(0.08), radius: 3, y: 1.5)
-                    } else {
-                        Color.clear
-                    }
+                if showBadge {
+                    Circle()
+                        .fill(Color.accentColor)
+                        .frame(width: 6, height: 6)
                 }
-            )
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .foregroundStyle(selected ? Color.primary : Color.secondary)
+            .background {
+                if selected {
+                    Capsule()
+                        .fill(Color(uiColor: .secondarySystemGroupedBackground))
+                        .shadow(color: .black.opacity(0.10), radius: 4, y: 1.5)
+                        .matchedGeometryEffect(id: "homeModeSelector", in: modeBarNamespace)
+                }
+            }
+            .contentShape(Capsule())
         }
         .buttonStyle(.plain)
         .accessibilityAddTraits(selected ? .isSelected : [])
@@ -179,7 +203,17 @@ extension MapHomeView {
     }
 
     func toggleHomePopup(_ popup: HomePopup) {
-        homePopup = homePopup == popup ? nil : popup
+        Haptics.selection()
+        withAnimation(.spring(response: 0.28, dampingFraction: 0.8)) {
+            homePopup = homePopup == popup ? nil : popup
+        }
+    }
+
+    private var homePopoverTransition: AnyTransition {
+        .asymmetric(
+            insertion: .scale(scale: 0.94, anchor: .top).combined(with: .opacity),
+            removal: .scale(scale: 0.96, anchor: .top).combined(with: .opacity)
+        )
     }
 
     private var functionAccessibilityValue: String {
@@ -212,11 +246,14 @@ extension MapHomeView {
                             mapSystem: displayedMapCoordinateSystem,
                             onSelect: { system in
                                 previewCoordinateSystem = system
-                                homePopup = nil
+                                withAnimation(.spring(response: 0.28, dampingFraction: 0.8)) {
+                                    homePopup = nil
+                                }
                             },
                             onCopy: copyPreviewCoordinate
                         )
                         .frame(maxWidth: min(260, coordinateRowFrame.width), alignment: .topLeading)
+                        .transition(homePopoverTransition)
                         Spacer(minLength: 0).allowsHitTesting(false)
                     }
                     .fixedSize(horizontal: false, vertical: true)
@@ -227,6 +264,7 @@ extension MapHomeView {
                             .allowsHitTesting(false)
                         homeChromePopover(popup)
                             .frame(maxWidth: functionPopoverMaxWidth, alignment: .topLeading)
+                            .transition(homePopoverTransition)
                         Spacer(minLength: 0).allowsHitTesting(false)
                     }
                     .fixedSize(horizontal: false, vertical: true)

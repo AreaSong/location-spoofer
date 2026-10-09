@@ -33,7 +33,9 @@ struct FavoriteListView: View {
                     }
                     .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                         Button(role: .destructive) {
-                            favorites.delete(favorite)
+                            withAnimation(.spring(response: 0.28, dampingFraction: 0.8)) {
+                                favorites.delete(favorite)
+                            }
                         } label: {
                             Label("删除", systemImage: "trash")
                         }
@@ -45,6 +47,7 @@ struct FavoriteListView: View {
                         }
                     }
                 }
+                .animation(.default, value: filteredFavorites)
             }
         }
         .navigationTitle("收藏")

@@ -69,6 +69,7 @@ struct MapHomeView: View {
 
     @StateObject var search = MapSearchModel.forMap()
     @FocusState var searchFocused: Bool
+    @Namespace var modeBarNamespace
     @State var mapRuntimeDidStart = false
     @State var activeSheet: HomeSheet?
     @State var showEnableTip = false
@@ -280,7 +281,11 @@ struct MapHomeView: View {
             if homePopup != nil {
                 Color.black.opacity(0.001)
                     .ignoresSafeArea()
-                    .onTapGesture { homePopup = nil }
+                    .onTapGesture {
+                        withAnimation(.spring(response: 0.28, dampingFraction: 0.8)) {
+                            homePopup = nil
+                        }
+                    }
                     .accessibilityLabel("关闭面板")
                     .accessibilityAddTraits(.isButton)
             }

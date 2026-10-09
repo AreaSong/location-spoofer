@@ -120,9 +120,12 @@ struct MapHomeBottomCard<SpotContent: View, RoutePanel: View, Caption: View>: Vi
                 .font(.headline)
                 .lineLimit(typeSize.isAccessibilitySize ? 3 : 1)
                 .truncationMode(.tail)
+                .id(displayName)
+                .transition(.opacity)
         }
         .frame(minWidth: 0, alignment: .leading)
         .fixedSize(horizontal: false, vertical: true)
+        .animation(.easeInOut(duration: 0.2), value: displayName)
         .background {
             GeometryReader { geometry in
                 Color.clear.preference(key: HomeCardTitleFrameKey.self, value: geometry.frame(in: .global))
@@ -268,6 +271,9 @@ struct MapHomeBottomCard<SpotContent: View, RoutePanel: View, Caption: View>: Vi
         }
         .buttonStyle(HomeInteractiveButtonStyle())
         .disabled(primaryDisabled)
+        .animation(.spring(response: 0.32, dampingFraction: 0.8), value: spoofState)
+        .animation(.spring(response: 0.28, dampingFraction: 0.8), value: primaryTitle)
+        .animation(.spring(response: 0.28, dampingFraction: 0.8), value: primaryDisabled)
         .accessibilityLabel(primaryAccessibilityLabel)
         .accessibilityIdentifier("home.primary")
     }
@@ -303,6 +309,7 @@ struct MapHomeBottomCard<SpotContent: View, RoutePanel: View, Caption: View>: Vi
             GeometryReader { geometry in
                 Rectangle().fill(Color.accentColor)
                     .frame(width: max(0, geometry.size.width * playbackClock.progress))
+                    .animation(.linear(duration: 0.15), value: playbackClock.progress)
             }
             .frame(height: 3)
             .accessibilityHidden(true)

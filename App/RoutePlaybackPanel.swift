@@ -142,11 +142,16 @@ struct RoutePlaybackPanel: View {
                     route.setSpeedKilometersPerHour(preset.kilometersPerHour)
                 }
             }
-            Button("自定义 · \(RoutePlayback.formattedSpeed(kilometersPerHour: route.speedKilometersPerHour))") { customSpeed.toggle() }
-                .frame(minHeight: 44)
+            Button("自定义 · \(RoutePlayback.formattedSpeed(kilometersPerHour: route.speedKilometersPerHour))") {
+                withAnimation(.spring(response: 0.28, dampingFraction: 0.8)) {
+                    customSpeed.toggle()
+                }
+            }
+            .frame(minHeight: 44)
             if customSpeed || !route.travelMode.speedPresets.contains(where: { abs(route.speedKilometersPerHour - $0.kilometersPerHour) < 0.05 }) {
                 Slider(value: Binding(get: { route.speedKilometersPerHour }, set: { route.setSpeedKilometersPerHour($0) }),
                        in: 1...route.travelMode.maximumKilometersPerHour, step: 0.5)
+                    .transition(.opacity.combined(with: .move(edge: .top)))
                     .accessibilityLabel("自定义速度，公里每小时")
             }
         }
@@ -157,9 +162,15 @@ struct RoutePlaybackPanel: View {
             ForEach([0.0, 15, 30, 50], id: \.self) { meters in
                 choice("偏移 \(Int(meters)) 米", selected: abs(route.offsetMeters - meters) < 0.5) { route.setOffsetMeters(meters) }
             }
-            Button("自定义 · \(Int(route.offsetMeters.rounded())) 米") { customOffset.toggle() }.frame(minHeight: 44)
+            Button("自定义 · \(Int(route.offsetMeters.rounded())) 米") {
+                withAnimation(.spring(response: 0.28, dampingFraction: 0.8)) {
+                    customOffset.toggle()
+                }
+            }
+            .frame(minHeight: 44)
             if customOffset || ![0.0, 15, 30, 50].contains(where: { abs(route.offsetMeters - $0) < 0.5 }) {
                 Slider(value: Binding(get: { route.offsetMeters }, set: { route.setOffsetMeters($0) }), in: 0...80, step: 5)
+                    .transition(.opacity.combined(with: .move(edge: .top)))
                     .accessibilityLabel("自定义位置偏移，米")
             }
         }

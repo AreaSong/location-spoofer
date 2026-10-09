@@ -57,7 +57,10 @@ extension MapHomeView {
             }
             .buttonStyle(HomeInteractiveButtonStyle())
             Button {
-                recentSelections.remove(item)
+                Haptics.light()
+                withAnimation(.spring(response: 0.28, dampingFraction: 0.75)) {
+                    recentSelections.remove(item)
+                }
             } label: {
                 Image(systemName: "xmark")
                     .font(.caption2.weight(.semibold))

@@ -136,8 +136,10 @@ struct SavedRouteListView: View {
         }
         .swipeActions(edge: .trailing, allowsFullSwipe: false) {
             Button(role: .destructive) {
-                do { try store.delete(route) }
-                catch { present("路线删除失败", error.localizedDescription) }
+                withAnimation(.spring(response: 0.28, dampingFraction: 0.8)) {
+                    do { try store.delete(route) }
+                    catch { present("路线删除失败", error.localizedDescription) }
+                }
             } label: {
                 Label("删除", systemImage: "trash")
             }

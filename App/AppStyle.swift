@@ -12,10 +12,10 @@ enum AppRadius {
 /// 首页底部卡展开区相对屏幕高度的上限，避免挡住大半地图。
 enum AppLayout {
     static let bottomCardExpandedHeightFraction: CGFloat = 0.28
-    /// 定点/路线条高度：内边距 4×2 + 选项 44。
-    static let homeModeBarHeight: CGFloat = 52
+    /// 定点/路线胶囊条高度。
+    static let homeModeBarHeight: CGFloat = 44
     /// 模式条与卡片之间的间距。
-    static let homeFunctionStackSpacing: CGFloat = 8
+    static let homeFunctionStackSpacing: CGFloat = 10
     /// 定点/路线共用的底部卡片高度：标题行 + 两行滑动条 + 主按钮，切换时不跳动。
     static let homeFunctionCardHeight: CGFloat = 220
     /// 底部卡片内边距。
@@ -28,7 +28,7 @@ enum AppLayout {
     static let mapZoomControlSize: CGFloat = 52
     /// 图层 / 系统地图 / 回到定位 三个圆钮加间距，贴在定点/路线条右上角。
     static let mapToolButtonSize: CGFloat = 48
-    static let mapToolStackSpacing: CGFloat = 8
+    static let mapToolStackSpacing: CGFloat = 10
     /// 功能面板在缩放条右侧的宽度上限。
     static let homeWalkPopoverMaxWidth: CGFloat = 340
 }
@@ -70,11 +70,69 @@ struct MapChromeIconButton: View {
 struct MapChromeIconStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .opacity(configuration.isPressed ? 0.7 : 1)
+            .scaleEffect(configuration.isPressed ? 0.92 : 1.0)
+            .opacity(configuration.isPressed ? 0.85 : 1.0)
+            .animation(.spring(response: 0.22, dampingFraction: 0.68), value: configuration.isPressed)
     }
 }
 
-/// 坐标条左下的缩放条。采用 iOS 26 紧凑液态毛玻璃设计，触感步进，释放地图视野。
+/// 支持长按连续重复缩放的微型按钮
+private struct ContinuousZoomButton: View {
+    let systemImage: String
+    let accessibilityLabel: String
+    let action: () -> Void
+    @State private var repeatingTask: Task<Void, Never>?
+    @State private var isPressing = false
+
+    var body: some View {
+        Image(systemName: systemImage)
+            .font(.system(size: 19, weight: .bold))
+            .frame(width: AppLayout.mapZoomControlSize, height: 44)
+            .contentShape(Rectangle())
+            .scaleEffect(isPressing ? 0.92 : 1.0)
+            .opacity(isPressing ? 0.72 : 1.0)
+            .animation(.spring(response: 0.20, dampingFraction: 0.68), value: isPressing)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(accessibilityLabel)
+            .accessibilityAddTraits(.isButton)
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { _ in
+                        guard !isPressing else { return }
+                        isPressing = true
+                        Haptics.light()
+                        action()
+                        startRepeating()
+                    }
+                    .onEnded { _ in
+                        stopRepeating()
+                    }
+            )
+            .onDisappear {
+                stopRepeating()
+            }
+    }
+
+    private func startRepeating() {
+        repeatingTask?.cancel()
+        repeatingTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 350_000_000)
+            while !Task.isCancelled && isPressing {
+                Haptics.light()
+                action()
+                try? await Task.sleep(nanoseconds: 140_000_000)
+            }
+        }
+    }
+
+    private func stopRepeating() {
+        repeatingTask?.cancel()
+        repeatingTask = nil
+        isPressing = false
+    }
+}
+
+/// 坐标条左下的缩放条。采用紧凑液态毛玻璃设计，支持轻点单次步进与长按平滑连续缩放。
 struct MapZoomControls: View {
     let scaleLabel: String
     let onZoomIn: () -> Void
@@ -82,17 +140,11 @@ struct MapZoomControls: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            Button {
-                Haptics.light()
-                onZoomIn()
-            } label: {
-                Image(systemName: "plus")
-                    .font(.system(size: 19, weight: .bold))
-                    .frame(width: AppLayout.mapZoomControlSize, height: 44)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(HomeInteractiveButtonStyle())
-            .accessibilityLabel("放大地图")
+            ContinuousZoomButton(
+                systemImage: "plus",
+                accessibilityLabel: "放大地图",
+                action: onZoomIn
+            )
 
             Rectangle()
                 .fill(Color.primary.opacity(0.08))
@@ -113,17 +165,11 @@ struct MapZoomControls: View {
                 .fill(Color.primary.opacity(0.08))
                 .frame(width: 24, height: 0.75)
 
-            Button {
-                Haptics.light()
-                onZoomOut()
-            } label: {
-                Image(systemName: "minus")
-                    .font(.system(size: 19, weight: .bold))
-                    .frame(width: AppLayout.mapZoomControlSize, height: 44)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(HomeInteractiveButtonStyle())
-            .accessibilityLabel("缩小地图")
+            ContinuousZoomButton(
+                systemImage: "minus",
+                accessibilityLabel: "缩小地图",
+                action: onZoomOut
+            )
         }
         .foregroundStyle(.primary)
         .frame(width: AppLayout.mapZoomControlSize)
@@ -196,9 +242,9 @@ struct PrimaryActionStyle: ButtonStyle {
 struct HomeInteractiveButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .scaleEffect(configuration.isPressed ? 0.97 : 1.0)
+            .scaleEffect(configuration.isPressed ? 0.96 : 1.0)
             .opacity(configuration.isPressed ? 0.88 : 1.0)
-            .animation(.easeOut(duration: 0.16), value: configuration.isPressed)
+            .animation(.spring(response: 0.24, dampingFraction: 0.72), value: configuration.isPressed)
     }
 }
 

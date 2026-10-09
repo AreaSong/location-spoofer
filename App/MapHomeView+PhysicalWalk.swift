@@ -143,8 +143,14 @@ struct PhysicalWalkHeadingControls: View {
             }
             if store.isEnabled {
                 enabledRows
+                    .transition(.asymmetric(
+                        insertion: .move(edge: .top).combined(with: .opacity),
+                        removal: .opacity
+                    ))
             }
         }
+        .animation(.spring(response: 0.32, dampingFraction: 0.8), value: store.isEnabled)
+        .animation(.spring(response: 0.32, dampingFraction: 0.8), value: store.isCustomHeadingEnabled)
         .onPreferenceChange(WalkBarWidthKey.self) { if $0 > 1 { barWidth = $0 } }
         .task(id: showsInfo) {
             guard showsInfo else { return }
@@ -161,6 +167,10 @@ struct PhysicalWalkHeadingControls: View {
         VStack(alignment: .leading, spacing: 2) {
             if store.isCustomHeadingEnabled {
                 headingAdjustment
+                    .transition(.asymmetric(
+                        insertion: .move(edge: .top).combined(with: .opacity),
+                        removal: .opacity
+                    ))
             }
             strideRow
         }
@@ -297,16 +307,24 @@ struct PhysicalWalkHeadingControls: View {
     private var enabledBinding: Binding<Bool> {
         Binding(
             get: { store.isEnabled },
-            set: { store.setEnabled($0) }
+            set: { newValue in
+                Haptics.selection()
+                withAnimation(.spring(response: 0.32, dampingFraction: 0.8)) {
+                    store.setEnabled(newValue)
+                }
+            }
         )
     }
 
     private var customHeadingBinding: Binding<Bool> {
         Binding(
             get: { store.isCustomHeadingEnabled },
-            set: {
-                store.setCustomHeadingEnabled($0)
-                controller.setCustomHeadingEnabled($0)
+            set: { newValue in
+                Haptics.selection()
+                withAnimation(.spring(response: 0.32, dampingFraction: 0.8)) {
+                    store.setCustomHeadingEnabled(newValue)
+                    controller.setCustomHeadingEnabled(newValue)
+                }
             }
         )
     }
@@ -336,29 +354,37 @@ struct PhysicalWalkHeadingControls: View {
     }
 }
 
-private enum WalkSwitchLayout {
-    static let scale: CGFloat = 0.7
-    static let width: CGFloat = 44
-    static let height: CGFloat = 22
-}
-
 private struct WalkCompactToggle: View {
     let title: String
     @Binding var isOn: Bool
     let accessibilityLabel: String
 
     var body: some View {
-        HStack(spacing: 4) {
-            Text(title)
-                .font(.caption)
-                .lineLimit(1)
-                .fixedSize()
-            Toggle("", isOn: $isOn)
-                .labelsHidden()
-                .scaleEffect(WalkSwitchLayout.scale)
-                .frame(width: WalkSwitchLayout.width, height: WalkSwitchLayout.height)
-                .accessibilityLabel(accessibilityLabel)
+        Button {
+            isOn.toggle()
+        } label: {
+            HStack(spacing: 4) {
+                Text(title)
+                    .font(.caption)
+                    .lineLimit(1)
+                    .fixedSize()
+                ZStack(alignment: isOn ? .trailing : .leading) {
+                    Capsule()
+                        .fill(isOn ? Color.accentColor : Color.secondary.opacity(0.24))
+                        .frame(width: 34, height: 18)
+                    Circle()
+                        .fill(Color.white)
+                        .frame(width: 14, height: 14)
+                        .padding(2)
+                        .shadow(color: .black.opacity(0.18), radius: 2, y: 1)
+                }
+                .animation(.spring(response: 0.24, dampingFraction: 0.72), value: isOn)
+            }
+            .contentShape(Rectangle())
         }
+        .buttonStyle(.plain)
+        .accessibilityLabel(accessibilityLabel)
+        .accessibilityValue(isOn ? "开启" : "关闭")
     }
 }
 
