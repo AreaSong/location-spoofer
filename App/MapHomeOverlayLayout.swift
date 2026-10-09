@@ -170,7 +170,7 @@ struct HomeToolsPopover<Content: View>: View {
             if compact {
                 content()
             } else {
-                VStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .leading, spacing: 6) {
                     if let title, !title.isEmpty {
                         Text(title)
                             .font(.subheadline.weight(.semibold))
@@ -188,11 +188,15 @@ struct HomeToolsPopover<Content: View>: View {
                 .onPreferenceChange(HomePopoverTitleHeightKey.self) { if $0 > 0 { titleHeight = $0 } }
             }
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, compact ? 12 : 10)
-        .background(.thickMaterial, in: RoundedRectangle(cornerRadius: compactCorner, style: .continuous))
+        .padding(.horizontal, compact ? 10 : 12)
+        .padding(.vertical, compact ? 8 : 10)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: compactCorner, style: .continuous))
         .clipShape(RoundedRectangle(cornerRadius: compactCorner, style: .continuous))
-        .shadow(color: .black.opacity(compact ? 0.1 : 0.16), radius: compact ? 6 : 12, y: compact ? 3 : 6)
+        .overlay(
+            RoundedRectangle(cornerRadius: compactCorner, style: .continuous)
+                .stroke(Color.primary.opacity(0.08), lineWidth: 0.75)
+        )
+        .shadow(color: .black.opacity(compact ? 0.08 : 0.14), radius: compact ? 6 : 10, y: compact ? 3 : 5)
         .accessibilityIdentifier("home.tools.popover")
         .fixedSize(horizontal: compact && hugsHorizontally, vertical: compact)
     }
@@ -222,23 +226,42 @@ struct HomeCoordinateMenu: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             systemRow(.gcj02)
+            Divider().opacity(0.3)
             systemRow(.wgs84)
-            Button(action: onCopy) {
-                Text("复制坐标")
-                    .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-                    .contentShape(Rectangle())
+            Divider().opacity(0.3)
+            Button(action: {
+                Haptics.selection()
+                onCopy()
+            }) {
+                HStack(spacing: 6) {
+                    Image(systemName: "doc.on.doc")
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(Color.accentColor)
+                    Text("复制坐标")
+                        .font(.subheadline.weight(.medium))
+                    Spacer()
+                }
+                .frame(maxWidth: .infinity, minHeight: 38, alignment: .leading)
+                .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
         }
-        .padding(.horizontal, 12)
-        .background(.thickMaterial, in: RoundedRectangle(cornerRadius: AppRadius.control, style: .continuous))
-        .shadow(color: .black.opacity(0.16), radius: 12, y: 6)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 4)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: AppRadius.card, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: AppRadius.card, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: AppRadius.card, style: .continuous)
+                .stroke(Color.primary.opacity(0.08), lineWidth: 0.75)
+        )
+        .shadow(color: .black.opacity(0.12), radius: 8, y: 4)
         .accessibilityIdentifier("home.coordinate.menu")
     }
 
     private func systemRow(_ system: CoordinateConverter.MapCoordinateSystem) -> some View {
         let selected = selectedSystem == system
         return Button {
+            Haptics.selection()
             onSelect(system)
         } label: {
             HStack(spacing: 8) {
@@ -256,10 +279,11 @@ struct HomeCoordinateMenu: View {
                 }
                 if selected {
                     Image(systemName: "checkmark")
+                        .font(.caption.weight(.semibold))
                         .foregroundStyle(Color.accentColor)
                 }
             }
-            .frame(minHeight: 44)
+            .frame(minHeight: 38)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

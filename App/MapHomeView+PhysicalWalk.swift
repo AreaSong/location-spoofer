@@ -167,7 +167,11 @@ struct PhysicalWalkHeadingControls: View {
     }
 
     private var headerRow: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: 4) {
+            Image(systemName: "figure.walk.motion")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(Color.accentColor)
+                .accessibilityHidden(true)
             Text("真实走动")
                 .font(.subheadline.weight(.semibold))
                 .fixedSize()
@@ -185,10 +189,10 @@ struct PhysicalWalkHeadingControls: View {
         Button {
             showsInfo.toggle()
         } label: {
-            Image(systemName: showsInfo ? "exclamationmark.circle.fill" : "exclamationmark.circle")
-                .font(.system(size: 15, weight: .medium))
-                .foregroundStyle(.secondary)
-                .frame(width: 28, height: 36)
+            Image(systemName: showsInfo ? "info.circle.fill" : "info.circle")
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(showsInfo ? Color.accentColor : Color.secondary)
+                .frame(width: 20, height: 28)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -199,11 +203,12 @@ struct PhysicalWalkHeadingControls: View {
 
     private var infoTip: some View {
         Text(infoText)
-            .font(.caption)
+            .font(.caption2)
             .foregroundStyle(.secondary)
             .lineLimit(3)
             .fixedSize(horizontal: false, vertical: true)
             .frame(maxWidth: panelWidth, alignment: .leading)
+            .padding(.vertical, 2)
             .accessibilityHidden(true)
     }
 
@@ -221,43 +226,70 @@ struct PhysicalWalkHeadingControls: View {
 
     private var headingAdjustment: some View {
         Color.clear
-            .frame(width: panelWidth, height: 36)
+            .frame(width: panelWidth, height: 30)
             .overlay {
-                HStack(spacing: 4) {
+                HStack(spacing: 3) {
+                    Image(systemName: "safari")
+                        .font(.caption2.weight(.medium))
+                        .foregroundStyle(Color.secondary)
+                        .frame(width: 14)
                     Text(PhysicalWalkHeadingLock.labeledDegrees(controller.activeHeadingDegrees))
-                        .font(.caption.monospacedDigit())
-                        .foregroundStyle(.secondary)
+                        .font(.caption2.monospacedDigit().weight(.medium))
+                        .foregroundStyle(Color.primary)
+                        .padding(.horizontal, 4)
+                        .padding(.vertical, 2)
+                        .background(Color.secondary.opacity(0.12), in: Capsule())
                         .lineLimit(1)
                         .minimumScaleFactor(0.7)
-                        .frame(minWidth: 52, alignment: .leading)
-                    Button("−15°") { nudgeInitialHeading(by: -15) }
-                        .font(.caption)
-                        .frame(minWidth: 36, minHeight: 36)
-                        .accessibilityLabel("初始朝向减少 15 度")
+                        .frame(minWidth: 44, alignment: .leading)
+                    Button("−15°") {
+                        Haptics.selection()
+                        nudgeInitialHeading(by: -15)
+                    }
+                    .font(.caption2.weight(.medium))
+                    .frame(minWidth: 32, minHeight: 26)
+                    .background(Color.secondary.opacity(0.12), in: Capsule())
+                    .buttonStyle(HomeInteractiveButtonStyle())
+                    .accessibilityLabel("初始朝向减少 15 度")
                     Slider(value: headingBinding, in: 0...359, step: 1)
+                        .tint(Color.accentColor)
                         .accessibilityLabel("初始朝向")
-                    Button("+15°") { nudgeInitialHeading(by: 15) }
-                        .font(.caption)
-                        .frame(minWidth: 36, minHeight: 36)
-                        .accessibilityLabel("初始朝向增加 15 度")
+                    Button("+15°") {
+                        Haptics.selection()
+                        nudgeInitialHeading(by: 15)
+                    }
+                    .font(.caption2.weight(.medium))
+                    .frame(minWidth: 32, minHeight: 26)
+                    .background(Color.secondary.opacity(0.12), in: Capsule())
+                    .buttonStyle(HomeInteractiveButtonStyle())
+                    .accessibilityLabel("初始朝向增加 15 度")
                 }
             }
     }
 
     private var strideRow: some View {
         Color.clear
-            .frame(width: panelWidth, height: 36)
+            .frame(width: panelWidth, height: 30)
             .overlay {
-                HStack(spacing: 6) {
-                    Text(String(format: "%.2f米", store.strideMeters))
-                        .font(.caption.monospacedDigit())
-                        .frame(minWidth: 44, alignment: .leading)
+                HStack(spacing: 4) {
+                    Image(systemName: "shoeprints.fill")
+                        .font(.caption2.weight(.medium))
+                        .foregroundStyle(Color.secondary)
+                        .frame(width: 14)
                     Slider(
                         value: strideBinding,
                         in: PhysicalWalkDisplacement.minimumStrideMeters...PhysicalWalkDisplacement.maximumStrideMeters,
                         step: 0.02
                     )
+                    .tint(Color.accentColor)
                     .accessibilityLabel("计步兜底步长")
+                    Text(String(format: "%.2f米", store.strideMeters))
+                        .font(.caption2.monospacedDigit().weight(.medium))
+                        .foregroundStyle(Color.primary)
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 2)
+                        .background(Color.secondary.opacity(0.12), in: Capsule())
+                        .frame(minWidth: 46, alignment: .trailing)
                 }
             }
     }

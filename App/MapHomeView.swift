@@ -460,6 +460,15 @@ struct MapHomeView: View {
             bindRoutePlayback()
             bindPhysicalWalk()
             registerRouteActivityToggle()
+            #if targetEnvironment(simulator)
+            if UserDefaults.standard.bool(forKey: "uiPreviewRoutePopup") {
+                enterRoute()
+                showsRoutePanel = true
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+                    homePopup = .management
+                }
+            }
+            #endif
             if let session = route.sessionStore.load(), route.phase == .inactive {
                 routeRecovery = session
             }

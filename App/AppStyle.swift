@@ -74,7 +74,7 @@ struct MapChromeIconStyle: ButtonStyle {
     }
 }
 
-/// 坐标条左下的缩放条。保持与原地图内控件相同的尺寸和比例读数，避免误触。
+/// 坐标条左下的缩放条。采用 iOS 26 紧凑液态毛玻璃设计，触感步进，释放地图视野。
 struct MapZoomControls: View {
     let scaleLabel: String
     let onZoomIn: () -> Void
@@ -82,44 +82,60 @@ struct MapZoomControls: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            Button(action: onZoomIn) {
+            Button {
+                Haptics.light()
+                onZoomIn()
+            } label: {
                 Image(systemName: "plus")
-                    .font(.system(size: 22, weight: .bold))
-                    .frame(width: AppLayout.mapZoomControlSize, height: AppLayout.mapZoomControlSize)
+                    .font(.system(size: 19, weight: .bold))
+                    .frame(width: AppLayout.mapZoomControlSize, height: 44)
+                    .contentShape(Rectangle())
             }
+            .buttonStyle(HomeInteractiveButtonStyle())
             .accessibilityLabel("放大地图")
+
             Rectangle()
-                .fill(Color(uiColor: .separator))
-                .frame(width: 28, height: 0.5)
+                .fill(Color.primary.opacity(0.08))
+                .frame(width: 24, height: 0.75)
+
             Text(scaleLabel)
                 .font(.system(size: 9, weight: .semibold, design: .rounded))
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
-                .frame(width: AppLayout.mapZoomControlSize, height: 28)
+                .padding(.horizontal, 4)
+                .padding(.vertical, 1)
+                .background(Color.primary.opacity(0.04), in: Capsule())
+                .frame(width: AppLayout.mapZoomControlSize, height: 24)
                 .accessibilityLabel("当前地图比例 \(scaleLabel)")
+
             Rectangle()
-                .fill(Color(uiColor: .separator))
-                .frame(width: 28, height: 0.5)
-            Button(action: onZoomOut) {
+                .fill(Color.primary.opacity(0.08))
+                .frame(width: 24, height: 0.75)
+
+            Button {
+                Haptics.light()
+                onZoomOut()
+            } label: {
                 Image(systemName: "minus")
-                    .font(.system(size: 22, weight: .bold))
-                    .frame(width: AppLayout.mapZoomControlSize, height: AppLayout.mapZoomControlSize)
+                    .font(.system(size: 19, weight: .bold))
+                    .frame(width: AppLayout.mapZoomControlSize, height: 44)
+                    .contentShape(Rectangle())
             }
+            .buttonStyle(HomeInteractiveButtonStyle())
             .accessibilityLabel("缩小地图")
         }
         .foregroundStyle(.primary)
         .frame(width: AppLayout.mapZoomControlSize)
         .background(
-            Color(uiColor: .systemBackground).opacity(0.88),
-            in: RoundedRectangle(cornerRadius: 13)
+            .regularMaterial,
+            in: RoundedRectangle(cornerRadius: AppRadius.control, style: .continuous)
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 13)
-                .stroke(Color.primary.opacity(0.08), lineWidth: 0.5)
+            RoundedRectangle(cornerRadius: AppRadius.control, style: .continuous)
+                .stroke(Color.primary.opacity(0.08), lineWidth: 0.75)
         )
-        .shadow(color: .black.opacity(0.18), radius: 8, y: 3)
-        .buttonStyle(.plain)
+        .shadow(color: .black.opacity(0.12), radius: 8, y: 3)
         .fixedSize()
         .accessibilityIdentifier("home.zoom")
     }

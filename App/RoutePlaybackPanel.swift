@@ -230,7 +230,7 @@ struct RouteParameterControls: View {
     @State private var barWidth: CGFloat = 0
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: 3) {
             headerRow
                 .background {
                     GeometryReader { geometry in
@@ -239,27 +239,40 @@ struct RouteParameterControls: View {
                 }
             if showsInfo {
                 Text(Self.infoText)
-                    .font(.caption)
+                    .font(.caption2)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: panelWidth, alignment: .leading)
+                    .padding(.vertical, 2)
                     .accessibilityHidden(true)
             }
-            chipRow(Array(RouteTravelMode.allCases), selected: route.travelMode, title: \.displayName) {
+            chipRow(
+                Array(RouteTravelMode.allCases),
+                selected: route.travelMode,
+                title: \.displayName,
+                icon: travelIcon
+            ) {
                 route.applyTravelMode($0)
             }
             .disabled(route.locksPathEdits || route.isRouting)
             sliderRow(
+                icon: "gauge.with.dots.needle.bottom.50percent",
                 label: String(format: "%.0f公里", route.speedKilometersPerHour),
                 value: speedBinding,
                 range: 1...route.travelMode.maximumKilometersPerHour,
                 step: 0.5,
                 accessibilityLabel: "速度，公里每小时"
             )
-            chipRow(Array(RouteRepeatMode.allCases), selected: route.repeatMode, title: \.displayName) {
+            chipRow(
+                Array(RouteRepeatMode.allCases),
+                selected: route.repeatMode,
+                title: \.displayName,
+                icon: repeatIcon
+            ) {
                 route.applyRepeatMode($0)
             }
             sliderRow(
+                icon: "shield.lefthalf.filled",
                 label: "\(Int(route.offsetMeters.rounded()))米",
                 value: offsetBinding,
                 range: 0...80,
@@ -278,19 +291,22 @@ struct RouteParameterControls: View {
 
     static let infoText = "出行会重新规划路径。速度、重复和偏移立即生效。已存路线在下方卡片里管理。"
 
-    private var panelWidth: CGFloat { barWidth > 1 ? barWidth : 220 }
+    private var panelWidth: CGFloat { max(238, barWidth) }
 
     private var headerRow: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: 5) {
+            Image(systemName: "slider.horizontal.2")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(Color.accentColor)
             Text("路线参数")
                 .font(.subheadline.weight(.semibold))
             Button {
                 showsInfo.toggle()
             } label: {
-                Image(systemName: showsInfo ? "exclamationmark.circle.fill" : "exclamationmark.circle")
-                    .font(.system(size: 15, weight: .medium))
-                    .foregroundStyle(.secondary)
-                    .frame(width: 28, height: 32)
+                Image(systemName: showsInfo ? "info.circle.fill" : "info.circle")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(showsInfo ? Color.accentColor : Color.secondary)
+                    .frame(width: 24, height: 24)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -299,34 +315,75 @@ struct RouteParameterControls: View {
             .accessibilityIdentifier("home.route.info")
             Spacer(minLength: 0)
         }
+        .frame(width: panelWidth, alignment: .leading)
+    }
+
+    private func travelIcon(_ mode: RouteTravelMode) -> String {
+        mode.symbolName
+    }
+
+    private func repeatIcon(_ mode: RouteRepeatMode) -> String {
+        switch mode {
+        case .once: return "arrow.right"
+        case .roundTrip: return "arrow.left.arrow.right"
+        case .loop: return "repeat"
+        }
+    }
+
+    @ViewBuilder
+    private func chipItemView(title: String, icon: String?, isSelected: Bool) -> some View {
+        HStack(spacing: 3) {
+            if let icon {
+                Image(systemName: icon)
+                    .font(.system(size: 11, weight: .medium))
+            }
+            Text(title)
+                .font(.caption.weight(isSelected ? .semibold : .medium))
+                .lineLimit(1)
+        }
+        .frame(maxWidth: .infinity, minHeight: 26, maxHeight: 26)
+        .foregroundStyle(isSelected ? Color.primary : Color.secondary)
+        .background {
+            if isSelected {
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .fill(Color(uiColor: .systemBackground))
+                    .shadow(color: .black.opacity(0.12), radius: 2.5, y: 1)
+            }
+        }
+        .contentShape(Rectangle())
     }
 
     private func chipRow<Item: Hashable>(
         _ items: [Item],
         selected: Item,
         title: KeyPath<Item, String>,
+        icon: ((Item) -> String)? = nil,
         action: @escaping (Item) -> Void
     ) -> some View {
-        HStack(spacing: 4) {
+        HStack(spacing: 2) {
             ForEach(items, id: \.self) { item in
                 let isSelected = item == selected
-                Button(item[keyPath: title]) { action(item) }
-                    .font(.caption.weight(.medium))
-                    .lineLimit(1)
-                    .frame(maxWidth: .infinity, minHeight: 32)
-                    .foregroundStyle(isSelected ? Color.white : Color.primary)
-                    .background(
-                        isSelected ? Color.accentColor : Color.secondary.opacity(0.12),
-                        in: RoundedRectangle(cornerRadius: AppRadius.inset, style: .continuous)
-                    )
-                    .buttonStyle(.plain)
-                    .accessibilityAddTraits(isSelected ? .isSelected : [])
+                let itemTitle = item[keyPath: title]
+                let iconName = icon?(item)
+                Button {
+                    Haptics.selection()
+                    action(item)
+                } label: {
+                    chipItemView(title: itemTitle, icon: iconName, isSelected: isSelected)
+                }
+                .frame(maxWidth: .infinity)
+                .buttonStyle(.plain)
+                .accessibilityLabel(itemTitle)
+                .accessibilityAddTraits(isSelected ? .isSelected : [])
             }
         }
+        .padding(2)
+        .background(Color.secondary.opacity(0.10), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
         .frame(width: panelWidth)
     }
 
     private func sliderRow(
+        icon: String,
         label: String,
         value: Binding<Double>,
         range: ClosedRange<Double>,
@@ -334,39 +391,91 @@ struct RouteParameterControls: View {
         accessibilityLabel: String
     ) -> some View {
         Color.clear
-            .frame(width: panelWidth, height: 32)
+            .frame(width: panelWidth, height: 28)
             .overlay {
-                HStack(spacing: 6) {
+                HStack(spacing: 4) {
+                    Image(systemName: icon)
+                        .font(.caption2.weight(.medium))
+                        .foregroundStyle(Color.secondary)
+                        .frame(width: 14)
+                    Slider(value: value, in: range, step: step)
+                        .tint(Color.accentColor)
+                        .accessibilityLabel(accessibilityLabel)
                     Text(label)
-                        .font(.caption.monospacedDigit())
-                        .foregroundStyle(.secondary)
+                        .font(.caption2.monospacedDigit().weight(.medium))
+                        .foregroundStyle(Color.primary)
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 2)
+                        .background(Color.secondary.opacity(0.12), in: Capsule())
                         .lineLimit(1)
                         .minimumScaleFactor(0.7)
-                        .frame(minWidth: 48, alignment: .leading)
-                    Slider(value: value, in: range, step: step)
-                        .accessibilityLabel(accessibilityLabel)
+                        .frame(minWidth: 46, alignment: .trailing)
                 }
             }
     }
 
     private var actionRow: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 6) {
             if route.canReverse {
-                Button("反转", action: { route.reverseDirection() })
-                    .accessibilityLabel("反转路线")
+                Button {
+                    Haptics.selection()
+                    route.reverseDirection()
+                } label: {
+                    HStack(spacing: 3) {
+                        Image(systemName: "arrow.left.arrow.right")
+                            .font(.system(size: 10, weight: .semibold))
+                        Text("反转")
+                            .font(.caption.weight(.medium))
+                    }
+                    .padding(.horizontal, 8)
+                    .frame(minHeight: 26)
+                    .background(Color.secondary.opacity(0.12), in: Capsule())
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(HomeInteractiveButtonStyle())
+                .accessibilityLabel("反转路线")
             }
             if route.canPlay && !route.isRouting && !route.waitingForActivation && route.phase != .playing {
-                Button("保存", action: onSave)
-                    .accessibilityLabel("保存路线")
+                Button {
+                    Haptics.selection()
+                    onSave()
+                } label: {
+                    HStack(spacing: 3) {
+                        Image(systemName: "square.and.arrow.down")
+                            .font(.system(size: 10, weight: .semibold))
+                        Text("保存")
+                            .font(.caption.weight(.medium))
+                    }
+                    .padding(.horizontal, 8)
+                    .frame(minHeight: 26)
+                    .background(Color.secondary.opacity(0.12), in: Capsule())
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(HomeInteractiveButtonStyle())
+                .accessibilityLabel("保存路线")
             }
             Spacer(minLength: 0)
-            Button("退出", action: onExit)
-                .foregroundStyle(.red)
-                .accessibilityLabel("退出路线")
+            Button {
+                Haptics.warning()
+                onExit()
+            } label: {
+                HStack(spacing: 3) {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 11, weight: .semibold))
+                    Text("退出")
+                        .font(.caption.weight(.semibold))
+                }
+                .foregroundStyle(Color.red)
+                .padding(.horizontal, 8)
+                .frame(minHeight: 26)
+                .background(Color.red.opacity(0.12), in: Capsule())
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(HomeInteractiveButtonStyle())
+            .accessibilityLabel("退出路线")
         }
-        .font(.caption.weight(.medium))
-        .frame(minHeight: 32)
-        .buttonStyle(.plain)
+        .frame(width: panelWidth)
+        .frame(minHeight: 28)
     }
 
     private var speedBinding: Binding<Double> {
