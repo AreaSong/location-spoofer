@@ -37,7 +37,15 @@ enum AppLayout {
 struct MapChromeIconButton: View {
     let systemImage: String
     let accessibilityLabel: String
+    var isPhotographic: Bool = false
     let action: () -> Void
+
+    init(systemImage: String, accessibilityLabel: String, isPhotographic: Bool = false, action: @escaping () -> Void) {
+        self.systemImage = systemImage
+        self.accessibilityLabel = accessibilityLabel
+        self.isPhotographic = isPhotographic
+        self.action = action
+    }
 
     var body: some View {
         Button(action: action) {
@@ -45,8 +53,12 @@ struct MapChromeIconButton: View {
                 .font(.system(size: 18, weight: .semibold))
                 .foregroundStyle(.primary)
                 .frame(width: AppLayout.mapToolButtonSize, height: AppLayout.mapToolButtonSize)
-                .background(.regularMaterial, in: Circle())
-                .shadow(color: .black.opacity(0.13), radius: 9, y: 4)
+                .background(isPhotographic ? AnyShapeStyle(.ultraThickMaterial) : AnyShapeStyle(.regularMaterial), in: Circle())
+                .overlay(
+                    Circle()
+                        .stroke(isPhotographic ? Color.white.opacity(0.24) : Color.primary.opacity(0.08), lineWidth: isPhotographic ? 1.0 : 0.5)
+                )
+                .shadow(color: .black.opacity(isPhotographic ? 0.28 : 0.14), radius: isPhotographic ? 11 : 9, y: 4)
                 .contentShape(Circle())
         }
         .buttonStyle(MapChromeIconStyle())
@@ -99,10 +111,14 @@ struct MapZoomControls: View {
         .foregroundStyle(.primary)
         .frame(width: AppLayout.mapZoomControlSize)
         .background(
-            Color(uiColor: .systemBackground).opacity(0.8),
+            Color(uiColor: .systemBackground).opacity(0.88),
             in: RoundedRectangle(cornerRadius: 13)
         )
-        .shadow(color: .black.opacity(0.18), radius: 7, y: 3)
+        .overlay(
+            RoundedRectangle(cornerRadius: 13)
+                .stroke(Color.primary.opacity(0.08), lineWidth: 0.5)
+        )
+        .shadow(color: .black.opacity(0.18), radius: 8, y: 3)
         .buttonStyle(.plain)
         .fixedSize()
         .accessibilityIdentifier("home.zoom")

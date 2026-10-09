@@ -280,6 +280,54 @@ final class FavoriteLocationStoreTests: XCTestCase {
         XCTAssertEqual(reloaded.displayedFavorites.map(\.name), ["Shanghai", "Beijing"])
     }
 
+    func testSmartSortOrderAndCommuteScoring() {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+
+        let morningDate = calendar.date(from: DateComponents(year: 2026, month: 10, day: 9, hour: 8, minute: 30))!
+        let eveningDate = calendar.date(from: DateComponents(year: 2026, month: 10, day: 9, hour: 19, minute: 30))!
+
+        let workName = "公司工位"
+        let homeName = "温馨小家"
+
+        XCTAssertGreaterThan(
+            FavoriteLocationStore.smartScore(for: workName, at: morningDate, calendar: calendar),
+            FavoriteLocationStore.smartScore(for: homeName, at: morningDate, calendar: calendar)
+        )
+        XCTAssertEqual(
+            FavoriteLocationStore.smartBadgeIcon(for: workName, at: morningDate, calendar: calendar),
+            "sun.horizon.fill"
+        )
+
+        XCTAssertGreaterThan(
+            FavoriteLocationStore.smartScore(for: homeName, at: eveningDate, calendar: calendar),
+            FavoriteLocationStore.smartScore(for: workName, at: eveningDate, calendar: calendar)
+        )
+        XCTAssertEqual(
+            FavoriteLocationStore.smartBadgeIcon(for: homeName, at: eveningDate, calendar: calendar),
+            "moon.stars.fill"
+        )
+
+        let suite = "FavoriteLocationStoreTests.smartSort.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let store = FavoriteLocationStore(defaults: defaults)
+        _ = store.save(
+            name: homeName,
+            coordinatePair: CoordinateConverter.coordinatePair(lat: 39.9, lon: 116.4, mapCoordinateSystem: .gcj02),
+            accuracy: 20
+        )
+        _ = store.save(
+            name: workName,
+            coordinatePair: CoordinateConverter.coordinatePair(lat: 31.2, lon: 121.4, mapCoordinateSystem: .gcj02),
+            accuracy: 20
+        )
+
+        store.setSortOrder(.smart)
+        XCTAssertEqual(store.sortOrder, .smart)
+        XCTAssertEqual(store.displayedFavorites.count, 2)
+    }
+
     func testImportDedupesBatchAndSkipsPastLimit() throws {
         let suite = "FavoriteLocationStoreTests.cap.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!

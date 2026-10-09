@@ -70,6 +70,7 @@ struct MapViewRepresentable: UIViewRepresentable {
         map.addGestureRecognizer(tap)
         context.coordinator.map = map
         context.coordinator.setupKeyboardObservers()
+        context.coordinator.setupAppLifecycleObservers()
         return map
     }
 
@@ -109,6 +110,8 @@ struct MapViewRepresentable: UIViewRepresentable {
         // 蓝点实际大小从 MKUserLocationView 取，默认 20pt
         private var userDotDiameter: CGFloat = 20
         private var keyboardObserverTokens: [NSObjectProtocol] = []
+        private var appLifecycleTokens: [NSObjectProtocol] = []
+        private var isAppInBackground = false
         private var lastForwardedRealtimeTimestamp: Date?
         private var lastRouteCoordinates: [CLLocationCoordinate2D] = []
         private var lastRoutePins: [RouteMapPin] = []
@@ -124,6 +127,7 @@ struct MapViewRepresentable: UIViewRepresentable {
             walkPuckDisplayLink?.invalidate()
             walkPuckDisplayLinkProxy = nil
             keyboardObserverTokens.forEach(NotificationCenter.default.removeObserver)
+            appLifecycleTokens.forEach(NotificationCenter.default.removeObserver)
         }
 
         init(parent: MapViewRepresentable) {
@@ -181,6 +185,36 @@ struct MapViewRepresentable: UIViewRepresentable {
                 guard let self, let map = self.map else { return }
                 self.updatePinPosition(on: map)
             })
+        }
+
+        func setupAppLifecycleObservers() {
+            guard appLifecycleTokens.isEmpty else { return }
+            let nc = NotificationCenter.default
+            appLifecycleTokens.append(nc.addObserver(forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main) { [weak self] _ in
+                self?.handleDidEnterBackground()
+            })
+            appLifecycleTokens.append(nc.addObserver(forName: UIApplication.willEnterForegroundNotification, object: nil, queue: .main) { [weak self] _ in
+                self?.handleWillEnterForeground()
+            })
+        }
+
+        private func handleDidEnterBackground() {
+            isAppInBackground = true
+            walkPuckDisplayLink?.isPaused = true
+            if let ann = progressAnnotation, let view = map?.view(for: ann) {
+                view.layer.sublayers?.first(where: { $0.name == "halo" })?.removeAnimation(forKey: "pulsing")
+            }
+        }
+
+        private func handleWillEnterForeground() {
+            isAppInBackground = false
+            walkPuckDisplayLink?.isPaused = false
+            if let ann = progressAnnotation, let view = map?.view(for: ann) {
+                if let halo = view.layer.sublayers?.first(where: { $0.name == "halo" }) {
+                    halo.removeFromSuperlayer()
+                }
+                installProgressPulsingHalo(on: view)
+            }
         }
 
         func consume(_ command: MapCameraCommand?, on map: MKMapView) {

@@ -29,6 +29,10 @@ enum MapDisplayStyle: String, CaseIterable, Equatable {
         case .hybrid: return .standard
         }
     }
+
+    var isPhotographic: Bool {
+        self == .satellite || self == .hybrid
+    }
 }
 
 @MainActor

@@ -11,9 +11,15 @@ extension MapHomeView {
 
     func favoriteChip(_ f: FavoriteLocation) -> some View {
         let selected = favorites.selectedFavoriteID == f.id
+        let smartIcon = FavoriteLocationStore.smartBadgeIcon(for: f.name)
         return Button { select(f) } label: {
             HStack(spacing: 6) {
-                Image(systemName: selected ? "star.fill" : "star")
+                if let smartIcon {
+                    Image(systemName: smartIcon)
+                        .foregroundStyle(selected ? Color.accentColor : Color.orange)
+                } else {
+                    Image(systemName: selected ? "star.fill" : "star")
+                }
                 Text(compactChipTitle(f.name)).lineLimit(1)
             }
             .font(.caption)

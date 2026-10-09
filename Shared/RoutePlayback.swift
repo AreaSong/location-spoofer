@@ -327,6 +327,79 @@ enum RoutePlayback {
             total + distanceMeters(from: pair.0, to: pair.1)
         }
     }
+
+    /// 计算两点间的初始大圆方位角 (0...360 度)
+    static func bearing(from start: CoordinatePair, to end: CoordinatePair) -> Double {
+        let lat1 = start.wgs84.latitude * .pi / 180
+        let lon1 = start.wgs84.longitude * .pi / 180
+        let lat2 = end.wgs84.latitude * .pi / 180
+        let lon2 = end.wgs84.longitude * .pi / 180
+        let dLon = lon2 - lon1
+        let y = sin(dLon) * cos(lat2)
+        let x = cos(lat1) * sin(lat2) - sin(lat1) * cos(lat2) * cos(dLon)
+        let radians = atan2(y, x)
+        let degrees = radians * 180 / .pi
+        return (degrees + 360).truncatingRemainder(dividingBy: 360)
+    }
+
+    /// 计算路径中间节点的转角变化（0...180 度）
+    static func turnAngleDegrees(at index: Int, in points: [CoordinatePair]) -> Double {
+        guard index > 0, index < points.count - 1 else { return 0 }
+        let pPrev = points[index - 1]
+        let pCurr = points[index]
+        let pNext = points[index + 1]
+
+        let bearing1 = bearing(from: pPrev, to: pCurr)
+        let bearing2 = bearing(from: pCurr, to: pNext)
+        var diff = abs(bearing2 - bearing1)
+        if diff > 180 { diff = 360 - diff }
+        return diff
+    }
+
+    /// 物理拟真弯道向心力自适应减速因子 (0.45 ... 1.0)
+    static func corneringFactor(
+        path: RoutePath,
+        progress: Double,
+        decelerationRadiusMeters: Double = 25.0
+    ) -> Double {
+        guard path.points.count >= 3, path.totalMeters > 0 else { return 1.0 }
+        let currentMeters = path.totalMeters * min(1, max(0, progress))
+        var minFactor = 1.0
+
+        for i in 1..<(path.points.count - 1) {
+            let cornerMeters = path.cumulativeMeters[i]
+            let distToCorner = abs(currentMeters - cornerMeters)
+            guard distToCorner < decelerationRadiusMeters else { continue }
+
+            let turnAngle = turnAngleDegrees(at: i, in: path.points)
+            guard turnAngle > 20 else { continue }
+
+            let maxDecel = max(0.45, 1.0 - 0.55 * ((turnAngle - 20) / 160))
+            let t = distToCorner / decelerationRadiusMeters
+            let factor = maxDecel + (1.0 - maxDecel) * (t * t)
+            if factor < minFactor {
+                minFactor = factor
+            }
+        }
+        return minFactor
+    }
+
+    /// 真实人行/行车微扰动波动率（±3%），避免反作弊模型检测到机械恒定速度
+    static func speedPerturbation(elapsed: TimeInterval) -> Double {
+        1.0 + 0.03 * sin(elapsed * 0.7)
+    }
+
+    /// 结合弯道减速与自然微扰动计算瞬时动态速度
+    static func adjustedRealisticSpeed(
+        baseSpeed: Double,
+        path: RoutePath,
+        progress: Double,
+        elapsed: TimeInterval
+    ) -> Double {
+        let corner = corneringFactor(path: path, progress: progress)
+        let wave = speedPerturbation(elapsed: elapsed)
+        return max(baseSpeed * corner * wave, 0.1)
+    }
 }
 
 struct RouteMapPin: Equatable {

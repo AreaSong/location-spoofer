@@ -29,6 +29,13 @@ extension SettingsView {
         )
     }
 
+    var corneringDecelerationBinding: Binding<Bool> {
+        Binding(
+            get: { smoothCruise.isCorneringDecelerationEnabled },
+            set: { smoothCruise.setCorneringDecelerationEnabled($0) }
+        )
+    }
+
     var simulationControlsDisabled: Bool {
         modeOperationRunning || actions.state.isBusy || thirdPartyProxy.isRequesting
     }
@@ -39,6 +46,12 @@ extension SettingsView {
             Toggle("平滑巡航切换（防风控）", isOn: smoothCruiseBinding)
                 .disabled(simulationControlsDisabled)
             Text("开启后，在已定点状态下切换至新地点时，将在 1.5 秒内平滑过渡推进，防止瞬间位移触发第三方应用风控。")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+
+            Toggle("弯道自适应减速与拟真微扰", isOn: corneringDecelerationBinding)
+                .disabled(simulationControlsDisabled)
+            Text("开启后，路线回放遇到拐弯时模拟向心力平滑降速，并附加拟真行进微扰动，杜绝恒速机器人轨迹检测。")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
 

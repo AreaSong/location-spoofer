@@ -717,18 +717,48 @@ final class RoutePlaybackController: ObservableObject {
     }
 
     private func runLoop(generation: UInt64) async {
+        var lastTickTime = now()
         while isPlaybackCurrent(generation), phase == .playing {
             guard let basePath = path, basePath.points.count >= 2 else { break }
             let activePath = headingForward ? basePath : basePath.reversed()
-            elapsed = now().timeIntervalSince(playbackOrigin)
-            let tick = RoutePlayback.tick(
-                path: activePath,
-                speedMetersPerSecond: speedMetersPerSecond,
-                elapsed: elapsed
-            )
+            let currentNow = now()
+            let tick: RouteTick
+            if SmoothCruiseStore.shared.isCorneringDecelerationEnabled {
+                let dt = min(max(currentNow.timeIntervalSince(lastTickTime), 0.05), 3.0)
+                let adjustedSpeed = RoutePlayback.adjustedRealisticSpeed(
+                    baseSpeed: speedMetersPerSecond,
+                    path: activePath,
+                    progress: progress,
+                    elapsed: elapsed
+                )
+                let deltaMeters = adjustedSpeed * dt
+                let deltaProgress = deltaMeters / max(activePath.totalMeters, 0.1)
+                let newProgress = min(1.0, max(0.0, progress + deltaProgress))
+                let newCoord = RoutePlayback.interpolate(path: activePath, progress: newProgress)
+                tick = RouteTick(
+                    coordinatePair: newCoord,
+                    progress: newProgress,
+                    remainingMeters: activePath.totalMeters * (1 - newProgress),
+                    isFinished: newProgress >= 1
+                )
+                elapsed = RoutePlayback.elapsed(
+                    progress: newProgress,
+                    totalMeters: activePath.totalMeters,
+                    speedMetersPerSecond: speedMetersPerSecond
+                )
+                playbackOrigin = currentNow.addingTimeInterval(-elapsed)
+            } else {
+                elapsed = currentNow.timeIntervalSince(playbackOrigin)
+                tick = RoutePlayback.tick(
+                    path: activePath,
+                    speedMetersPerSecond: speedMetersPerSecond,
+                    elapsed: elapsed
+                )
+            }
+            lastTickTime = currentNow
             current = tick.coordinatePair
             progress = tick.progress
-            let now = now()
+            let now = currentNow
             let forceWrite = tick.isFinished
             let due = ignoresWriteGate || writeGate.shouldWrite(tick.coordinatePair, at: now, force: forceWrite)
             if due {

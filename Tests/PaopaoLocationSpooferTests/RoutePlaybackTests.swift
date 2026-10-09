@@ -149,6 +149,30 @@ final class RoutePlaybackTests: XCTestCase {
         XCTAssertEqual(same.wgs84.longitude, pair.wgs84.longitude)
     }
 
+    func testTurnAngleAndCorneringFactor() {
+        let p1 = CoordinateConverter.coordinatePair(lat: 22.490, lon: 113.950, mapCoordinateSystem: .wgs84)
+        let p2 = CoordinateConverter.coordinatePair(lat: 22.495, lon: 113.950, mapCoordinateSystem: .wgs84)
+        let p3 = CoordinateConverter.coordinatePair(lat: 22.495, lon: 113.955, mapCoordinateSystem: .wgs84)
+
+        let angle = RoutePlayback.turnAngleDegrees(at: 1, in: [p1, p2, p3])
+        XCTAssertEqual(angle, 90, accuracy: 2.0)
+
+        let path = RoutePath.make([p1, p2, p3])
+        let straightFactor = RoutePlayback.corneringFactor(path: path, progress: 0.0)
+        XCTAssertEqual(straightFactor, 1.0, accuracy: 0.001)
+
+        let cornerProgress = path.cumulativeMeters[1] / path.totalMeters
+        let cornerFactor = RoutePlayback.corneringFactor(path: path, progress: cornerProgress)
+        XCTAssertLessThan(cornerFactor, 0.85)
+        XCTAssertGreaterThan(cornerFactor, 0.40)
+
+        for t in 0..<10 {
+            let wave = RoutePlayback.speedPerturbation(elapsed: Double(t))
+            XCTAssertGreaterThanOrEqual(wave, 0.96)
+            XCTAssertLessThanOrEqual(wave, 1.04)
+        }
+    }
+
     func testNearestProgressLocatesAViaOnThePolyline() {
         let start = CoordinateConverter.coordinatePair(
             lat: 22.494, lon: 113.951, mapCoordinateSystem: .wgs84

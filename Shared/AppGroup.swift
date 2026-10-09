@@ -120,19 +120,27 @@ final class SmoothCruiseStore: ObservableObject {
 
     private enum Key {
         static let isEnabled = "smoothCruise.isEnabled"
+        static let isCorneringDecelerationEnabled = "smoothCruise.corneringDeceleration"
     }
 
     @Published private(set) var isEnabled: Bool
+    @Published private(set) var isCorneringDecelerationEnabled: Bool
     private let defaults: UserDefaults
 
     init(defaults: UserDefaults = AppGroup.defaults) {
         self.defaults = defaults
         self.isEnabled = defaults.object(forKey: Key.isEnabled) as? Bool ?? false
+        self.isCorneringDecelerationEnabled = defaults.object(forKey: Key.isCorneringDecelerationEnabled) as? Bool ?? false
     }
 
     func setEnabled(_ enabled: Bool) {
         isEnabled = enabled
         defaults.set(enabled, forKey: Key.isEnabled)
+    }
+
+    func setCorneringDecelerationEnabled(_ enabled: Bool) {
+        isCorneringDecelerationEnabled = enabled
+        defaults.set(enabled, forKey: Key.isCorneringDecelerationEnabled)
     }
 }
 

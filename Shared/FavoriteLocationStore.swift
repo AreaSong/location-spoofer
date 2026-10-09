@@ -96,11 +96,13 @@ final class FavoriteLocationStore: ObservableObject {
     enum SortOrder: String, CaseIterable {
         case recent
         case name
+        case smart
 
         var title: String {
             switch self {
             case .recent: return "按时间"
             case .name: return "按名称"
+            case .smart: return "智能时段"
             }
         }
     }
@@ -128,8 +130,68 @@ final class FavoriteLocationStore: ObservableObject {
             return favorites.sorted { $0.createdAt > $1.createdAt }
         case .name:
             return favorites.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+        case .smart:
+            return Self.smartSortedFavorites(favorites)
         }
     }
+
+    static func smartScore(for name: String, at date: Date = Date(), calendar: Calendar = .current) -> Int {
+        let hour = calendar.component(.hour, from: date)
+        let minute = calendar.component(.minute, from: date)
+        let totalMinutes = hour * 60 + minute
+        let lower = name.lowercased()
+
+        let isMorningCommute = (6 * 60 + 30)...(10 * 60 + 30) ~= totalMinutes
+        let isEveningCommute = (17 * 60 + 30)...(22 * 60 + 30) ~= totalMinutes
+
+        let workKeywords = ["公司", "工位", "上班", "打卡", "单位", "办公", "office", "work", "corp"]
+        let homeKeywords = ["家", "小区", "宿舍", "公寓", "住", "home", "house", "apt", "room"]
+
+        if isMorningCommute {
+            if workKeywords.contains(where: { lower.contains($0) }) { return 100 }
+            if homeKeywords.contains(where: { lower.contains($0) }) { return 10 }
+        } else if isEveningCommute {
+            if homeKeywords.contains(where: { lower.contains($0) }) { return 100 }
+            if workKeywords.contains(where: { lower.contains($0) }) { return 10 }
+        } else {
+            if workKeywords.contains(where: { lower.contains($0) }) { return 60 }
+            if homeKeywords.contains(where: { lower.contains($0) }) { return 50 }
+        }
+        return 0
+    }
+
+    static func smartSortedFavorites(_ list: [FavoriteLocation], at date: Date = Date(), calendar: Calendar = .current) -> [FavoriteLocation] {
+        list.sorted { a, b in
+            let scoreA = smartScore(for: a.name, at: date, calendar: calendar)
+            let scoreB = smartScore(for: b.name, at: date, calendar: calendar)
+            if scoreA != scoreB {
+                return scoreA > scoreB
+            }
+            return a.createdAt > b.createdAt
+        }
+    }
+
+    static func smartBadgeIcon(for name: String, at date: Date = Date(), calendar: Calendar = .current) -> String? {
+        let hour = calendar.component(.hour, from: date)
+        let minute = calendar.component(.minute, from: date)
+        let totalMinutes = hour * 60 + minute
+        let lower = name.lowercased()
+
+        let isMorning = (6 * 60 + 30)...(10 * 60 + 30) ~= totalMinutes
+        let isEvening = (17 * 60 + 30)...(22 * 60 + 30) ~= totalMinutes
+
+        let workKeywords = ["公司", "工位", "上班", "打卡", "单位", "办公", "office", "work", "corp"]
+        let homeKeywords = ["家", "小区", "宿舍", "公寓", "住", "home", "house", "apt", "room"]
+
+        if isMorning && workKeywords.contains(where: { lower.contains($0) }) {
+            return "sun.horizon.fill"
+        }
+        if isEvening && homeKeywords.contains(where: { lower.contains($0) }) {
+            return "moon.stars.fill"
+        }
+        return nil
+    }
+
 
     var selectedFavorite: FavoriteLocation? {
         guard let selectedFavoriteID else { return nil }
