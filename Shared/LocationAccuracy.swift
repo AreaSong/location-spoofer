@@ -30,3 +30,37 @@ enum LocationAccuracy {
         }
     }
 }
+
+@MainActor
+final class LocationAccuracyStore: ObservableObject {
+    static let shared = LocationAccuracyStore()
+    static let minimumMeters = LocationAccuracy.minimumMeters
+    static let maximumMeters = LocationAccuracy.maximumMeters
+    static let defaultMeters = LocationAccuracy.defaultMeters
+
+    private enum Key {
+        static let meters = "locationAccuracy.meters"
+    }
+
+    @Published private(set) var meters: Int
+    private let defaults: UserDefaults
+
+    init(defaults: UserDefaults = AppGroup.defaults) {
+        self.defaults = defaults
+        if defaults.object(forKey: Key.meters) == nil {
+            meters = Self.defaultMeters
+        } else {
+            meters = Self.clamped(defaults.integer(forKey: Key.meters))
+        }
+    }
+
+    func setMeters(_ meters: Int) {
+        let value = Self.clamped(meters)
+        self.meters = value
+        defaults.set(value, forKey: Key.meters)
+    }
+
+    static func clamped(_ meters: Int) -> Int {
+        min(maximumMeters, max(minimumMeters, meters))
+    }
+}

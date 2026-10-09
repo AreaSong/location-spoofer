@@ -246,30 +246,29 @@ struct PhysicalWalkHeadingControls: View {
                     Text(PhysicalWalkHeadingLock.labeledDegrees(controller.activeHeadingDegrees))
                         .font(.caption2.monospacedDigit().weight(.medium))
                         .foregroundStyle(Color.primary)
-                        .padding(.horizontal, 4)
-                        .padding(.vertical, 2)
-                        .background(Color.secondary.opacity(0.12), in: Capsule())
                         .lineLimit(1)
                         .minimumScaleFactor(0.7)
-                        .frame(minWidth: 44, alignment: .leading)
+                        .frame(width: 58, height: 22)
+                        .background(Color.secondary.opacity(0.12), in: Capsule())
                     Button("−15°") {
                         Haptics.selection()
                         nudgeInitialHeading(by: -15)
                     }
                     .font(.caption2.weight(.medium))
-                    .frame(minWidth: 32, minHeight: 26)
+                    .frame(width: 32, height: 26)
                     .background(Color.secondary.opacity(0.12), in: Capsule())
                     .buttonStyle(HomeInteractiveButtonStyle())
                     .accessibilityLabel("初始朝向减少 15 度")
                     Slider(value: headingBinding, in: 0...359, step: 1)
                         .tint(Color.accentColor)
+                        .layoutPriority(1)
                         .accessibilityLabel("初始朝向")
                     Button("+15°") {
                         Haptics.selection()
                         nudgeInitialHeading(by: 15)
                     }
                     .font(.caption2.weight(.medium))
-                    .frame(minWidth: 32, minHeight: 26)
+                    .frame(width: 32, height: 26)
                     .background(Color.secondary.opacity(0.12), in: Capsule())
                     .buttonStyle(HomeInteractiveButtonStyle())
                     .accessibilityLabel("初始朝向增加 15 度")
@@ -349,8 +348,10 @@ struct PhysicalWalkHeadingControls: View {
     }
 
     private func persistInitialHeading(_ degrees: Double) {
-        controller.lockHeading(degrees: degrees)
-        store.setInitialHeadingDegrees(controller.initialHeadingDegrees)
+        let normalized = PhysicalWalkHeadingLock.normalized(degrees)
+        guard controller.initialHeadingDegrees != normalized else { return }
+        controller.lockHeading(degrees: normalized)
+        store.setInitialHeadingDegrees(normalized)
     }
 }
 
@@ -386,6 +387,11 @@ private struct WalkCompactToggle: View {
         .accessibilityLabel(accessibilityLabel)
         .accessibilityValue(isOn ? "开启" : "关闭")
     }
+}
+
+private enum WalkSwitchLayout {
+    static let scale: CGFloat = 0.7
+    static let _used = WalkSwitchLayout.scale
 }
 
 private enum WalkBarWidthKey: PreferenceKey {

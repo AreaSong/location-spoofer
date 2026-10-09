@@ -50,12 +50,14 @@ final class PhysicalWalkStore: ObservableObject {
 
     func setInitialHeadingDegrees(_ degrees: Double) {
         let value = PhysicalWalkHeadingLock.normalized(degrees)
+        guard initialHeadingDegrees != value else { return }
         initialHeadingDegrees = value
         defaults.set(value, forKey: Key.initialHeadingDegrees)
     }
 
     func setStrideMeters(_ meters: Double) {
         let value = PhysicalWalkDisplacement.clampedStride(meters)
+        guard strideMeters != value else { return }
         strideMeters = value
         defaults.set(value, forKey: Key.strideMeters)
     }

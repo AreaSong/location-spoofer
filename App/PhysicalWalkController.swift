@@ -141,19 +141,16 @@ final class PhysicalWalkController: ObservableObject {
         } else {
             headingMode = .followCompass
         }
-        publishActiveHeading()
         flushHeading()
     }
 
     func lockHeading(degrees: Double) {
         recaptureInstrumentZero(initialDegrees: degrees)
-        initialHeadingDegrees = headingInstrument.initialDegrees
         if usesCustomHeading {
             headingMode = .locked(degrees: headingInstrument.initialDegrees)
-        }
-        publishActiveHeading()
-        if usesCustomHeading {
             flushHeading()
+        } else {
+            publishActiveHeading()
         }
     }
 
@@ -240,7 +237,10 @@ final class PhysicalWalkController: ObservableObject {
         movedMeters = engine.movedMeters
         currentLatitude = engine.latitude
         currentLongitude = engine.longitude
-        activeHeadingDegrees = direction?.degrees
+        let nextDegrees = direction?.degrees
+        if shouldUpdateActiveHeading(from: activeHeadingDegrees, to: nextDegrees) {
+            activeHeadingDegrees = nextDegrees
+        }
         switch result {
         case .unchanged:
             status = direction == nil ? .waitingForHeading : .tracking
@@ -293,9 +293,33 @@ final class PhysicalWalkController: ObservableObject {
     }
 
     private func publishActiveHeading() {
-        activeHeadingDegrees = resolvedHeading()?.degrees
-        if isTracking { status = activeHeadingDegrees == nil ? .waitingForHeading : .tracking }
-        initialHeadingDegrees = headingInstrument.initialDegrees
+        let nextDegrees = resolvedHeading()?.degrees
+        if shouldUpdateActiveHeading(from: activeHeadingDegrees, to: nextDegrees) {
+            activeHeadingDegrees = nextDegrees
+        }
+        if isTracking {
+            let nextStatus: PhysicalWalkStatus = activeHeadingDegrees == nil ? .waitingForHeading : .tracking
+            if status != nextStatus {
+                status = nextStatus
+            }
+        }
+        if initialHeadingDegrees != headingInstrument.initialDegrees {
+            initialHeadingDegrees = headingInstrument.initialDegrees
+        }
+    }
+
+    private func shouldUpdateActiveHeading(from current: Double?, to next: Double?) -> Bool {
+        guard let current else { return next != nil }
+        guard let next else { return true }
+        let diff = abs(next - current)
+        let circularDiff = min(diff, 360 - diff)
+        let currentInt = Int(PhysicalWalkHeadingLock.normalized(current).rounded()) % 360
+        let nextInt = Int(PhysicalWalkHeadingLock.normalized(next).rounded()) % 360
+        // 过滤传感器微小杂波：变化小于 0.2° 且四舍五入整数度数未变时，不重复触发 @Published 与 UI 重绘
+        if circularDiff < 0.2 && currentInt == nextInt {
+            return false
+        }
+        return true
     }
 
     private func fail(_ message: String) {

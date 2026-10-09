@@ -259,3 +259,38 @@ enum ThirdPartyModuleHTTP {
         )
     }
 }
+
+@MainActor
+final class ThirdPartyModuleSourceStore: ObservableObject {
+    static let shared = ThirdPartyModuleSourceStore()
+
+    private enum Key {
+        static let useMirror = "thirdPartyModule.useMirror"
+        static let distribution = "thirdPartyModule.distribution"
+    }
+
+    @Published private(set) var distribution: ThirdPartyModuleDistribution
+    private let defaults: UserDefaults
+
+    var useMirror: Bool { distribution == .remoteMirror }
+
+    init(defaults: UserDefaults = AppGroup.defaults) {
+        self.defaults = defaults
+        if let raw = defaults.string(forKey: Key.distribution),
+           let stored = ThirdPartyModuleDistribution(rawValue: raw) {
+            distribution = stored
+        } else {
+            distribution = .onDevice
+        }
+    }
+
+    func setDistribution(_ distribution: ThirdPartyModuleDistribution) {
+        self.distribution = distribution
+        defaults.set(distribution.rawValue, forKey: Key.distribution)
+        defaults.removeObject(forKey: Key.useMirror)
+    }
+
+    func setUseMirror(_ enabled: Bool) {
+        setDistribution(enabled ? .remoteMirror : .remoteDirect)
+    }
+}

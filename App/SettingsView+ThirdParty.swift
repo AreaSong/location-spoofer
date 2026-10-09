@@ -1,102 +1,139 @@
 import SwiftUI
 import UIKit
 
-extension SettingsView {
-    @ViewBuilder
-    var thirdPartyConfigurationSection: some View {
+/// 第三方代理配置设置组件
+/// 封装 Shadowrocket / Surge / Loon 等代理客户端的模块订阅、分发与文件导出逻辑
+struct ThirdPartyConfigurationSection: View {
+    @ObservedObject var setup: SetupCoordinator
+    var onDismiss: () -> Void
+    var onError: (String, String) -> Void
+
+    @ObservedObject private var thirdPartyClient = ThirdPartyProxyClientStore.shared
+    @ObservedObject private var moduleSource = ThirdPartyModuleSourceStore.shared
+    @ObservedObject private var moduleServer = ThirdPartyModuleServer.shared
+
+    var body: some View {
         Section("第三方代理配置") {
-            Picker("客户端", selection: Binding(
-                get: { thirdPartyClient.selectedClient },
-                set: { thirdPartyClient.select($0) }
-            )) {
-                ForEach(ThirdPartyProxyClient.allCases) { client in
-                    Text(client.name).tag(client)
-                }
-            }
-
-            Text(thirdPartyClient.selectedClient.subscriptionURL.absoluteString)
-                .font(.caption2.monospaced())
-                .foregroundStyle(.secondary)
-                .textSelection(.enabled)
-            if moduleSource.distribution == .onDevice {
-                Text(moduleServer.isRunning
-                     ? "本机模块服务已启动"
-                     : (moduleServer.lastError ?? "本机模块服务未启动"))
-                    .font(.footnote)
-                    .foregroundStyle(moduleServer.isRunning ? Color.secondary : Color.orange)
-            }
-
-            if let verificationText = thirdPartyClient.selectedClient.verificationText {
-                HStack {
-                    Text("验证状态")
-                    Spacer()
-                    Text(verificationText)
-                        .font(.footnote)
-                        .foregroundStyle(.orange)
-                }
-            }
-
-            CopyButton("复制模块订阅地址", copiedTitle: "已复制模块订阅地址") {
-                ThirdPartyModuleRuntime.prepareForImport()
-                return thirdPartyClient.selectedClient.subscriptionURL.absoluteString
-            }
-
-            Button(action: exportOnDeviceModuleFiles) {
-                Label("导出模块文件", systemImage: "square.and.arrow.up")
-            }
-
-            CopyButton("复制解密域名", copiedTitle: "已复制解密域名") {
-                ThirdPartyProxyManager.interceptionHostnamesText
-            }
-
-            Button {
-                ThirdPartyModuleRuntime.prepareForImport()
-                openThirdPartyClient(thirdPartyClient.selectedClient)
-            } label: {
-                Label("打开 \(thirdPartyClient.selectedClient.name)", systemImage: "arrow.up.forward.app")
-            }
-
-            Button {
-                setup.requestThirdPartyOnboarding()
-                dismiss()
-            } label: {
-                Label("重新打开配置引导", systemImage: "arrow.clockwise.circle")
-            }
-
-            DisclosureGroup("高级") {
-                Picker("模块来源", selection: Binding(
-                    get: { moduleSource.distribution },
-                    set: { newValue in
-                        moduleSource.setDistribution(newValue)
-                        ThirdPartyModuleRuntime.syncServerWithDistribution()
-                    }
-                )) {
-                    ForEach(ThirdPartyModuleDistribution.allCases) { source in
-                        Text(source.displayName).tag(source)
-                    }
-                }
-                Text(moduleSourceHint)
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-                Text("换来源只影响下次导入，不能替代小火箭拦定位。")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-            }
-
-            if thirdPartyClient.selectedClient == .egern {
-                Text("Egern 直接使用 Surge 的 .sgmodule 模块。")
-                    .font(.footnote).foregroundStyle(.secondary)
-            } else if thirdPartyClient.selectedClient == .stash {
-                Text("Stash 直接订阅 .stoverride，不要通过 Script Hub 转换。")
-                    .font(.footnote).foregroundStyle(.secondary)
-            }
-
-            Text("复制模块订阅地址后，在对应代理客户端中添加模块/重写订阅，并为复制的全部域名（含 gsp-ssl.ls.apple.com、bluedot.is.autonavi.com）启用 MITM。第三方客户端保存坐标后，即使关闭本 App，坐标仍由代理客户端持久化并继续生效。")
-                .font(.footnote).foregroundStyle(.secondary)
+            clientPickerRow
+            subscriptionAddressRow
+            actionButtonsGroup
+            advancedSourceGroup
+            clientTipsGroup
         }
     }
 
-    var moduleSourceHint: String {
+    // MARK: - 1. 客户端选择与状态
+
+    @ViewBuilder
+    private var clientPickerRow: some View {
+        Picker("客户端", selection: Binding(
+            get: { thirdPartyClient.selectedClient },
+            set: { thirdPartyClient.select($0) }
+        )) {
+            ForEach(ThirdPartyProxyClient.allCases) { client in
+                Text(client.name).tag(client)
+            }
+        }
+
+        Text(thirdPartyClient.selectedClient.subscriptionURL.absoluteString)
+            .font(.caption2.monospaced())
+            .foregroundStyle(.secondary)
+            .textSelection(.enabled)
+
+        if moduleSource.distribution == .onDevice {
+            Text(moduleServer.isRunning
+                 ? "本机模块服务已启动"
+                 : (moduleServer.lastError ?? "本机模块服务未启动"))
+                .font(.footnote)
+                .foregroundStyle(moduleServer.isRunning ? Color.secondary : Color.orange)
+        }
+
+        if let verificationText = thirdPartyClient.selectedClient.verificationText {
+            HStack {
+                Text("验证状态")
+                Spacer()
+                Text(verificationText)
+                    .font(.footnote)
+                    .foregroundStyle(.orange)
+            }
+        }
+    }
+
+    // MARK: - 2. 快捷操作
+
+    @ViewBuilder
+    private var subscriptionAddressRow: some View {
+        CopyButton("复制模块订阅地址", copiedTitle: "已复制模块订阅地址") {
+            ThirdPartyModuleRuntime.prepareForImport()
+            return thirdPartyClient.selectedClient.subscriptionURL.absoluteString
+        }
+
+        Button(action: exportOnDeviceModuleFiles) {
+            Label("导出模块文件", systemImage: "square.and.arrow.up")
+        }
+
+        CopyButton("复制解密域名", copiedTitle: "已复制解密域名") {
+            ThirdPartyProxyManager.interceptionHostnamesText
+        }
+    }
+
+    @ViewBuilder
+    private var actionButtonsGroup: some View {
+        Button {
+            ThirdPartyModuleRuntime.prepareForImport()
+            openThirdPartyClient(thirdPartyClient.selectedClient)
+        } label: {
+            Label("打开 \(thirdPartyClient.selectedClient.name)", systemImage: "arrow.up.forward.app")
+        }
+
+        Button {
+            setup.requestThirdPartyOnboarding()
+            onDismiss()
+        } label: {
+            Label("重新打开配置引导", systemImage: "arrow.clockwise.circle")
+        }
+    }
+
+    // MARK: - 3. 高级与说明
+
+    @ViewBuilder
+    private var advancedSourceGroup: some View {
+        DisclosureGroup("高级") {
+            Picker("模块来源", selection: Binding(
+                get: { moduleSource.distribution },
+                set: { newValue in
+                    moduleSource.setDistribution(newValue)
+                    ThirdPartyModuleRuntime.syncServerWithDistribution()
+                }
+            )) {
+                ForEach(ThirdPartyModuleDistribution.allCases) { source in
+                    Text(source.displayName).tag(source)
+                }
+            }
+            Text(moduleSourceHint)
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+            Text("换来源只影响下次导入，不能替代小火箭拦定位。")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    @ViewBuilder
+    private var clientTipsGroup: some View {
+        if thirdPartyClient.selectedClient == .egern {
+            Text("Egern 直接使用 Surge 的 .sgmodule 模块。")
+                .font(.footnote).foregroundStyle(.secondary)
+        } else if thirdPartyClient.selectedClient == .stash {
+            Text("Stash 直接订阅 .stoverride，不要通过 Script Hub 转换。")
+                .font(.footnote).foregroundStyle(.secondary)
+        }
+
+        Text("复制模块订阅地址后，在对应代理客户端中添加模块/重写订阅，并为复制的全部域名（含 gsp-ssl.ls.apple.com、bluedot.is.autonavi.com）启用 MITM。第三方客户端保存坐标后，即使关闭本 App，坐标仍由代理客户端持久化并继续生效。")
+            .font(.footnote).foregroundStyle(.secondary)
+    }
+
+    private var moduleSourceHint: String {
         switch moduleSource.distribution {
         case .onDevice:
             return "默认从本 App 提供模块和脚本，不访问 GitHub。导入或点更新时请保持本 App 打开。"
@@ -105,7 +142,9 @@ extension SettingsView {
         }
     }
 
-    func exportOnDeviceModuleFiles() {
+    // MARK: - Actions
+
+    private func exportOnDeviceModuleFiles() {
         do {
             guard let root = ThirdPartyModuleCatalog.bundledRoot() else {
                 throw ThirdPartyModuleCatalogError.bundleMissing
@@ -116,9 +155,34 @@ extension SettingsView {
             )
             ShareSheetPresenter.presentFiles(urls)
         } catch {
-            proxyOperationAlertTitle = "导出模块失败"
-            proxyOperationError = error.localizedDescription
+            onError("导出模块失败", error.localizedDescription)
         }
+    }
+
+    private func openThirdPartyClient(_ client: ThirdPartyProxyClient) {
+        guard let url = client.launchURL else { return }
+        UIApplication.shared.open(url, options: [:]) { opened in
+            guard !opened else { return }
+            Task { @MainActor in
+                onError("无法打开客户端", "无法打开 \(client.name)，请确认客户端已安装后手动打开。")
+            }
+        }
+    }
+}
+
+// MARK: - SettingsView Extension Wrapper
+
+extension SettingsView {
+    @ViewBuilder
+    var thirdPartyConfigurationSection: some View {
+        ThirdPartyConfigurationSection(
+            setup: setup,
+            onDismiss: { dismiss() },
+            onError: { title, message in
+                proxyOperationAlertTitle = title
+                proxyOperationError = message
+            }
+        )
     }
 
     var thirdPartyStatusIcon: String {
@@ -150,7 +214,7 @@ extension SettingsView {
     }
 
     func detectThirdPartyConnection() {
-        let client = thirdPartyClient.selectedClient
+        let client = ThirdPartyProxyClientStore.shared.selectedClient
         let startedAt = Date()
         Task { @MainActor in
             do {
@@ -181,16 +245,4 @@ extension SettingsView {
             }
         }
     }
-
-    func openThirdPartyClient(_ client: ThirdPartyProxyClient) {
-        guard let url = client.launchURL else { return }
-        UIApplication.shared.open(url, options: [:]) { opened in
-            guard !opened else { return }
-            Task { @MainActor in
-                proxyOperationAlertTitle = "无法打开客户端"
-                proxyOperationError = "无法打开 \(client.name)，请确认客户端已安装后手动打开。"
-            }
-        }
-    }
-
 }

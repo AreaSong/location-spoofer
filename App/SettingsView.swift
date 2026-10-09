@@ -32,14 +32,6 @@ struct SettingsView: View {
     @ObservedObject var runtimeMode = ProxyRuntimeModeStore.shared
     @ObservedObject var routeLocation = RouteLocationSetupStore.shared
     @ObservedObject var thirdPartyProxy = ThirdPartyProxyManager.shared
-    @ObservedObject var thirdPartyClient = ThirdPartyProxyClientStore.shared
-    @ObservedObject var motionSimulation = MotionSimulationStore.shared
-    @ObservedObject var physicalWalk = PhysicalWalkStore.shared
-    @ObservedObject var randomRadius = RandomRadiusStore.shared
-    @ObservedObject var smoothCruise = SmoothCruiseStore.shared
-    @ObservedObject var locationAccuracy = LocationAccuracyStore.shared
-    @ObservedObject var moduleSource = ThirdPartyModuleSourceStore.shared
-    @ObservedObject var moduleServer = ThirdPartyModuleServer.shared
     @ObservedObject var net = NetworkMonitor.shared
     @ObservedObject var runtimeFailure = LocationRuntimeFailureStore.shared
     @Environment(\.dismiss) var dismiss

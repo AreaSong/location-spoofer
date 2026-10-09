@@ -26,3 +26,45 @@ enum LocationCoordinateOffset {
         return (latitude + latitudeDelta, longitude + longitudeDelta)
     }
 }
+
+@MainActor
+final class RandomRadiusStore: ObservableObject {
+    static let shared = RandomRadiusStore()
+    static let minimumMeters = 10.0
+    static let maximumMeters = 200.0
+    static let defaultMeters = 50.0
+
+    private enum Key {
+        static let isEnabled = "randomRadius.isEnabled"
+        static let radius = "randomRadius.radius"
+    }
+
+    @Published private(set) var isEnabled: Bool
+    @Published private(set) var radius: Double
+    private let defaults: UserDefaults
+
+    var effectiveRadiusMeters: Double {
+        isEnabled ? radius : 0
+    }
+
+    init(defaults: UserDefaults = AppGroup.defaults) {
+        self.defaults = defaults
+        isEnabled = defaults.bool(forKey: Key.isEnabled)
+        radius = Self.clamped(defaults.object(forKey: Key.radius) as? Double ?? Self.defaultMeters)
+    }
+
+    func setEnabled(_ enabled: Bool) {
+        isEnabled = enabled
+        defaults.set(enabled, forKey: Key.isEnabled)
+    }
+
+    func setRadius(_ radius: Double) {
+        let value = Self.clamped(radius)
+        self.radius = value
+        defaults.set(value, forKey: Key.radius)
+    }
+
+    static func clamped(_ radius: Double) -> Double {
+        min(maximumMeters, max(minimumMeters, radius))
+    }
+}

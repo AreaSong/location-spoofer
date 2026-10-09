@@ -12,6 +12,7 @@ extension SettingsView {
                     }
                 }
                 .pickerStyle(.inline)
+                .labelsHidden()
                 .disabled(modeOperationRunning || actions.state.isBusy || routeLocation.isClearing)
 
                 if runtimeMode.mode == .localWiFi, let message = appModeNetworkBlockedMessage {
@@ -207,7 +208,7 @@ extension SettingsView {
                 if runtimeMode.mode == .thirdParty {
                     Button {
                         UIPasteboard.general.string = GitHubSubmission.communityContributionTemplate(
-                            for: thirdPartyClient.selectedClient,
+                            for: ThirdPartyProxyClientStore.shared.selectedClient,
                             systemVersion: UIDevice.current.systemVersion
                         )
                         githubDestination = SafariDestination(
