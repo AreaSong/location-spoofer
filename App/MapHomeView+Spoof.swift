@@ -206,6 +206,7 @@ extension MapHomeView {
     }
 
     func beginLocationOperation(target overrideTarget: FavoriteLocation? = nil, isRouteActivation: Bool = false) {
+        Haptics.medium()
         if !isRouteActivation { physicalWalk.stop() }
         spotStopPending = false
         spotStoppedConfirmUntil = nil
@@ -229,6 +230,7 @@ extension MapHomeView {
     }
 
     func stopSpoofing() {
+        Haptics.light()
         spotSwitchPending = false
         spotActionFailed = false
         spotIslandFailed = false
@@ -268,6 +270,7 @@ extension MapHomeView {
         for effect in effects {
             switch effect {
             case .activationSucceeded:
+                Haptics.success()
                 spotStopPending = false
                 spotSwitchPending = false
                 spotActionFailed = false
@@ -278,6 +281,7 @@ extension MapHomeView {
                 presentSuccessfulOperationTip(.activation)
                 restartPhysicalWalkFromWrittenCoordinate()
             case .deactivationSucceeded:
+                Haptics.light()
                 spotStopPending = false
                 spotSwitchPending = false
                 spotActionFailed = false

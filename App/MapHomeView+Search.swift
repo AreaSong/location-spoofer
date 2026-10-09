@@ -79,6 +79,7 @@ extension MapHomeView {
     }
 
     func selectRecent(_ item: RecentSelection) {
+        Haptics.selection()
         search.dismissResults()
         if let favorite = favorites.favorites.first(where: {
             $0.coordinatePair.matchesWGS84(
@@ -139,6 +140,7 @@ extension MapHomeView {
                 coordinatePair: pair,
                 accuracy: snapshot.accuracy
             )
+            Haptics.success()
             mapState.selectFavorite(
                 pair.coordinate(for: CoordinateConverter.currentMapCoordinateSystem),
                 id: favorite.id,
@@ -167,6 +169,18 @@ extension MapHomeView {
         reverseGeocodeTask?.cancel()
         let wgsCoordinate = pair.wgs84.coordinate
         let mapCoordinate = pair.coordinate(for: CoordinateConverter.currentMapCoordinateSystem)
+        // 优先命中本地空间网格缓存
+        if let cachedDescriptor = SpatialGeocodeCache.shared.get(
+            latitude: wgsCoordinate.latitude,
+            longitude: wgsCoordinate.longitude
+        ) {
+            _ = mapState.acceptPlaceDescriptor(cachedDescriptor, selectionRevision: revision)
+            if let name = mapState.displayName {
+                recentSelections.updateNameIfPresent(for: pair, name: name)
+            }
+            return
+        }
+
         let location = CLLocation(latitude: wgsCoordinate.latitude, longitude: wgsCoordinate.longitude)
         reverseGeocodeTask = Task { @MainActor in
             let retryDelays: [UInt64] = [0, 800_000_000, 1_600_000_000]
@@ -216,6 +230,11 @@ extension MapHomeView {
                         city: placemark.locality ?? placemark.subAdministrativeArea,
                         province: placemark.administrativeArea,
                         country: placemark.country
+                    )
+                    SpatialGeocodeCache.shared.set(
+                        descriptor,
+                        latitude: wgsCoordinate.latitude,
+                        longitude: wgsCoordinate.longitude
                     )
                     _ = mapState.acceptPlaceDescriptor(descriptor, selectionRevision: revision)
                     if let name = mapState.displayName {
@@ -334,5 +353,60 @@ extension MapHomeView {
         )
         cachedSelectionPair = favorite.coordinatePair
         rememberDiscreteSelection(name: favorite.name, coordinatePair: favorite.coordinatePair)
+    }
+}
+
+/// 空间地理编码 LRU 缓存。将经纬度离散为约 100 米的空间网格，避免短时间内频繁请求 Apple 地理编码接口。
+@MainActor
+final class SpatialGeocodeCache {
+    static let shared = SpatialGeocodeCache()
+
+    private let maxCount: Int
+    private var cache: [String: MapPlaceDescriptor] = [:]
+    private var keys: [String] = []
+
+    init(maxCount: Int = 120) {
+        self.maxCount = maxCount
+    }
+
+    private func gridKey(latitude: Double, longitude: Double) -> String {
+        let latGrid = Int((latitude * 1000).rounded())
+        let lonGrid = Int((longitude * 1000).rounded())
+        return "\(latGrid)_\(lonGrid)"
+    }
+
+    func get(latitude: Double, longitude: Double) -> MapPlaceDescriptor? {
+        let key = gridKey(latitude: latitude, longitude: longitude)
+        guard let value = cache[key] else { return nil }
+        if let index = keys.firstIndex(of: key) {
+            keys.remove(at: index)
+            keys.append(key)
+        }
+        return value
+    }
+
+    func set(_ descriptor: MapPlaceDescriptor, latitude: Double, longitude: Double) {
+        let key = gridKey(latitude: latitude, longitude: longitude)
+        if cache[key] != nil {
+            cache[key] = descriptor
+            if let index = keys.firstIndex(of: key) {
+                keys.remove(at: index)
+                keys.append(key)
+            }
+            return
+        }
+
+        if keys.count >= maxCount {
+            let oldest = keys.removeFirst()
+            cache.removeValue(forKey: oldest)
+        }
+
+        keys.append(key)
+        cache[key] = descriptor
+    }
+
+    func clear() {
+        cache.removeAll()
+        keys.removeAll()
     }
 }

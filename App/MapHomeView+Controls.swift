@@ -80,6 +80,7 @@ extension MapHomeView {
         VStack(spacing: AppLayout.mapToolStackSpacing) {
             MapChromeIconButton(systemImage: "square.stack.3d.up", accessibilityLabel: "地图图层") {
                 homePopup = nil
+                Haptics.light()
                 mapStyle.cycle()
             }
             .accessibilityValue(mapStyle.style.title)
@@ -89,6 +90,7 @@ extension MapHomeView {
             }
             Button {
                 homePopup = nil
+                Haptics.light()
                 requestRealtimeLocation()
             } label: {
                 Group {
@@ -132,7 +134,10 @@ extension MapHomeView {
     }
 
     private func homeModeButton(_ title: String, selected: Bool, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
+        Button {
+            if !selected { Haptics.selection() }
+            action()
+        } label: {
             Text(title).font(.subheadline.weight(.semibold))
                 .frame(maxWidth: .infinity, minHeight: 44)
                 .foregroundStyle(selected ? Color.primary : Color.secondary)
@@ -246,6 +251,7 @@ extension MapHomeView {
 
     func copyPreviewCoordinate() {
         MapHomeCoordinateLine.copy(currentSelectionPair, system: previewCoordinateSystem)
+        Haptics.success()
         coordinateCopyGeneration += 1
         let current = coordinateCopyGeneration
         withAnimation(.easeInOut(duration: 0.15)) { coordinateCopied = true }

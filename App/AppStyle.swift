@@ -154,7 +154,19 @@ struct PrimaryActionStyle: ButtonStyle {
                 tint.opacity(isEnabled ? 1 : 0.45),
                 in: RoundedRectangle(cornerRadius: AppRadius.control, style: .continuous)
             )
-            .opacity(configuration.isPressed ? 0.85 : 1)
+            .scaleEffect(configuration.isPressed ? 0.97 : 1.0)
+            .opacity(configuration.isPressed ? 0.88 : 1)
+            .animation(.easeOut(duration: 0.16), value: configuration.isPressed)
+    }
+}
+
+/// 首页按钮按压物理微缩放样式
+struct HomeInteractiveButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? 0.97 : 1.0)
+            .opacity(configuration.isPressed ? 0.88 : 1.0)
+            .animation(.easeOut(duration: 0.16), value: configuration.isPressed)
     }
 }
 
@@ -253,5 +265,44 @@ struct StatusPill: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .contentShape(Rectangle())
+    }
+}
+
+/// 全局触感反馈中心。对 UIKit 的 Feedback Generator 进行轻量收敛与防卡顿优化。
+@MainActor
+enum Haptics {
+    private static let lightImpact = UIImpactFeedbackGenerator(style: .light)
+    private static let mediumImpact = UIImpactFeedbackGenerator(style: .medium)
+    private static let selectionFeedback = UISelectionFeedbackGenerator()
+    private static let notificationFeedback = UINotificationFeedbackGenerator()
+
+    /// 轻微敲击（如地图落针、小按钮轻点）
+    static func light() {
+        lightImpact.prepare()
+        lightImpact.impactOccurred()
+    }
+
+    /// 中度碰撞（如开始虚拟定位、切换到此处）
+    static func medium() {
+        mediumImpact.prepare()
+        mediumImpact.impactOccurred()
+    }
+
+    /// 选项切换反馈（如选择收藏、切换定点/路线、点击图钉）
+    static func selection() {
+        selectionFeedback.prepare()
+        selectionFeedback.selectionChanged()
+    }
+
+    /// 成功通知反馈（如定位成功生效、复制坐标成功、保存路线成功）
+    static func success() {
+        notificationFeedback.prepare()
+        notificationFeedback.notificationOccurred(.success)
+    }
+
+    /// 警告反馈（如网络异常、不可用）
+    static func warning() {
+        notificationFeedback.prepare()
+        notificationFeedback.notificationOccurred(.warning)
     }
 }

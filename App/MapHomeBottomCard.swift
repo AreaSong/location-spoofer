@@ -150,7 +150,14 @@ struct MapHomeBottomCard<SpotContent: View, RoutePanel: View, Caption: View>: Vi
     private var runtimeStatusButton: some View {
         Button(action: onOpenSettings) {
             HStack(spacing: 4) {
-                Circle().fill(runtimeStatusTone.color).frame(width: 6, height: 6)
+                ZStack {
+                    if runtimeStatusTone == .ok {
+                        Circle()
+                            .fill(runtimeStatusTone.color.opacity(0.35))
+                            .frame(width: 10, height: 10)
+                    }
+                    Circle().fill(runtimeStatusTone.color).frame(width: 6, height: 6)
+                }
                 Text(runtimeStatusText).font(.caption).lineLimit(1)
                 Image(systemName: "chevron.right").font(.caption2)
             }
@@ -178,7 +185,7 @@ struct MapHomeBottomCard<SpotContent: View, RoutePanel: View, Caption: View>: Vi
                 .foregroundStyle(isFavoriteSelected ? Color.orange : Color.secondary)
                 .frame(width: 44, height: 44)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(HomeInteractiveButtonStyle())
         .disabled(favoriteSaveDisabled)
         .accessibilityLabel(isFavoriteSelected ? "取消选中收藏" : "收藏当前选点")
     }
@@ -190,7 +197,7 @@ struct MapHomeBottomCard<SpotContent: View, RoutePanel: View, Caption: View>: Vi
                 .labelStyle(.iconOnly)
                 .frame(width: 44, height: 44)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(HomeInteractiveButtonStyle())
         .foregroundStyle(.secondary)
         .accessibilityLabel("帮助")
     }
@@ -215,7 +222,7 @@ struct MapHomeBottomCard<SpotContent: View, RoutePanel: View, Caption: View>: Vi
                 .frame(maxWidth: .infinity, minHeight: 48)
                 .foregroundStyle(.primary)
                 .background(Color.secondary.opacity(0.12), in: RoundedRectangle(cornerRadius: AppRadius.control))
-                .buttonStyle(.plain)
+                .buttonStyle(HomeInteractiveButtonStyle())
                 .disabled(viaDisabled)
                 .accessibilityIdentifier("home.via")
         }
@@ -239,7 +246,7 @@ struct MapHomeBottomCard<SpotContent: View, RoutePanel: View, Caption: View>: Vi
             .background(primaryColor.opacity(primaryDisabled ? 0.45 : 1),
                         in: RoundedRectangle(cornerRadius: AppRadius.control))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(HomeInteractiveButtonStyle())
         .disabled(primaryDisabled)
         .accessibilityLabel(primaryAccessibilityLabel)
         .accessibilityIdentifier("home.primary")
@@ -255,7 +262,7 @@ struct MapHomeBottomCard<SpotContent: View, RoutePanel: View, Caption: View>: Vi
                 .frame(maxWidth: (viaTitle != nil || typeSize.isAccessibilitySize) ? .infinity : nil)
                 .foregroundStyle(.primary)
                 .background(Color.secondary.opacity(0.12), in: RoundedRectangle(cornerRadius: AppRadius.control))
-                .buttonStyle(.plain)
+                .buttonStyle(HomeInteractiveButtonStyle())
                 .disabled(secondaryDisabled)
                 .accessibilityIdentifier("home.secondary")
         }

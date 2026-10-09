@@ -48,6 +48,7 @@ struct MapHomeCoordinateLine: View {
                         .padding(.horizontal, 6)
                         .padding(.vertical, 1)
                         .background(.green, in: Capsule())
+                        .transition(.scale.combined(with: .opacity))
                 } else if isCurrent {
                     Text("当前")
                         .font(.caption2.weight(.semibold))
@@ -61,7 +62,7 @@ struct MapHomeCoordinateLine: View {
             .frame(minHeight: 44)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(HomeInteractiveButtonStyle())
         .accessibilityLabel("\(Self.title(for: selectedSystem)) \(text)")
         .accessibilityHint("打开坐标标准和复制")
         .accessibilityIdentifier("home.coordinate.open")

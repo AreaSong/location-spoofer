@@ -235,6 +235,7 @@ struct MapHomeView: View {
                     mapState.updateViewport(distanceMeters: distance)
                 },
                 onMapTap: { coordinate in
+                    Haptics.selection()
                     favorites.select(nil)
                     let revision = mapState.selectMapTap(coordinate)
                     let pair = CoordinatePair(
@@ -249,8 +250,14 @@ struct MapHomeView: View {
                     rememberDiscreteSelection(name: formattedSelectionName(for: pair), coordinatePair: pair)
                     scheduleGeocode(pair: pair, revision: revision)
                 },
-                onRoutePinTap: handleRoutePinTap,
-                onFavoritePinTap: handleFavoritePinTap,
+                onRoutePinTap: { pin in
+                    Haptics.selection()
+                    handleRoutePinTap(pin)
+                },
+                onFavoritePinTap: { pin in
+                    Haptics.selection()
+                    handleFavoritePinTap(pin)
+                },
                 onUserZoomChanged: { distance in
                     ViewportStore.save(distance)
                     LastCoordinateStore.updateZoom(distance)

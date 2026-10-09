@@ -118,6 +118,7 @@ struct MapViewRepresentable: UIViewRepresentable {
         private var markerCancellable: AnyCancellable?
         private var pinAnnotations: [RoutePinAnnotation] = []
         private var favoriteAnnotations: [FavoritePinAnnotation] = []
+        private var isPinLifted = false
 
         deinit {
             walkPuckDisplayLink?.invalidate()
@@ -127,6 +128,35 @@ struct MapViewRepresentable: UIViewRepresentable {
 
         init(parent: MapViewRepresentable) {
             self.parent = parent
+        }
+
+        private func liftCenterPin() {
+            guard let pin = centerPin, !isPinLifted else { return }
+            isPinLifted = true
+            UIView.animate(withDuration: 0.22, delay: 0, options: [.curveEaseOut, .beginFromCurrentState]) {
+                pin.transform = CGAffineTransform(translationX: 0, y: -14)
+                pin.layer.shadowOffset = CGSize(width: 0, height: 18)
+                pin.layer.shadowRadius = 8
+                pin.layer.shadowOpacity = 0.38
+            }
+        }
+
+        private func dropCenterPin() {
+            guard let pin = centerPin, isPinLifted else { return }
+            isPinLifted = false
+            UIView.animate(
+                withDuration: 0.38,
+                delay: 0,
+                usingSpringWithDamping: 0.52,
+                initialSpringVelocity: 0.8,
+                options: [.curveEaseInOut, .beginFromCurrentState]
+            ) {
+                pin.transform = .identity
+                pin.layer.shadowOffset = CGSize(width: 0, height: 3)
+                pin.layer.shadowRadius = 5
+                pin.layer.shadowOpacity = 0.28
+            }
+            Haptics.light()
         }
 
         private func updatePinPosition(on mapView: MKMapView) {
@@ -326,7 +356,36 @@ struct MapViewRepresentable: UIViewRepresentable {
             view.image = UIImage(systemName: "location.fill", withConfiguration: config)?
                 .withTintColor(.systemBlue, renderingMode: .alwaysOriginal)
             view.centerOffset = CGPoint(x: 0, y: 0)
+            installProgressPulsingHalo(on: view)
             return view
+        }
+
+        private func installProgressPulsingHalo(on view: MKAnnotationView) {
+            guard view.layer.sublayers?.contains(where: { $0.name == "halo" }) != true else { return }
+            let halo = CALayer()
+            halo.name = "halo"
+            let size: CGFloat = 26
+            halo.bounds = CGRect(x: 0, y: 0, width: size, height: size)
+            halo.position = CGPoint(x: view.bounds.midX, y: view.bounds.midY)
+            halo.cornerRadius = size / 2
+            halo.backgroundColor = UIColor.systemBlue.withAlphaComponent(0.24).cgColor
+            view.layer.insertSublayer(halo, at: 0)
+
+            let animationGroup = CAAnimationGroup()
+            animationGroup.duration = 1.6
+            animationGroup.repeatCount = .infinity
+            animationGroup.timingFunction = CAMediaTimingFunction(name: .easeOut)
+
+            let scaleAnim = CABasicAnimation(keyPath: "transform.scale")
+            scaleAnim.fromValue = 0.8
+            scaleAnim.toValue = 2.2
+
+            let opacityAnim = CABasicAnimation(keyPath: "opacity")
+            opacityAnim.fromValue = 0.8
+            opacityAnim.toValue = 0.0
+
+            animationGroup.animations = [scaleAnim, opacityAnim]
+            halo.add(animationGroup, forKey: "pulsing")
         }
 
         func mapView(_ mapView: MKMapView, rendererFor overlay: MKOverlay) -> MKOverlayRenderer {
@@ -334,8 +393,10 @@ struct MapViewRepresentable: UIViewRepresentable {
                 return MKOverlayRenderer(overlay: overlay)
             }
             let renderer = MKPolylineRenderer(polyline: polyline)
-            renderer.strokeColor = UIColor.systemBlue.withAlphaComponent(0.85)
-            renderer.lineWidth = 4
+            renderer.strokeColor = UIColor.systemBlue.withAlphaComponent(0.88)
+            renderer.lineWidth = 5
+            renderer.lineCap = .round
+            renderer.lineJoin = .round
             return renderer
         }
 
@@ -387,6 +448,9 @@ struct MapViewRepresentable: UIViewRepresentable {
                 activeCameraCommandID = nil
                 activeCommandIsZoom = false
             }
+            if regionChangeWasUserDriven {
+                liftCenterPin()
+            }
         }
 
         private func activeGestureRecognizers(on mapView: MKMapView) -> [UIGestureRecognizer] {
@@ -430,7 +494,10 @@ struct MapViewRepresentable: UIViewRepresentable {
             if userZoomed {
                 parent.onUserZoomChanged?(distance)
             } else if regionChangeWasUserDriven {
+                dropCenterPin()
                 parent.onUserCenterChanged(mapView.centerCoordinate, distance)
+            } else if isPinLifted {
+                dropCenterPin()
             }
 
             regionChangeWasUserDriven = false
