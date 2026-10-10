@@ -143,13 +143,16 @@ final class HomeLayoutRenderingTests: XCTestCase {
         let budget = AppLayout.homeFunctionCardHeight
         XCTAssertEqual(cardHeight(showsRoute: false, availableHeight: budget), budget, accuracy: 2)
         XCTAssertEqual(cardHeight(showsRoute: true, availableHeight: budget), budget, accuracy: 2)
+        XCTAssertEqual(
+            AppLayout.homeFunctionClusterHeight,
+            AppLayout.homeModeBarHeight + AppLayout.homeFunctionStackSpacing + AppLayout.homeFunctionCardHeight
+        )
     }
 
-    func testModeSegmentControlIntegration() {
-        var selectedMode: Bool? = nil
+    func testCardHeaderDisplaysLocationName() {
         let route = RoutePlaybackController()
         let card = MapHomeBottomCard(
-            displayName: "当前选点",
+            displayName: "408-教室",
             selectionStatus: "未开启",
             spoofState: .idle, isFavoriteSelected: false, favoriteSaveDisabled: false,
             runtimeStatusText: "开发者模式", runtimeStatusTone: .ok, showsRoute: false,
@@ -163,11 +166,7 @@ final class HomeLayoutRenderingTests: XCTestCase {
             spotContent: { Color.clear },
             routePanel: { Color.clear },
             caption: { EmptyView() }, onHelp: {}, onToggleFavorite: {},
-            onOpenSettings: {}, onPrimaryTap: {}, onSecondaryTap: {},
-            isRouteActive: false,
-            onSelectMode: { isRoute in
-                selectedMode = isRoute
-            }
+            onOpenSettings: {}, onPrimaryTap: {}, onSecondaryTap: {}
         )
         let host = UIHostingController(rootView: card)
         let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 244))
@@ -178,8 +177,7 @@ final class HomeLayoutRenderingTests: XCTestCase {
         RunLoop.main.run(until: Date().addingTimeInterval(0.1))
         
         let texts = visibleTexts(in: host.view)
-        XCTAssertTrue(texts.contains("定点"), "卡片顶栏必须展示定点分段")
-        XCTAssertTrue(texts.contains("路线"), "卡片顶栏必须展示路线分段")
+        XCTAssertTrue(texts.contains("408-教室"), "卡片顶栏必须展示选中的地点名称")
     }
 
     private func cardHeight(showsRoute: Bool, availableHeight: CGFloat) -> CGFloat {

@@ -43,7 +43,7 @@ struct MapHomeBottomCard<SpotContent: View, RoutePanel: View, Caption: View>: Vi
             pullHandle
             locationHeader
             detailContent
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 .clipped()
             actionRow
         }
@@ -91,24 +91,18 @@ struct MapHomeBottomCard<SpotContent: View, RoutePanel: View, Caption: View>: Vi
         if typeSize.isAccessibilitySize {
             VStack(alignment: .leading, spacing: 6) {
                 HStack(alignment: .center, spacing: 6) {
-                    if onSelectMode != nil {
-                        modeSegmentControl
-                            .layoutPriority(3)
-                    } else {
-                        titleText
-                    }
+                    titleText
                     if !showsRoute {
                         statusDetailButton
+                    }
+                    if showsRoute, let onOpenSaved {
+                        savedRoutesButton(onOpenSaved)
                     }
                 }
                 HStack(spacing: 8) {
                     runtimeStatusButton
                     if showsSpotHelp { helpButton }
-                    if showsRoute {
-                        if let onOpenSaved {
-                            savedRoutesButton(onOpenSaved)
-                        }
-                    } else {
+                    if !showsRoute {
                         favoriteButton
                     }
                     Spacer(minLength: 0)
@@ -116,24 +110,18 @@ struct MapHomeBottomCard<SpotContent: View, RoutePanel: View, Caption: View>: Vi
             }
         } else {
             HStack(alignment: .center, spacing: 6) {
-                if onSelectMode != nil {
-                    modeSegmentControl
-                        .layoutPriority(3)
-                } else {
-                    titleText
-                }
+                titleText
                 if !showsRoute {
                     statusDetailButton
                 }
-                Spacer(minLength: 4)
+                if showsRoute, let onOpenSaved {
+                    savedRoutesButton(onOpenSaved)
+                }
+                Spacer(minLength: 8)
                 runtimeStatusButton
                     .layoutPriority(1)
                 if showsSpotHelp { helpButton }
-                if showsRoute {
-                    if let onOpenSaved {
-                        savedRoutesButton(onOpenSaved)
-                    }
-                } else {
+                if !showsRoute {
                     favoriteButton
                 }
             }
@@ -343,15 +331,18 @@ struct MapHomeBottomCard<SpotContent: View, RoutePanel: View, Caption: View>: Vi
     @ViewBuilder
     private var viaButton: some View {
         if let viaTitle {
-            Button(viaTitle, action: onViaTap)
-                .font(.subheadline.weight(.semibold))
-                .padding(.horizontal, 10)
-                .frame(maxWidth: .infinity, minHeight: 48)
-                .foregroundStyle(.primary)
-                .background(Color.secondary.opacity(0.12), in: RoundedRectangle(cornerRadius: AppRadius.control))
-                .buttonStyle(HomeInteractiveButtonStyle())
-                .disabled(viaDisabled)
-                .accessibilityIdentifier("home.via")
+            Button(action: onViaTap) {
+                Text(viaTitle)
+                    .font(.subheadline.weight(.semibold))
+                    .padding(.horizontal, 10)
+                    .frame(maxWidth: .infinity, minHeight: 48)
+                    .foregroundStyle(.primary)
+                    .background(Color.secondary.opacity(0.12), in: RoundedRectangle(cornerRadius: AppRadius.control))
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(HomeInteractiveButtonStyle())
+            .disabled(viaDisabled)
+            .accessibilityIdentifier("home.via")
         }
     }
 
@@ -372,6 +363,7 @@ struct MapHomeBottomCard<SpotContent: View, RoutePanel: View, Caption: View>: Vi
             .foregroundStyle(.white)
             .background(primaryColor.opacity(primaryDisabled ? 0.45 : 1),
                         in: RoundedRectangle(cornerRadius: AppRadius.control))
+            .contentShape(Rectangle())
         }
         .buttonStyle(HomeInteractiveButtonStyle())
         .disabled(primaryDisabled)
@@ -385,16 +377,19 @@ struct MapHomeBottomCard<SpotContent: View, RoutePanel: View, Caption: View>: Vi
     @ViewBuilder
     private var secondaryButton: some View {
         if let secondaryTitle {
-            Button(secondaryTitle, action: onSecondaryTap)
-                .font(.subheadline.weight(.semibold))
-                .padding(.horizontal, 14)
-                .frame(minHeight: 48)
-                .frame(maxWidth: (viaTitle != nil || typeSize.isAccessibilitySize) ? .infinity : nil)
-                .foregroundStyle(.primary)
-                .background(Color.secondary.opacity(0.12), in: RoundedRectangle(cornerRadius: AppRadius.control))
-                .buttonStyle(HomeInteractiveButtonStyle())
-                .disabled(secondaryDisabled)
-                .accessibilityIdentifier("home.secondary")
+            Button(action: onSecondaryTap) {
+                Text(secondaryTitle)
+                    .font(.subheadline.weight(.semibold))
+                    .padding(.horizontal, 14)
+                    .frame(minHeight: 48)
+                    .frame(maxWidth: (viaTitle != nil || typeSize.isAccessibilitySize) ? .infinity : nil)
+                    .foregroundStyle(.primary)
+                    .background(Color.secondary.opacity(0.12), in: RoundedRectangle(cornerRadius: AppRadius.control))
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(HomeInteractiveButtonStyle())
+            .disabled(secondaryDisabled)
+            .accessibilityIdentifier("home.secondary")
         }
     }
 

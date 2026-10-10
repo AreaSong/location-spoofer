@@ -242,6 +242,7 @@ struct PrimaryActionStyle: ButtonStyle {
 struct HomeInteractiveButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
+            .contentShape(Rectangle())
             .scaleEffect(configuration.isPressed ? 0.96 : 1.0)
             .opacity(configuration.isPressed ? 0.88 : 1.0)
             .animation(.spring(response: 0.24, dampingFraction: 0.72), value: configuration.isPressed)

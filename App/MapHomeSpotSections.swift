@@ -70,11 +70,13 @@ struct HomeSpotSwipeLanes<RecentBars: View, FavoriteBars: View>: View {
             Text(title)
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.secondary)
-                .fixedSize()
+                .frame(width: 32, alignment: .leading)
                 .accessibilityHidden(true)
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) { content() }
+                    .padding(.horizontal, 1)
             }
+            .clipped()
             .accessibilityElement(children: .contain)
             .accessibilityLabel(title)
             .accessibilityIdentifier(identifier)
