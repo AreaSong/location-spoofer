@@ -78,17 +78,45 @@ extension MapHomeView {
 
     var homeMapTools: some View {
         let isPhoto = mapStyle.style.isPhotographic
-        return VStack(spacing: AppLayout.mapToolStackSpacing) {
-            MapChromeIconButton(systemImage: "square.stack.3d.up", accessibilityLabel: "地图图层", isPhotographic: isPhoto) {
+        let barWidth: CGFloat = 42
+        let itemHeight: CGFloat = 40
+        return VStack(spacing: 0) {
+            Button {
                 homePopup = nil
                 Haptics.light()
                 mapStyle.cycle()
+            } label: {
+                Image(systemName: "square.stack.3d.up")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(.primary)
+                    .frame(width: barWidth, height: itemHeight)
+                    .contentShape(Rectangle())
             }
+            .buttonStyle(MapChromeIconStyle())
+            .accessibilityLabel("地图图层")
             .accessibilityValue(mapStyle.style.title)
-            MapChromeIconButton(systemImage: "map.fill", accessibilityLabel: "打开系统地图", isPhotographic: isPhoto) {
+
+            Divider()
+                .frame(width: 24)
+                .opacity(0.4)
+
+            Button {
                 homePopup = nil
                 if let url = URL(string: "maps://app") { UIApplication.shared.open(url) }
+            } label: {
+                Image(systemName: "map.fill")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(.primary)
+                    .frame(width: barWidth, height: itemHeight)
+                    .contentShape(Rectangle())
             }
+            .buttonStyle(MapChromeIconStyle())
+            .accessibilityLabel("打开系统地图")
+
+            Divider()
+                .frame(width: 24)
+                .opacity(0.4)
+
             Button {
                 homePopup = nil
                 Haptics.light()
@@ -97,27 +125,28 @@ extension MapHomeView {
                 Group {
                     if realtime.isRequesting {
                         ProgressView()
+                            .scaleEffect(0.8)
                     } else {
                         Image(systemName: "location.fill")
-                            .font(.system(size: 18, weight: .semibold))
+                            .font(.system(size: 16, weight: .semibold))
                     }
                 }
                 .foregroundStyle(.primary)
-                .frame(width: AppLayout.mapToolButtonSize, height: AppLayout.mapToolButtonSize)
-                .background(isPhoto ? AnyShapeStyle(.ultraThickMaterial) : AnyShapeStyle(.regularMaterial), in: Circle())
-                .overlay(
-                    Circle()
-                        .stroke(isPhoto ? Color.white.opacity(0.24) : Color.primary.opacity(0.08), lineWidth: isPhoto ? 1.0 : 0.5)
-                )
-                .shadow(color: .black.opacity(isPhoto ? 0.28 : 0.14), radius: isPhoto ? 11 : 9, y: 4)
-                .contentShape(Circle())
+                .frame(width: barWidth, height: itemHeight)
+                .contentShape(Rectangle())
             }
             .buttonStyle(MapChromeIconStyle())
             .accessibilityLabel("回到当前位置")
             .disabled(realtimeButtonTask != nil || realtimeRequestTask != nil || realtime.isRequesting)
         }
+        .frame(width: barWidth)
+        .background(isPhoto ? AnyShapeStyle(.ultraThickMaterial) : AnyShapeStyle(.regularMaterial), in: RoundedRectangle(cornerRadius: barWidth / 2, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: barWidth / 2, style: .continuous)
+                .stroke(isPhoto ? Color.white.opacity(0.24) : Color.primary.opacity(0.08), lineWidth: isPhoto ? 1.0 : 0.5)
+        )
+        .shadow(color: .black.opacity(isPhoto ? 0.28 : 0.12), radius: isPhoto ? 10 : 8, y: 3)
         .fixedSize()
-        .padding(.bottom, 12)
         .accessibilityIdentifier("home.mapTools")
     }
 

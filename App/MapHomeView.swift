@@ -734,22 +734,16 @@ struct MapHomeView: View {
     }
 
     func bottomControls(availableHeight: CGFloat) -> some View {
-        let clusterHeight = min(availableHeight, AppLayout.homeFunctionClusterHeight)
-        let cardHeight = max(140, clusterHeight - AppLayout.homeModeBarHeight - AppLayout.homeFunctionStackSpacing)
-        return VStack(alignment: .trailing, spacing: 0) {
+        let cardHeight = min(availableHeight, AppLayout.homeFunctionCardHeight)
+        return VStack(alignment: .trailing, spacing: 10) {
             homeMapTools
-            VStack(spacing: AppLayout.homeFunctionStackSpacing) {
-                homeModeAndEntries
-                    .frame(height: AppLayout.homeModeBarHeight)
-                    .clipped()
-                homeStableActionCard(availableHeight: cardHeight)
-            }
-            .frame(maxWidth: .infinity)
-            .frame(height: clusterHeight, alignment: .top)
-            .accessibilityIdentifier("home.functionCluster")
+                .padding(.trailing, 10)
+            homeStableActionCard(availableHeight: cardHeight)
+                .frame(maxWidth: .infinity)
         }
         .frame(maxWidth: .infinity)
         .fixedSize(horizontal: false, vertical: true)
+        .accessibilityIdentifier("home.functionCluster")
     }
 
     func homeStableActionCard(availableHeight: CGFloat) -> some View {
@@ -808,7 +802,21 @@ struct MapHomeView: View {
             viaTitle: homeViaActionTitle,
             viaDisabled: homeViaActionDisabled,
             onViaTap: { homePopup = nil; handleHomeViaTap() },
-            onOpenSaved: openSavedRoutes
+            onOpenSaved: openSavedRoutes,
+            isRouteActive: route.phase == .playing || route.phase == .paused,
+            onSelectMode: { isRoute in
+                homePopup = nil
+                if isRoute {
+                    enterRoute()
+                    withAnimation(.spring(response: 0.28, dampingFraction: 0.8)) {
+                        showsRoutePanel = true
+                    }
+                } else {
+                    withAnimation(.spring(response: 0.28, dampingFraction: 0.8)) {
+                        showsRoutePanel = false
+                    }
+                }
+            }
         )
     }
 

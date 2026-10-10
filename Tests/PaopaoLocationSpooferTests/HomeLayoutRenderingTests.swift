@@ -143,10 +143,43 @@ final class HomeLayoutRenderingTests: XCTestCase {
         let budget = AppLayout.homeFunctionCardHeight
         XCTAssertEqual(cardHeight(showsRoute: false, availableHeight: budget), budget, accuracy: 2)
         XCTAssertEqual(cardHeight(showsRoute: true, availableHeight: budget), budget, accuracy: 2)
-        XCTAssertEqual(
-            AppLayout.homeFunctionClusterHeight,
-            AppLayout.homeModeBarHeight + AppLayout.homeFunctionStackSpacing + AppLayout.homeFunctionCardHeight
+    }
+
+    func testModeSegmentControlIntegration() {
+        var selectedMode: Bool? = nil
+        let route = RoutePlaybackController()
+        let card = MapHomeBottomCard(
+            displayName: "当前选点",
+            selectionStatus: "未开启",
+            spoofState: .idle, isFavoriteSelected: false, favoriteSaveDisabled: false,
+            runtimeStatusText: "开发者模式", runtimeStatusTone: .ok, showsRoute: false,
+            showsRouteProgress: false,
+            primaryTitle: "连接隧道",
+            primaryAccessibilityLabel: "连接隧道",
+            primarySystemImage: nil, primaryColor: .blue, primaryDisabled: false,
+            secondaryTitle: nil as String?, secondaryDisabled: false, showsSpotHelp: false,
+            availableHeight: 244,
+            playbackClock: route.clock,
+            spotContent: { Color.clear },
+            routePanel: { Color.clear },
+            caption: { EmptyView() }, onHelp: {}, onToggleFavorite: {},
+            onOpenSettings: {}, onPrimaryTap: {}, onSecondaryTap: {},
+            isRouteActive: false,
+            onSelectMode: { isRoute in
+                selectedMode = isRoute
+            }
         )
+        let host = UIHostingController(rootView: card)
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 244))
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        host.view.frame = window.bounds
+        host.view.layoutIfNeeded()
+        RunLoop.main.run(until: Date().addingTimeInterval(0.1))
+        
+        let texts = visibleTexts(in: host.view)
+        XCTAssertTrue(texts.contains("定点"), "卡片顶栏必须展示定点分段")
+        XCTAssertTrue(texts.contains("路线"), "卡片顶栏必须展示路线分段")
     }
 
     private func cardHeight(showsRoute: Bool, availableHeight: CGFloat) -> CGFloat {

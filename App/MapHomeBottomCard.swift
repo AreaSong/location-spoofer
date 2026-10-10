@@ -33,6 +33,8 @@ struct MapHomeBottomCard<SpotContent: View, RoutePanel: View, Caption: View>: Vi
     var viaDisabled: Bool = false
     var onViaTap: () -> Void = {}
     var onOpenSaved: (() -> Void)? = nil
+    var isRouteActive: Bool = false
+    var onSelectMode: ((Bool) -> Void)? = nil
     @Environment(\.dynamicTypeSize) private var typeSize
     @State private var showsStatusDetail = false
 
@@ -89,32 +91,107 @@ struct MapHomeBottomCard<SpotContent: View, RoutePanel: View, Caption: View>: Vi
         if typeSize.isAccessibilitySize {
             VStack(alignment: .leading, spacing: 6) {
                 HStack(alignment: .center, spacing: 6) {
-                    titleText
-                    statusDetailButton
-                    if showsRoute, let onOpenSaved {
-                        savedRoutesButton(onOpenSaved)
+                    if onSelectMode != nil {
+                        modeSegmentControl
+                            .layoutPriority(3)
+                    } else {
+                        titleText
+                    }
+                    if !showsRoute {
+                        statusDetailButton
                     }
                 }
                 HStack(spacing: 8) {
                     runtimeStatusButton
                     if showsSpotHelp { helpButton }
-                    if !showsRoute { favoriteButton }
+                    if showsRoute {
+                        if let onOpenSaved {
+                            savedRoutesButton(onOpenSaved)
+                        }
+                    } else {
+                        favoriteButton
+                    }
                     Spacer(minLength: 0)
                 }
             }
         } else {
             HStack(alignment: .center, spacing: 6) {
-                titleText
-                statusDetailButton
-                if showsRoute, let onOpenSaved {
-                    savedRoutesButton(onOpenSaved)
+                if onSelectMode != nil {
+                    modeSegmentControl
+                        .layoutPriority(3)
+                } else {
+                    titleText
                 }
-                Spacer(minLength: 8)
+                if !showsRoute {
+                    statusDetailButton
+                }
+                Spacer(minLength: 4)
                 runtimeStatusButton
+                    .layoutPriority(1)
                 if showsSpotHelp { helpButton }
-                if !showsRoute { favoriteButton }
+                if showsRoute {
+                    if let onOpenSaved {
+                        savedRoutesButton(onOpenSaved)
+                    }
+                } else {
+                    favoriteButton
+                }
             }
         }
+    }
+
+    private var modeSegmentControl: some View {
+        HStack(spacing: 2) {
+            modeSegmentItem(title: "定点", icon: "mappin.and.ellipse", isSelected: !showsRoute) {
+                onSelectMode?(false)
+            }
+            modeSegmentItem(title: "路线", icon: "arrow.triangle.swap", isSelected: showsRoute, showBadge: isRouteActive) {
+                onSelectMode?(true)
+            }
+        }
+        .padding(2.5)
+        .background(Color.secondary.opacity(0.12), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .frame(height: 35)
+    }
+
+    private func modeSegmentItem(
+        title: String,
+        icon: String,
+        isSelected: Bool,
+        showBadge: Bool = false,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button {
+            Haptics.selection()
+            action()
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: icon)
+                    .font(.system(size: 13, weight: .semibold))
+                Text(title)
+                    .font(.subheadline.weight(isSelected ? .semibold : .medium))
+                    .fixedSize()
+                if showBadge {
+                    Circle()
+                        .fill(Color.green)
+                        .frame(width: 6, height: 6)
+                }
+            }
+            .padding(.horizontal, 10)
+            .frame(minWidth: 70, minHeight: 30)
+            .foregroundStyle(isSelected ? Color.primary : Color.secondary)
+            .background {
+                if isSelected {
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(Color(uiColor: .systemBackground))
+                        .shadow(color: .black.opacity(0.14), radius: 3, y: 1.5)
+                }
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(title)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 
     private func savedRoutesButton(_ action: @escaping () -> Void) -> some View {
@@ -127,9 +204,9 @@ struct MapHomeBottomCard<SpotContent: View, RoutePanel: View, Caption: View>: Vi
             }
             .foregroundStyle(Color.accentColor)
             .padding(.horizontal, 8)
-            .padding(.vertical, 4)
+            .padding(.vertical, 5)
             .background(Color.accentColor.opacity(0.12), in: Capsule())
-            .frame(minHeight: 32)
+            .frame(minHeight: 30)
             .contentShape(Rectangle())
         }
         .buttonStyle(HomeInteractiveButtonStyle())
@@ -167,9 +244,9 @@ struct MapHomeBottomCard<SpotContent: View, RoutePanel: View, Caption: View>: Vi
             showsStatusDetail.toggle()
         } label: {
             Image(systemName: showsStatusDetail ? "info.circle.fill" : "info.circle")
-                .font(.system(size: 16, weight: .medium))
+                .font(.system(size: 15, weight: .medium))
                 .foregroundStyle(.secondary)
-                .frame(width: 32, height: 44)
+                .frame(width: 26, height: 44)
                 .contentShape(Rectangle())
         }
         .buttonStyle(HomeInteractiveButtonStyle())
@@ -231,9 +308,9 @@ struct MapHomeBottomCard<SpotContent: View, RoutePanel: View, Caption: View>: Vi
     private var favoriteButton: some View {
         Button(action: onToggleFavorite) {
             Image(systemName: isFavoriteSelected ? "star.fill" : "star")
-                .font(.system(size: 19, weight: .medium))
+                .font(.system(size: 18, weight: .medium))
                 .foregroundStyle(isFavoriteSelected ? Color.orange : Color.secondary)
-                .frame(width: 44, height: 44)
+                .frame(width: 36, height: 44)
         }
         .buttonStyle(HomeInteractiveButtonStyle())
         .disabled(favoriteSaveDisabled)

@@ -306,7 +306,7 @@ struct RouteParameterControls: View {
 
     private var headerRow: some View {
         HStack(spacing: 5) {
-            Image(systemName: "slider.horizontal.2")
+            Image(systemName: "slider.horizontal.3")
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(Color.accentColor)
             Text("路线参数")

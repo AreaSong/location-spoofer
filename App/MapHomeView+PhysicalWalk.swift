@@ -355,43 +355,30 @@ struct PhysicalWalkHeadingControls: View {
     }
 }
 
+private enum WalkSwitchLayout {
+    static let scale: CGFloat = 0.7
+    static let width: CGFloat = 44
+    static let height: CGFloat = 22
+}
+
 private struct WalkCompactToggle: View {
     let title: String
     @Binding var isOn: Bool
     let accessibilityLabel: String
 
     var body: some View {
-        Button {
-            isOn.toggle()
-        } label: {
-            HStack(spacing: 4) {
-                Text(title)
-                    .font(.caption)
-                    .lineLimit(1)
-                    .fixedSize()
-                ZStack(alignment: isOn ? .trailing : .leading) {
-                    Capsule()
-                        .fill(isOn ? Color.accentColor : Color.secondary.opacity(0.24))
-                        .frame(width: 34, height: 18)
-                    Circle()
-                        .fill(Color.white)
-                        .frame(width: 14, height: 14)
-                        .padding(2)
-                        .shadow(color: .black.opacity(0.18), radius: 2, y: 1)
-                }
-                .animation(.spring(response: 0.24, dampingFraction: 0.72), value: isOn)
-            }
-            .contentShape(Rectangle())
+        HStack(spacing: 4) {
+            Text(title)
+                .font(.caption)
+                .lineLimit(1)
+                .fixedSize()
+            Toggle("", isOn: $isOn)
+                .labelsHidden()
+                .scaleEffect(WalkSwitchLayout.scale)
+                .frame(width: WalkSwitchLayout.width, height: WalkSwitchLayout.height)
+                .accessibilityLabel(accessibilityLabel)
         }
-        .buttonStyle(.plain)
-        .accessibilityLabel(accessibilityLabel)
-        .accessibilityValue(isOn ? "开启" : "关闭")
     }
-}
-
-private enum WalkSwitchLayout {
-    static let scale: CGFloat = 0.7
-    static let _used = WalkSwitchLayout.scale
 }
 
 private enum WalkBarWidthKey: PreferenceKey {
