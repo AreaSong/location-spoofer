@@ -640,24 +640,23 @@ struct RouteCardControls: View {
                 .accessibilityLabel("路线速度")
             }
 
-            // 点击药丸可调起数字输入弹窗
+            // 点击药丸可调起数字输入弹窗（固定 82x24 尺寸，彻底杜绝变阻器拖动时因文字长短引起的布局呼吸与振荡波动）
             Button {
                 Haptics.selection()
                 customSpeedInputText = String(format: "%.0f", route.speedKilometersPerHour)
                 showingCustomSpeedAlert = true
             } label: {
-                HStack(spacing: 3) {
+                HStack(spacing: 2) {
                     Text(formattedSpeedDisplay(route.speedKilometersPerHour))
                         .font(.caption2.monospacedDigit().weight(.semibold))
+                        .lineLimit(1)
                     Image(systemName: "pencil")
                         .font(.system(size: 8, weight: .bold))
-                        .opacity(0.65)
+                        .opacity(0.60)
                 }
                 .foregroundStyle(Color.primary)
-                .padding(.horizontal, 6)
-                .padding(.vertical, 3)
+                .frame(width: 82, height: 24)
                 .background(Color.secondary.opacity(0.12), in: Capsule())
-                .frame(minWidth: 72, alignment: .trailing)
             }
             .buttonStyle(.plain)
             .accessibilityLabel("当前时速：\(formattedSpeedDisplay(route.speedKilometersPerHour))，点击输入自定义时速")
@@ -777,10 +776,8 @@ struct RouteCardControls: View {
                 Text(route.offsetMeters < 0.5 ? "0m" : "±\(Int(route.offsetMeters.rounded()))m")
                     .font(.caption2.monospacedDigit().weight(.semibold))
                     .foregroundStyle(route.offsetMeters > 0 ? Color.accentColor : Color.primary)
-                    .padding(.horizontal, 5)
-                    .padding(.vertical, 2)
+                    .frame(width: 46, height: 22)
                     .background(Color.secondary.opacity(0.12), in: Capsule())
-                    .frame(minWidth: 40, alignment: .trailing)
             }
         }
         .frame(minHeight: 24)
@@ -796,7 +793,7 @@ struct RouteCardControls: View {
 
     private func speedStep(for mode: RouteTravelMode) -> Double {
         switch mode {
-        case .walk: return 0.5
+        case .walk: return 1.0
         case .bike: return 1.0
         case .drive: return 5.0
         case .racing: return 10.0
@@ -806,7 +803,14 @@ struct RouteCardControls: View {
     private var speedBinding: Binding<Double> {
         Binding(
             get: { route.speedKilometersPerHour },
-            set: { route.setSpeedKilometersPerHour($0) }
+            set: { newValue in
+                let step = speedStep(for: route.travelMode)
+                let rounded = (newValue / step).rounded() * step
+                let clamped = route.travelMode.clampedSpeed(rounded)
+                if abs(clamped - route.speedKilometersPerHour) >= (step * 0.4) {
+                    route.setSpeedKilometersPerHour(clamped)
+                }
+            }
         )
     }
 
