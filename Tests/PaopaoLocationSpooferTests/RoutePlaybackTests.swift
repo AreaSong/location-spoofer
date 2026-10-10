@@ -1,4 +1,5 @@
 import Combine
+import SwiftUI
 import XCTest
 @testable import PaopaoLocationSpoofer
 
@@ -117,6 +118,12 @@ final class RoutePlaybackTests: XCTestCase {
         XCTAssertEqual(RouteTravelMode.drive.displayName, "驾车")
         XCTAssertEqual(RouteTravelMode.drive.clampedSpeed(120), 80, accuracy: 0.01)
         XCTAssertEqual(RouteTravelMode.walk.clampedSpeed(50), 40, accuracy: 0.01)
+        XCTAssertEqual(RouteTravelMode.racing.displayName, "赛车")
+        XCTAssertEqual(RouteTravelMode.racing.clampedSpeed(100), 100, accuracy: 0.01)
+        XCTAssertEqual(RouteTravelMode.racing.clampedSpeed(20000), 10000, accuracy: 0.01)
+        XCTAssertEqual(RouteTravelMode.absoluteMaxKilometersPerHour, 10000, accuracy: 0.01)
+        XCTAssertEqual(RouteTravelMode.mode(forKilometersPerHour: 100), .racing)
+        XCTAssertEqual(RouteTravelMode.racing.speedPresets.map(\.kilometersPerHour), [100, 300, 1000, 10000])
     }
 
     func testCustomSpeedChangesDuration() {
@@ -264,6 +271,63 @@ final class RoutePlaybackControllerTests: XCTestCase {
         XCTAssertEqual(route.speedKilometersPerHour, 5, accuracy: 0.01)
         route.setSpeedKilometersPerHour(50)
         XCTAssertEqual(route.speedKilometersPerHour, 40, accuracy: 0.01)
+    }
+
+    func testRacingModeIntervalAndHardCeiling() {
+        let route = makeRoute()
+        // 1. 切换到赛车模式
+        route.applyTravelMode(.racing)
+        XCTAssertEqual(route.travelMode, .racing)
+        XCTAssertEqual(route.speedKilometersPerHour, 100, accuracy: 0.01)
+
+        // 2. 赛车模式预设档位
+        let presets = route.travelMode.speedPresets
+        XCTAssertEqual(presets.map(\.kilometersPerHour), [100, 300, 1000, 10000])
+
+        // 3. 点击切换各个预设档位
+        route.setSpeedKilometersPerHour(300)
+        XCTAssertEqual(route.speedKilometersPerHour, 300, accuracy: 0.01)
+
+        route.setSpeedKilometersPerHour(1000)
+        XCTAssertEqual(route.speedKilometersPerHour, 1000, accuracy: 0.01)
+
+        route.setSpeedKilometersPerHour(10000)
+        XCTAssertEqual(route.speedKilometersPerHour, 10000, accuracy: 0.01)
+
+        // 4. 超限测试：绝不能超过 10,000 km/h
+        route.setSpeedKilometersPerHour(15000)
+        XCTAssertEqual(route.speedKilometersPerHour, 10000, accuracy: 0.01)
+
+        // 5. 自定义输入测试：输入 8888 保持赛车模式，输入 12000 封顶 10000
+        route.applySpeedWithAutoMode(8888)
+        XCTAssertEqual(route.travelMode, .racing)
+        XCTAssertEqual(route.speedKilometersPerHour, 8888, accuracy: 0.01)
+
+        route.applySpeedWithAutoMode(99999)
+        XCTAssertEqual(route.speedKilometersPerHour, 10000, accuracy: 0.01)
+
+        // 6. 从低速模式输入 500 自动提升为赛车模式
+        route.applyTravelMode(.walk)
+        XCTAssertEqual(route.travelMode, .walk)
+        route.applySpeedWithAutoMode(500)
+        XCTAssertEqual(route.travelMode, .racing)
+        XCTAssertEqual(route.speedKilometersPerHour, 500, accuracy: 0.01)
+    }
+
+    func testRouteCardControlsViewRendering() {
+        let route = makeRoute()
+        route.applyTravelMode(.racing)
+        let controls = RouteCardControls(route: route, onSave: {})
+        let host = UIHostingController(rootView: controls)
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 112))
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        host.view.frame = window.bounds
+        host.view.layoutIfNeeded()
+
+        XCTAssertEqual(route.travelMode, .racing)
+        XCTAssertEqual(route.speedKilometersPerHour, 100, accuracy: 0.01)
+        XCTAssertEqual(route.travelMode.maximumKilometersPerHour, 10000)
     }
 
     func testCanPlayRequiresMinimumDistance() {

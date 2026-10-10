@@ -5,6 +5,7 @@ enum RouteTravelMode: String, CaseIterable, Identifiable, Codable {
     case walk
     case bike
     case drive
+    case racing
 
     var id: String { rawValue }
 
@@ -13,6 +14,7 @@ enum RouteTravelMode: String, CaseIterable, Identifiable, Codable {
         case .walk: return 5
         case .bike: return 15
         case .drive: return 40
+        case .racing: return 100
         }
     }
 
@@ -23,6 +25,7 @@ enum RouteTravelMode: String, CaseIterable, Identifiable, Codable {
         case .walk: return "步行"
         case .bike: return "骑行"
         case .drive: return "驾车"
+        case .racing: return "赛车"
         }
     }
 
@@ -31,16 +34,30 @@ enum RouteTravelMode: String, CaseIterable, Identifiable, Codable {
         case .walk: return "figure.walk"
         case .bike: return "bicycle"
         case .drive: return "car.fill"
+        case .racing: return "flag.checkered"
+        }
+    }
+
+    var minimumKilometersPerHour: Double {
+        switch self {
+        case .walk: return 1
+        case .bike: return 5
+        case .drive: return 20
+        case .racing: return 10
         }
     }
 
     var maximumKilometersPerHour: Double {
         switch self {
-        case .walk: return 12
-        case .bike: return 35
-        case .drive: return 120
+        case .walk: return 40
+        case .bike: return 40
+        case .drive: return 80
+        case .racing: return Self.absoluteMaxKilometersPerHour
         }
     }
+
+    /// 全局时速硬性上限：10000 km/h，不能再往上
+    static let absoluteMaxKilometersPerHour: Double = 10000
 
     var speedPresets: [RouteSpeedPreset] {
         switch self {
@@ -52,21 +69,37 @@ enum RouteTravelMode: String, CaseIterable, Identifiable, Codable {
             ]
         case .bike:
             return [
-                RouteSpeedPreset(title: "10", kilometersPerHour: 10),
+                RouteSpeedPreset(title: "8", kilometersPerHour: 8),
                 RouteSpeedPreset(title: "15", kilometersPerHour: 15),
-                RouteSpeedPreset(title: "25", kilometersPerHour: 25)
+                RouteSpeedPreset(title: "20", kilometersPerHour: 20)
             ]
         case .drive:
             return [
                 RouteSpeedPreset(title: "30", kilometersPerHour: 30),
-                RouteSpeedPreset(title: "50", kilometersPerHour: 50),
+                RouteSpeedPreset(title: "40", kilometersPerHour: 40),
+                RouteSpeedPreset(title: "60", kilometersPerHour: 60),
                 RouteSpeedPreset(title: "80", kilometersPerHour: 80)
+            ]
+        case .racing:
+            return [
+                RouteSpeedPreset(title: "100", kilometersPerHour: 100),
+                RouteSpeedPreset(title: "300", kilometersPerHour: 300),
+                RouteSpeedPreset(title: "1000", kilometersPerHour: 1000),
+                RouteSpeedPreset(title: "10000", kilometersPerHour: 10000)
             ]
         }
     }
 
     func clampedSpeed(_ value: Double) -> Double {
-        min(maximumKilometersPerHour, max(1, value))
+        min(min(maximumKilometersPerHour, Self.absoluteMaxKilometersPerHour), max(minimumKilometersPerHour, value))
+    }
+
+    /// 根据时速自动推导并匹配所属出行方式
+    static func mode(forKilometersPerHour speed: Double) -> RouteTravelMode {
+        if speed <= 8 { return .walk }
+        if speed <= 20 { return .bike }
+        if speed <= 80 { return .drive }
+        return .racing
     }
 }
 

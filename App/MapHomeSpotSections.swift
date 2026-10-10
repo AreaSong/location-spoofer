@@ -165,11 +165,7 @@ struct HomeRouteSavedList: View {
     }
 
     private func travelIcon(for mode: RouteTravelMode) -> String {
-        switch mode {
-        case .walk: return "figure.walk"
-        case .bike: return "bicycle"
-        case .drive: return "car.fill"
-        }
+        mode.symbolName
     }
 
     private func savedRow(_ route: SavedRoute) -> some View {

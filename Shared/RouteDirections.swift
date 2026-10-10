@@ -116,7 +116,7 @@ extension RouteTravelMode {
         switch self {
         case .walk: return [.walking, .automobile]
         case .bike: return [.automobile, .walking]
-        case .drive: return [.automobile]
+        case .drive, .racing: return [.automobile]
         }
     }
 }

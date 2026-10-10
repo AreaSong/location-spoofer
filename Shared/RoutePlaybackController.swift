@@ -587,6 +587,31 @@ final class RoutePlaybackController: ObservableObject {
         }
     }
 
+    func applySpeedWithAutoMode(_ value: Double) {
+        let targetSpeed = min(max(1, value), RouteTravelMode.absoluteMaxKilometersPerHour)
+        let nextMode: RouteTravelMode
+        if targetSpeed >= travelMode.minimumKilometersPerHour && targetSpeed <= travelMode.maximumKilometersPerHour {
+            nextMode = travelMode
+        } else {
+            nextMode = RouteTravelMode.mode(forKilometersPerHour: targetSpeed)
+        }
+        if nextMode != travelMode && !locksPathEdits {
+            travelMode = nextMode
+            Task { await rebuildPath() }
+        }
+        let clamped = travelMode.clampedSpeed(targetSpeed)
+        if phase == .playing || phase == .paused {
+            rebaseElapsed(toSpeedKilometersPerHour: clamped)
+        }
+        speedKilometersPerHour = clamped
+        persistPreferences()
+        if phase == .playing || phase == .paused {
+            statusMessage = playbackStatusMessage()
+        } else {
+            refreshReadyMessage()
+        }
+    }
+
     private func rebaseElapsed(toSpeedKilometersPerHour kmh: Double) {
         guard let path, path.totalMeters > 0 else { return }
         elapsed = RoutePlayback.elapsed(
