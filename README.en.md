@@ -16,7 +16,7 @@ responses in a controlled test environment.
 [![iOS 15+](https://img.shields.io/badge/iOS-15%2B-111111?logo=apple)](project.yml)
 [![Swift 5.9](https://img.shields.io/badge/Swift-5.9-F05138)](project.yml)
 [![Go 1.23+](https://img.shields.io/badge/Go-1.23%2B-00ADD8?logo=go)](Core/go.mod)
-[![Version](https://img.shields.io/badge/version-v1.1.1.3-2563EB)](docs/CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-v1.2.0.0-2563EB)](docs/CHANGELOG.md)
 
 [Features](#feature-overview) ·
 [How It Works](#how-it-works) ·
@@ -60,13 +60,13 @@ collection services.
   - Uses MapKit for the map and system blue dot;
   - Supports place search, pasted map links, typed latitude/longitude, map taps, center-point dragging, and zooming;
   - A pending search can be cleared or replaced. Editing cancels the old query and hides its results without starting a new network request. Results scroll; tap “完成” to finish editing and restore map controls.
-  - The control beside the coordinates cycles Standard, Satellite, and Hybrid map layers;
-  - Search, Logs, and Settings share one row, with a compact signing countdown inside Settings. Below Search, coordinates and a shared Spot/Route toolbar open bounded popups for Recents/Favorites or Route Points/Saved Routes. Tap coordinates to switch and copy coordinate systems. The bottom card keeps status, parameter summaries, and actions; route parameters and physical walking open on demand. Both regions scroll within their height limits to keep the map center clear. On small screens or at larger text sizes, the upper popup temporarily replaces the toolbar and restores it on dismissal;
+  - Map tools above the right of the bottom card cycle Standard, Satellite, and Hybrid layers and can return to the current location;
+  - Search, Logs, and Settings share one row, with a compact signing countdown inside Settings. Below Search, tap coordinates to switch and copy GCJ-02 / WGS-84 without a system menu. In Spot mode, 功能 beside the coordinates opens the physical-walking popover; that control is hidden in Route mode. The bottom-card title switches Spot / Route, with a green badge on Route while playback is active. Spot shows horizontally scrolling Recents and Favorites; Route shows travel mode, speed, repeat, and drift, and opens saved routes from 已存. Zoom sits under the coordinate row and can be tapped or held to repeat;
   - Switching to a new spot keeps Stop available. Running or paused routes keep End Route visible; exiting still requires confirmation and leaves the simulated location at the current point;
   - Keeps the latest 10 discrete selections (tap, search, favorite, or realtime fix). Panning the map updates the current
     center only and does not write history;
-  - Favorites support a searchable list, sort by time or name, and clipboard/file backup. Matching WGS-84 coordinates
-    update the name; new places are appended. Saved places also appear as star pins on the map and can be selected there.
+  - Favorites support a searchable list, sort by time, name, or commute-aware Smart Hours, and clipboard/file backup. Matching WGS-84 coordinates
+    update the name; new places are appended. Saved places also appear as star pins on the map and can be selected there. Smart Hours promotes work-like names in the morning and home-like names in the evening; home chips show the matching period icon. The default remains sort by time.
   - Favorite accuracy accepts integer meters from 5 through 100. A backup containing invalid accuracy is rejected as a whole without changing existing favorites. Invalid historical values are left untouched; applying them reports a failure and preserves the last successful location.
   - Favorite imports read and prepare in the background, with progress and cancellation. Leaving Settings cancels uncommitted work; a synchronous merge already in progress is not rolled back. If file reading is still pending after cancellation, wait for it to finish before importing again.
 
@@ -76,11 +76,12 @@ collection services.
   - App Mode, Third-party Proxy Mode, and Developer Tunnel Mode can offset a spot before writing so a test point is not
     always identical. Reported accuracy applies to App Mode and Third-party Proxy Mode only;
   - Motion simulation is available only in App Mode;
-  - Optional physical walking: off by default and toggled in the Spot card’s “真实走动” popup; from launch or after spot spoofing, a blue-dot puck shows the current location and heading and uses calibrated true-north heading by default; the fan projects with map rotation and pitch. Movement waits for a valid heading and skips step increments received while heading is unavailable. Slowly rotate the phone and resume walking once heading returns. Pedometer callbacks are cumulative batches; delayed batches still use the heading at receipt. Custom heading (“初始指向”) is off by default; turn it on to set the initial heading with the slider and ±15° and zero the phone attitude, then rotating the phone turns the fan. The step-fallback stride is adjustable. Last custom values persist but are not applied on a successful connect. With walking on, steps move along the live fan; it is mutually exclusive with automatic route playback;
+  - Optional Smooth Cruise (off by default): while a spot is already active, switching to a new point 50 m–500 km away eases over 1.4 s; starting a route still jumps to the route start. Optional cornering slowdown and speed jitter during route playback is also off by default;
+  - Optional physical walking: off by default and toggled in the Spot-mode 功能 popover; from launch or after spot spoofing, a blue-dot puck shows the current location and heading and uses calibrated true-north heading by default; the fan projects with map rotation and pitch. Movement waits for a valid heading and skips step increments received while heading is unavailable. Slowly rotate the phone and resume walking once heading returns. Pedometer callbacks are cumulative batches; delayed batches still use the heading at receipt. Custom heading (“初始指向”) is off by default; turn it on to set the initial heading with the slider and ±15° and zero the phone attitude, then rotating the phone turns the fan. The step-fallback stride is adjustable. Last custom values persist but are not applied on a successful connect. With walking on, steps move along the live fan; it is mutually exclusive with automatic route playback;
   - Does not require changes to the target app.
 
 - **Route playback**
-  - Drop a start pin, up to ten via pins, and an end pin; the path follows roads for walking, cycling, or driving;
+  - Drop a start pin, up to ten via pins, and an end pin; the path follows roads for walking, cycling, driving, or racing. Racing defaults to 100 km/h with a 10,000 km/h ceiling;
   - Configure speed, offset distance, and once / round-trip / loop repeat;
   - Routes can be saved, overwritten, and reversed, up to 50 entries. GPX / KML tracks can be imported and played back
     along the recorded path without re-routing. Unzip KMZ to KML first;

@@ -237,17 +237,19 @@ extension MapHomeView {
     }
 
     private func shouldPerformSmoothCruise(to target: FavoriteLocation, isRouteActivation: Bool) -> Bool {
-        guard SmoothCruiseStore.shared.isEnabled,
-              spoofState == .active,
-              !isRouteActivation,
-              let fromLat = session.writtenLatitude,
-              let fromLon = session.writtenLongitude else {
-            return false
+        let from: CLLocationCoordinate2D?
+        if let fromLat = session.writtenLatitude, let fromLon = session.writtenLongitude {
+            from = CLLocationCoordinate2D(latitude: fromLat, longitude: fromLon)
+        } else {
+            from = nil
         }
-        let from = CLLocation(latitude: fromLat, longitude: fromLon)
-        let to = CLLocation(latitude: target.coordinatePair.wgs84.latitude, longitude: target.coordinatePair.wgs84.longitude)
-        let distance = from.distance(from: to)
-        return distance >= 50 && distance <= 500_000
+        return SmoothCruisePolicy.shouldInterpolate(
+            enabled: SmoothCruiseStore.shared.isEnabled,
+            spoofActive: spoofState == .active,
+            isRouteActivation: isRouteActivation,
+            from: from,
+            to: target.coordinatePair.wgs84.coordinate
+        )
     }
 
     private func performSmoothCruiseTeleport(to target: FavoriteLocation) {
@@ -262,7 +264,7 @@ extension MapHomeView {
 
         Task { @MainActor in
             let steps = 12
-            let durationSeconds: Double = 1.4
+            let durationSeconds = SmoothCruisePolicy.durationSeconds
             let stepInterval = UInt64((durationSeconds / Double(steps)) * 1_000_000_000)
 
             for step in 1..<steps {

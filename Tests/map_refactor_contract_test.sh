@@ -262,9 +262,9 @@ grep -q 'Toggle("随机扰动"' "$SETTINGS_VIEW" || fail "random perturbation mu
 grep -q '定位精度' "$SETTINGS_VIEW" || fail "settings must expose a configurable location accuracy"
 grep -q 'LocationAccuracyStore.shared.meters' "$MAP_HOME" || fail "map apply must stamp the accuracy store onto the current selection"
 ! grep -q 'accuracy: 25' "$MAP_HOME" || fail "map apply must not hardcode accuracy 25"
-grep -q 'effectiveRadiusMeters' "$ROOT/Shared/AppGroup.swift" || fail "disabled random radius must write a zero offset"
+grep -q 'effectiveRadiusMeters' "$ROOT/Shared/LocationCoordinateOffset.swift" || fail "disabled random radius must write a zero offset"
 grep -q '地图坐标标准' "$SETTINGS_VIEW" || fail "settings must show the current map coordinate system"
-grep -q '检测未命中白名单，当前按国内标准显示' "$SETTINGS_VIEW" || fail "settings must explain the GCJ-02 fallback"
+grep -q '当前位于国内服务区，已自动按国内标准对齐显示' "$SETTINGS_VIEW" || fail "settings must explain the GCJ-02 fallback"
 test -f "$ROOT/Shared/CoordinateTextParser.swift" || fail "coordinate search must parse typed latitude/longitude"
 test -f "$ROOT/Shared/FavoriteTransfer.swift" || fail "favorite backup must use a dedicated transfer format"
 grep -q 'paopao-favorites' "$ROOT/Shared/FavoriteTransfer.swift" || fail "favorite backup JSON must use the paopao-favorites format"
@@ -310,7 +310,7 @@ fi
 if awk '/var homeModeAndEntries/,/private func homeModeButton/' "$ROOT/App/MapHomeView+Controls.swift" | grep -Eq '\.walk|"走动"'; then
   fail "walk must not sit on the mode bar beside 定点/路线"
 fi
-grep -q 'showsFunction: true' "$ROOT/App/MapHomeView+Controls.swift" \
+grep -q 'showsFunction: !showsRoutePanelActive' "$ROOT/App/MapHomeView+Controls.swift" \
   || fail "uncommon tools must sit on the coordinate row as 功能"
 grep -q 'Text("功能")' "$ROOT/App/MapHomeCoordinateLine.swift" \
   || fail "the coordinate row must keep the 功能 label"
@@ -372,16 +372,21 @@ grep -q 'if route.phase == .preparing { return false }' "$MAP_HOME" \
   || fail "walking peek must stay tappable after start and end pins are set"
 grep -q 'if route.start == nil || route.end == nil { return "先设起点和终点" }' "$MAP_HOME" \
   || fail "collapsed walking caption must not say 先设起点和终点 after both pins are set"
-grep -q 'HomeRouteSavedList' "$MAP_HOME" || fail "saved routes must tile vertically inside the route card"
-grep -q 'home.route.saved' "$MAP_HOME" || fail "saved route list must be identifiable in the route card"
+grep -q 'home.route.openSaved' "$ROOT/App/MapHomeBottomCard.swift" \
+  || fail "saved routes must open from the route card title"
+grep -q 'Text("已存")' "$ROOT/App/MapHomeBottomCard.swift" || fail "saved routes title-row action must be labeled 已存"
+grep -q 'modeSegmentControl' "$ROOT/App/MapHomeBottomCard.swift" \
+  || fail "定点 and 路线 must switch from the bottom-card title"
 if awk '/var homeModeAndEntries/,/private func homeModeButton/' "$ROOT/App/MapHomeView+Controls.swift" | grep -q 'homePopupButton(.points'; then
   fail "route points must not sit on the mode bar"
 fi
 if awk '/var homeModeAndEntries/,/private func homeModeButton/' "$ROOT/App/MapHomeView+Controls.swift" | grep -Eq '\.management|"参数"'; then
   fail "route parameters must not sit on the mode bar beside 定点/路线"
 fi
-grep -q 'toggleHomePopup(showsRoutePanelActive ? .management : .walk)' "$ROOT/App/MapHomeView+Controls.swift" \
-  || fail "功能 must open walk or route parameters from the coordinate row"
+grep -q 'showsFunction: !showsRoutePanelActive' "$ROOT/App/MapHomeView+Controls.swift" \
+  || fail "功能 must stay on the coordinate row only in spot mode"
+grep -q 'onFunctionTap: { toggleHomePopup(.walk) }' "$ROOT/App/MapHomeView+Controls.swift" \
+  || fail "功能 must open walk settings from the coordinate row"
 grep -q 'if routeKeepsRunningWhileSpotShown { return "查看路线" }' "$MAP_HOME" || fail "spot card must return to the running route instead of starting a spot operation"
 grep -q 'showsSpotHelp: spoofState != .idle && !routeKeepsRunningWhileSpotShown' "$MAP_HOME" \
   || fail "idle and running-route states must hide the spot help control"
@@ -406,12 +411,15 @@ fi
 if grep -A40 'var homeRouteControls' "$ROOT/App/MapHomeView+Controls.swift" | grep -q 'routePanel(section: .settings)'; then
   fail "route parameters must not replace saved routes in the common zone"
 fi
+grep -A40 'var homeRouteControls' "$ROOT/App/MapHomeView+Controls.swift" | grep -q 'RouteCardControls' \
+  || fail "the route card must show live travel-mode and speed controls"
 grep -A40 'func homeChromePopover' "$ROOT/App/MapHomeView+Controls.swift" | grep -q 'PhysicalWalkHeadingControls' \
   || fail "tapping 功能 in spot mode must show walk settings in the floating popover"
-grep -A40 'func homeChromePopover' "$ROOT/App/MapHomeView+Controls.swift" | grep -q 'RouteParameterControls' \
-  || fail "tapping 功能 in route mode must show route parameters in the floating popover"
+if grep -A40 'func homeChromePopover' "$ROOT/App/MapHomeView+Controls.swift" | grep -q 'RouteParameterControls'; then
+  fail "功能 must not open route parameters; those live on the route card"
+fi
 grep -A40 'func homeChromePopover' "$ROOT/App/MapHomeView+Controls.swift" | grep -q 'HomeToolsPopover(compact: true, hugsHorizontally: false)' \
-  || fail "route parameters must use the compact chrome beside zoom"
+  || fail "walk settings must use the compact chrome beside zoom"
 if awk '/struct HomeToolsPopover/,/struct HomeCoordinateMenu/' "$ROOT/App/MapHomeOverlayLayout.swift" | grep -q 'Button("完成"'; then
   fail "the function popover must not use a 完成 button"
 fi
@@ -506,10 +514,12 @@ grep -q 'return "往返"' "$ROOT/Shared/RoutePlayback.swift" || fail "round-trip
 grep -q 'return "循环"' "$ROOT/Shared/RoutePlayback.swift" || fail "loop mode must be labeled 循环"
 grep -q 'case drive' "$ROOT/Shared/RoutePlayback.swift" || fail "route playback must support driving"
 grep -q 'return "驾车"' "$ROOT/Shared/RoutePlayback.swift" || fail "drive mode must be labeled 驾车"
+grep -q 'case racing' "$ROOT/Shared/RoutePlayback.swift" || fail "route playback must support racing"
+grep -q 'return "赛车"' "$ROOT/Shared/RoutePlayback.swift" || fail "racing mode must be labeled 赛车"
 grep -q 'var mapKitTransportTypes' "$ROOT/Shared/RouteDirections.swift" \
   || fail "travel modes must declare MapKit transport types"
-grep -q 'case .drive: return \[.automobile\]' "$ROOT/Shared/RouteDirections.swift" \
-  || fail "driving must prefer automobile directions"
+grep -q 'case .drive, .racing: return \[.automobile\]' "$ROOT/Shared/RouteDirections.swift" \
+  || fail "driving and racing must prefer automobile directions"
 grep -q 'RouteRepeatMode' "$ROOT/App/RoutePlaybackPanel.swift" || fail "route panel must expose repeat modes"
 grep -q 'operation("保存路线"' "$ROOT/App/RoutePlaybackPanel.swift" || fail "route panel must let the user save a route"
 grep -q 'case .savedRoutes' "$MAP_HOME" || fail "map home must present the saved route list sheet"
@@ -529,8 +539,12 @@ grep -q 'developerSpotWGS84' "$ROOT/App/SpoofSession.swift" \
   || fail "developer-tunnel spots must be offset before push"
 grep -q 'strideMeters' "$ROOT/Shared/PhysicalWalkStore.swift" \
   || fail "physical walking must persist a step-fallback stride"
-grep -q '定点推送前会偏移' "$SETTINGS_VIEW" \
+grep -q '定点推送前会添加偏移' "$SETTINGS_VIEW" \
   || fail "developer-tunnel settings must explain spot offset before push"
+grep -q 'SmoothCruisePolicy.durationSeconds' "$ROOT/App/MapHomeView+Spoof.swift" \
+  || fail "smooth cruise hops must use the shared duration"
+grep -q 'SmoothCruisePolicy.durationSecondsText' "$ROOT/App/SettingsView+Simulation.swift" \
+  || fail "smooth cruise settings copy must use the shared duration"
 grep -q 'operation("反转路线"' "$ROOT/App/RoutePlaybackPanel.swift" || fail "route panel must let the user reverse a saved path"
 grep -q 'customSpeed = false' "$ROOT/App/RoutePlaybackPanel.swift" \
   || fail "speed and offset must stay collapsed by default"

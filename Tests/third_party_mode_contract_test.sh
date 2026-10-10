@@ -118,7 +118,7 @@ grep -A20 'let response = try await thirdPartyProxy.query()' "$SETUP" | grep -q 
   || fail "a successful third-party connection test must close setup immediately"
 grep -q 'components.queryItems = \[URLQueryItem(name: "action", value: "query")\]' "$MANAGER" \
   || fail "the connection test must preserve the established save?action=query contract"
-grep -B4 'Toggle("运动状态模拟"' "$SETTINGS" | grep -q 'runtimeMode.mode == .localWiFi' \
+grep -B4 'Toggle("运动状态模拟"' "$SETTINGS" | grep -q 'mode == .localWiFi' \
   || fail "the motion-state toggle must only appear in APP mode"
 grep -q 'Toggle("随机扰动"' "$SETTINGS" \
   || fail "the random-perturbation toggle must remain in Settings"
@@ -193,8 +193,8 @@ grep -q '关闭系统定位服务' "$ROOT/App/TipViews.swift" \
 grep -q '还不跳点再重启手机' "$ROOT/App/TipViews.swift" \
   || fail "iOS 26 third-party activation must keep reboot as a fallback"
 grep -q 'if spoofState == .active' "$MAP" || fail "manual help must follow the shared spoof state"
-grep -q 'MARKETING_VERSION: "1.1.1.3"' "$ROOT/project.yml" || fail "marketing version must be 1.1.1.3"
-grep -q 'CURRENT_PROJECT_VERSION: "16"' "$ROOT/project.yml" || fail "build version must be 16"
+grep -q 'MARKETING_VERSION: "1.2.0.0"' "$ROOT/project.yml" || fail "marketing version must be 1.2.0.0"
+grep -q 'CURRENT_PROJECT_VERSION: "17"' "$ROOT/project.yml" || fail "build version must be 17"
 
 grep -q 'func mustSucceed' "$ROOT/Shared/RuntimeModeSwitchCleanup.swift" \
   || fail "mode cleanup must define mandatory persisted-location cleanup"

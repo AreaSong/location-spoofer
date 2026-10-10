@@ -27,7 +27,7 @@ struct LocationSimulationSection: View {
     private var cruiseAndMovementGroup: some View {
         Toggle("平滑巡航切换（防风控）", isOn: smoothCruiseBinding)
             .disabled(controlsDisabled)
-        Text("开启后，在已定点状态下切换至新地点时，将在 1.5 秒内平滑过渡推进，防止瞬间位移触发第三方应用风控。")
+        Text("开启后，在已定点状态下切换至新地点时，将在 \(SmoothCruisePolicy.durationSecondsText) 秒内平滑过渡推进，防止瞬间位移触发第三方应用风控。")
             .font(.footnote)
             .foregroundStyle(.secondary)
 
