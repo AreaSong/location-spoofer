@@ -3,6 +3,19 @@ import MapKit
 import UIKit
 import CoreLocation
 
+/// 进度 tick 只更新灵动岛，不让首页 body 每秒重绘；设置 sheet 打开时也避免跟着卡顿。
+struct RouteActivityClockBridge: View {
+    @ObservedObject var clock: RoutePlaybackClock
+    let onChange: () -> Void
+
+    var body: some View {
+        Color.clear
+            .accessibilityHidden(true)
+            .onChange(of: clock.progress) { _ in onChange() }
+            .onChange(of: clock.statusMessage) { _ in onChange() }
+    }
+}
+
 extension MapHomeView {
     /// 开发者隧道模式把路线直接推进系统定位；其余模式和定点一样，经本机代理或第三方客户端写入。
     var routeUsesDeveloperTunnel: Bool {

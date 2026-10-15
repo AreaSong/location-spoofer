@@ -36,6 +36,7 @@ final class PhysicalWalkStore: ObservableObject {
     }
 
     func setEnabled(_ enabled: Bool) {
+        guard isEnabled != enabled else { return }
         isEnabled = enabled
         defaults.set(enabled, forKey: Key.enabled)
         if enabled {
@@ -44,6 +45,7 @@ final class PhysicalWalkStore: ObservableObject {
     }
 
     func setCustomHeadingEnabled(_ enabled: Bool) {
+        guard isCustomHeadingEnabled != enabled else { return }
         isCustomHeadingEnabled = enabled
         defaults.set(enabled, forKey: Key.customHeadingEnabled)
     }

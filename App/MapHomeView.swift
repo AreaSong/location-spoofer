@@ -432,12 +432,9 @@ struct MapHomeView: View {
         .onChange(of: favorites.selectedFavoriteID) { _ in
             syncRouteActivity()
         }
-        .onReceive(route.clock.$progress) { _ in
+        .background(RouteActivityClockBridge(clock: route.clock) {
             syncRouteActivity()
-        }
-        .onReceive(route.clock.$statusMessage) { _ in
-            syncRouteActivity()
-        }
+        })
         .onChange(of: session.state) { state in
             switch state {
             case .active:

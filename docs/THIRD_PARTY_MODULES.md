@@ -32,14 +32,14 @@ location rewriting no longer needs GitHub.
 | `wloc.lpx` | Loon |
 | `wloc.stoverride` | Stash |
 
-`wloc.module` also defines a local Direct node `环回 = direct`, appends
-`skip-proxy` for localhost, and adds loopback CIDR `DIRECT` rules. That keeps
-`127.0.0.1:18766` and LAN loopback from going out through a remote node.
-The module does not add `FINAL,DIRECT`, so an existing proxy profile keeps
-its own default policy. Shadowrocket does not show module `[Proxy]` entries
-on the home node list. Use Direct global routing, or paste `环回 = direct`
-into the current configuration’s `[Proxy]` section. Proxy routing with a
-remote node still sends other traffic outside.
+`wloc.module` names a local SOCKS5 node `环回 = socks5, 127.0.0.1, 18767`,
+appends `skip-proxy` for localhost, and adds loopback CIDR `DIRECT` rules.
+The App serves that SOCKS5 forwarder in third-party mode. Import
+`socks5://127.0.0.1:18767#环回` into Shadowrocket’s home node list, select
+it, and keep Proxy routing; traffic stays on-device instead of a remote
+node. Keep this App open while that node is selected. The module does not
+add `FINAL,DIRECT`, so an existing proxy profile keeps its own default
+policy.
 
 No `?v=` cache-bust is appended. Re-importing the subscription in the proxy
 client re-fetches the module. Script files live at

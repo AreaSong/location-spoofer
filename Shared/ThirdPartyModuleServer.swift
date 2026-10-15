@@ -4,6 +4,7 @@ import Network
 @MainActor
 enum ThirdPartyModuleRuntime {
     static func syncServerWithDistribution() {
+        startLoopbackProxy()
         if ThirdPartyModuleSourceStore.shared.distribution == .onDevice {
             startServer()
         } else {
@@ -12,9 +13,15 @@ enum ThirdPartyModuleRuntime {
     }
 
     static func prepareForImport() {
+        startLoopbackProxy()
         startServer()
         guard ThirdPartyModuleSourceStore.shared.distribution == .onDevice else { return }
         BackgroundKeepAlive.shared.retain(.thirdPartyImport)
+    }
+
+    static func prepareForLoopbackNode() {
+        startLoopbackProxy()
+        startServer()
     }
 
     static func endImportKeepAlive() {
@@ -22,7 +29,9 @@ enum ThirdPartyModuleRuntime {
     }
 
     static func shutdown() {
+        ThirdPartyLoopbackProxy.shared.stop()
         ThirdPartyModuleServer.shared.stop()
+        BackgroundKeepAlive.shared.release(.thirdPartyLoopback)
         endImportKeepAlive()
     }
 
@@ -31,6 +40,15 @@ enum ThirdPartyModuleRuntime {
             try ThirdPartyModuleServer.shared.start()
         } catch {
             RuntimeLogger.error("APP", "ThirdPartyModule", "本机模块服务启动失败", error: error)
+        }
+    }
+
+    private static func startLoopbackProxy() {
+        do {
+            try ThirdPartyLoopbackProxy.shared.start()
+            BackgroundKeepAlive.shared.retain(.thirdPartyLoopback)
+        } catch {
+            RuntimeLogger.error("APP", "LoopbackProxy", "本机环回代理启动失败", error: error)
         }
     }
 }
@@ -91,10 +109,8 @@ final class ThirdPartyModuleServer: ObservableObject {
             host: "127.0.0.1",
             port: NWEndpoint.Port(rawValue: ThirdPartyModuleCatalog.port)!
         )
-        return try NWListener(
-            using: parameters,
-            on: NWEndpoint.Port(rawValue: ThirdPartyModuleCatalog.port)!
-        )
+        // 端口只放在 requiredLocalEndpoint；再传给 NWListener(on:) 会 EINVAL。
+        return try NWListener(using: parameters)
     }
 
     private func handle(_ state: NWListener.State) {

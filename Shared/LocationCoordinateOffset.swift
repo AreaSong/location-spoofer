@@ -54,12 +54,14 @@ final class RandomRadiusStore: ObservableObject {
     }
 
     func setEnabled(_ enabled: Bool) {
+        guard isEnabled != enabled else { return }
         isEnabled = enabled
         defaults.set(enabled, forKey: Key.isEnabled)
     }
 
     func setRadius(_ radius: Double) {
         let value = Self.clamped(radius)
+        guard self.radius != value else { return }
         self.radius = value
         defaults.set(value, forKey: Key.radius)
     }

@@ -78,7 +78,13 @@ struct ThirdPartyConfigurationSection: View {
 
         if thirdPartyClient.selectedClient == .shadowrocket {
             CopyButton("复制环回节点", copiedTitle: "已复制环回节点") {
-                ShadowrocketLoopbackNode.configLine
+                ThirdPartyModuleRuntime.prepareForLoopbackNode()
+                return ShadowrocketLoopbackNode.importURI
+            }
+            Button {
+                addShadowrocketLoopbackNode()
+            } label: {
+                Label("打开小火箭添加环回节点", systemImage: "arrow.up.forward.app")
             }
         }
     }
@@ -128,7 +134,7 @@ struct ThirdPartyConfigurationSection: View {
     @ViewBuilder
     private var clientTipsGroup: some View {
         if thirdPartyClient.selectedClient == .shadowrocket {
-            Text("环回节点写在模块里，不会出现在首页列表。把全局路由改成「直连」，或把复制的「\(ShadowrocketLoopbackNode.configLine)」粘到当前配置纯文本的 [Proxy] 段。选机场并开「代理」会把流量送到外面。")
+            Text("复制环回节点后打开小火箭添加到首页，选中「\(ShadowrocketLoopbackNode.name)」。全局路由可继续用「代理」。使用时请保持本 App 打开。")
                 .font(.footnote).foregroundStyle(.secondary)
         } else if thirdPartyClient.selectedClient == .egern {
             Text("Egern 直接使用 Surge 的 .sgmodule 模块。")
@@ -168,6 +174,15 @@ struct ThirdPartyConfigurationSection: View {
         }
     }
 
+    private func addShadowrocketLoopbackNode() {
+        ThirdPartyModuleRuntime.prepareForLoopbackNode()
+        UIPasteboard.general.string = ShadowrocketLoopbackNode.importURI
+        UIApplication.shared.open(ShadowrocketLoopbackNode.addURL, options: [:]) { opened in
+            guard !opened else { return }
+            openThirdPartyClient(.shadowrocket)
+        }
+    }
+
     private func openThirdPartyClient(_ client: ThirdPartyProxyClient) {
         guard let url = client.launchURL else { return }
         UIApplication.shared.open(url, options: [:]) { opened in
@@ -191,42 +206,6 @@ extension SettingsView {
                 setProxyOperationAlert(title: title, message: message)
             }
         )
-    }
-
-    var thirdPartyStatusIcon: String {
-        switch thirdPartyProxy.connectionState {
-        case .unknown: return "questionmark.circle"
-        case .connected: return "checkmark.circle.fill"
-        case .failed: return "xmark.circle.fill"
-        }
-    }
-
-    var thirdPartyStatusColor: Color {
-        switch thirdPartyProxy.connectionState {
-        case .unknown: return .secondary
-        case .connected(let active): return active ? .green : .blue
-        case .failed: return .red
-        }
-    }
-
-    var thirdPartyReadback: some View {
-        let settings = thirdPartyProxy.activeSettings
-        return VStack(alignment: .leading, spacing: 4) {
-            Text("模块版本 \(settings?.reportedVersion ?? "未回报")")
-            Text("回读坐标 \(settings?.readbackCoordinateText ?? "未回报")")
-            Text("设定半径 \(settings?.configuredRadiusText ?? "未回报")")
-            Text("实际偏移 \(settings?.appliedOffsetText ?? "未回报")")
-        }
-        .font(.caption)
-        .foregroundStyle(.secondary)
-    }
-
-    var thirdPartyStatusText: String {
-        switch thirdPartyProxy.connectionState {
-        case .unknown: return "未检测"
-        case .connected(let active): return active ? "已连接，有坐标" : "已连接，无坐标"
-        case .failed: return "连接失败"
-        }
     }
 
     func detectThirdPartyConnection() {

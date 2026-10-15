@@ -310,7 +310,7 @@ fi
 if awk '/var homeModeAndEntries/,/private func homeModeButton/' "$ROOT/App/MapHomeView+Controls.swift" | grep -Eq '\.walk|"走动"'; then
   fail "walk must not sit on the mode bar beside 定点/路线"
 fi
-grep -q 'showsFunction: !showsRoutePanelActive' "$ROOT/App/MapHomeView+Controls.swift" \
+grep -q 'showsFunction: true' "$ROOT/App/MapHomeView+Controls.swift" \
   || fail "uncommon tools must sit on the coordinate row as 功能"
 grep -q 'Text("功能")' "$ROOT/App/MapHomeCoordinateLine.swift" \
   || fail "the coordinate row must keep the 功能 label"
@@ -383,8 +383,8 @@ fi
 if awk '/var homeModeAndEntries/,/private func homeModeButton/' "$ROOT/App/MapHomeView+Controls.swift" | grep -Eq '\.management|"参数"'; then
   fail "route parameters must not sit on the mode bar beside 定点/路线"
 fi
-grep -q 'showsFunction: !showsRoutePanelActive' "$ROOT/App/MapHomeView+Controls.swift" \
-  || fail "功能 must stay on the coordinate row only in spot mode"
+grep -q 'showsFunction: true' "$ROOT/App/MapHomeView+Controls.swift" \
+  || fail "功能 must stay on the coordinate row in both spot and route mode"
 grep -q 'onFunctionTap: { toggleHomePopup(.walk) }' "$ROOT/App/MapHomeView+Controls.swift" \
   || fail "功能 must open walk settings from the coordinate row"
 grep -q 'if routeKeepsRunningWhileSpotShown { return "查看路线" }' "$MAP_HOME" || fail "spot card must return to the running route instead of starting a spot operation"
@@ -603,5 +603,18 @@ fi
 if grep -Rq 'SavedRoute' "$ROOT/ThirdParty/WlocScripts"; then
   fail "saved routes must not modify vendored WLOC scripts"
 fi
+
+! grep -q 'onReceive(route.clock' "$MAP_HOME_MAIN" \
+  || fail "playback clock ticks must not invalidate MapHomeView"
+grep -q 'struct RouteActivityClockBridge' "$ROOT/App/MapHomeView+Route.swift" \
+  || fail "live activity clock ticks must stay on an isolated bridge view"
+grep -q 'struct SettingsStatusSection' "$ROOT/App/SettingsView+Status.swift" \
+  || fail "settings status must be isolated from the root Form observations"
+grep -q 'struct SettingsRuntimeModeSection' "$ROOT/App/SettingsView+Status.swift" \
+  || fail "settings mode picker must be isolated from the root Form observations"
+grep -q 'guard status != next else { return }' "$ROOT/App/RouteLocationSetupStore.swift" \
+  || fail "tunnel refresh must not publish an unchanged ready status"
+grep -q 'if self.currentSSID != ssid' "$NETWORK_MONITOR" \
+  || fail "SSID polling must not republish an unchanged network name"
 
 echo "PASS: map location state refactor contract"

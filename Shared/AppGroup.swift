@@ -67,6 +67,7 @@ final class MotionSimulationStore: ObservableObject {
     }
 
     func setEnabled(_ enabled: Bool) {
+        guard isEnabled != enabled else { return }
         isEnabled = enabled
         defaults.set(enabled, forKey: Key.enabled)
     }
@@ -92,11 +93,13 @@ final class SmoothCruiseStore: ObservableObject {
     }
 
     func setEnabled(_ enabled: Bool) {
+        guard isEnabled != enabled else { return }
         isEnabled = enabled
         defaults.set(enabled, forKey: Key.isEnabled)
     }
 
     func setCorneringDecelerationEnabled(_ enabled: Bool) {
+        guard isCorneringDecelerationEnabled != enabled else { return }
         isCorneringDecelerationEnabled = enabled
         defaults.set(enabled, forKey: Key.isCorneringDecelerationEnabled)
     }

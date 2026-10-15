@@ -34,7 +34,11 @@ final class ThirdPartyModuleCatalogTests: XCTestCase {
         XCTAssertTrue(rewritten.contains(ShadowrocketLoopbackNode.skipProxyLine))
         XCTAssertTrue(rewritten.contains(ShadowrocketLoopbackNode.loopbackV4Rule))
         XCTAssertTrue(rewritten.contains(ShadowrocketLoopbackNode.loopbackV6Rule))
+        XCTAssertEqual(ShadowrocketLoopbackNode.importURI, "socks5://127.0.0.1:18767#环回")
+        XCTAssertEqual(ShadowrocketLoopbackNode.configLine, "环回 = socks5, 127.0.0.1, 18767")
+        XCTAssertEqual(ShadowrocketLoopbackNode.addURL.scheme, "shadowrocket")
         XCTAssertFalse(rewritten.contains("FINAL,DIRECT"))
+        XCTAssertFalse(rewritten.contains("环回 = direct"))
         XCTAssertFalse(rewritten.contains("Yu9191/wloc"))
         XCTAssertFalse(rewritten.contains("raw.githubusercontent.com"))
     }

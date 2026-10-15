@@ -99,8 +99,8 @@ grep -q 'ThirdPartyProxyManager.interceptionHostnamesText' "$SETTINGS" \
   || fail "Settings must expose the shared interception hostname copy action"
 grep -q '配置 → 模块' "$SETUP" || fail "Shadowrocket module import guidance is missing"
 grep -q 'HTTPS 解密' "$SETUP" || fail "Shadowrocket HTTPS decryption guidance is missing"
-grep -q '环回 = direct' "$SCRIPTS/modules/wloc.module" \
-  || fail "Shadowrocket module must define the loopback Direct node"
+grep -q '环回 = socks5, 127.0.0.1, 18767' "$SCRIPTS/modules/wloc.module" \
+  || fail "Shadowrocket module must define the loopback SOCKS5 node"
 grep -q 'skip-proxy = %APPEND% 127.0.0.1, localhost, ::1' "$SCRIPTS/modules/wloc.module" \
   || fail "Shadowrocket module must skip proxy for loopback hosts"
 grep -q 'IP-CIDR,127.0.0.0/8,DIRECT,no-resolve' "$SCRIPTS/modules/wloc.module" \
@@ -109,20 +109,30 @@ grep -q 'IP-CIDR6,::1/128,DIRECT,no-resolve' "$SCRIPTS/modules/wloc.module" \
   || fail "Shadowrocket module must send loopback IPv6 direct"
 ! grep -q 'FINAL,DIRECT' "$SCRIPTS/modules/wloc.module" \
   || fail "Shadowrocket module must not force FINAL,DIRECT over the user proxy profile"
+! grep -q '环回 = direct' "$SCRIPTS/modules/wloc.module" \
+  || fail "Shadowrocket loopback node must be a selectable SOCKS5 URI, not Direct"
 grep -q '复制环回节点' "$SETUP" || fail "Shadowrocket setup must expose the loopback node copy action"
 grep -q '复制环回节点' "$SETTINGS" || fail "Settings must expose the Shadowrocket loopback node copy action"
-grep -q '全局路由选「配置」或「直连」' "$SETUP" \
-  || fail "Shadowrocket setup must tell users not to use Proxy routing with a remote node"
-grep -q '首页找不到是正常的' "$SETUP" \
-  || fail "setup must not claim the loopback node appears on the Shadowrocket home list"
-! grep -q '首页本地节点会出现' "$SETUP" \
-  || fail "setup must not promise a home-list node after module import"
-grep -q 'ShadowrocketLoopbackNode.configLine' "$SETUP" \
-  || fail "setup loopback copy must use the shared Shadowrocket node definition"
-grep -q 'ShadowrocketLoopbackNode.configLine' "$SETTINGS" \
-  || fail "Settings loopback copy must use the shared Shadowrocket node definition"
+grep -q '打开小火箭添加环回节点' "$SETUP" \
+  || fail "setup must offer a Shadowrocket add-node action"
+grep -q '打开小火箭添加环回节点' "$SETTINGS" \
+  || fail "Settings must offer a Shadowrocket add-node action"
+grep -q '全局路由可继续用「代理」' "$SETUP" \
+  || fail "setup must let users keep Proxy routing after selecting the loopback node"
+grep -q 'ShadowrocketLoopbackNode.importURI' "$SETUP" \
+  || fail "setup loopback copy must use the shared SOCKS5 import URI"
+grep -q 'ShadowrocketLoopbackNode.importURI' "$SETTINGS" \
+  || fail "Settings loopback copy must use the shared SOCKS5 import URI"
+grep -q 'func prepareForLoopbackNode' "$SERVER" \
+  || fail "copying the loopback node must start the local SOCKS5 proxy"
+grep -q 'case thirdPartyLoopback' "$ROOT/Shared/BackgroundKeepAlive.swift" \
+  || fail "loopback proxy must retain a keep-alive owner"
 grep -q 'enum ShadowrocketLoopbackNode' "$ROOT/Shared/ShadowrocketLoopbackNode.swift" \
   || fail "Shadowrocket loopback node constants must have one shared owner"
+! grep -q '首页找不到是正常的' "$SETUP" \
+  || fail "setup must not tell users the loopback node is invisible"
+! grep -q '首页本地节点会出现' "$SETUP" \
+  || fail "setup must not promise a home-list node after module import"
 ! grep -q '当前可测试' "$SETUP" || fail "Shadowrocket must not show the obsolete current-test label"
 ! grep -q '当前可测试' "$SETTINGS" || fail "Settings must not show the obsolete current-test label"
 grep -q 'thirdPartyTestFailure = ThirdPartyConnectionTestFailure' "$SETUP" \

@@ -27,13 +27,13 @@ struct SettingsView: View {
     @State var showingBugReport = false
     @State var favoritePageID = UUID()
     @ObservedObject var favorites: FavoriteLocationStore
-    @ObservedObject var session: SpoofSession
-    @ObservedObject var proxy = ProxyManager.shared
+    var session: SpoofSession
+    let proxy = ProxyManager.shared
     @ObservedObject var runtimeMode = ProxyRuntimeModeStore.shared
-    @ObservedObject var routeLocation = RouteLocationSetupStore.shared
-    @ObservedObject var thirdPartyProxy = ThirdPartyProxyManager.shared
-    @ObservedObject var net = NetworkMonitor.shared
-    @ObservedObject var runtimeFailure = LocationRuntimeFailureStore.shared
+    let routeLocation = RouteLocationSetupStore.shared
+    let thirdPartyProxy = ThirdPartyProxyManager.shared
+    let net = NetworkMonitor.shared
+    let runtimeFailure = LocationRuntimeFailureStore.shared
     @Environment(\.dismiss) var dismiss
     @State var activeTip: TipKind?
     @State var proxyOperationError = ""
@@ -135,50 +135,9 @@ struct SettingsView: View {
     }
 
 
-    var runtimeModeBinding: Binding<ProxyRuntimeMode> {
-        Binding(
-            get: { runtimeMode.mode },
-            set: { newMode in switchRuntimeMode(to: newMode) }
-        )
-    }
-
-
     func refreshMapCoordinateSystemDisplay() {
         mapCoordinateSystemName = CoordinateConverter.currentMapCoordinateSystem.diagnosticName
         mapCoordinateSystemUsedFallback = CoordinateConverter.initialMapCoordinateSystemUsedFallback
-    }
-
-
-    var virtualLocationStatusText: String {
-        if runtimeMode.mode == .developerTunnel {
-            return routeLocation.simulationStatusText
-        }
-        if runtimeMode.mode == .localWiFi {
-            return actions.virtualLocationEnabled ? "已开启" : "已关闭"
-        }
-        if case .connected(let active) = thirdPartyProxy.connectionState {
-            return active ? "第三方已保存" : "未保存"
-        }
-        return "未知"
-    }
-
-    var workflowDescription: String {
-        if runtimeMode.mode == .developerTunnel {
-            return "定点和路线都通过本机隧道推进系统定位，不拦截网络请求。不启动本机代理，也不使用小火箭模块。隧道由 LocalDevVPN 建立，需要隧道已连接，并已导入配对文件。"
-        }
-        if runtimeMode.mode == .thirdParty {
-            return "App 只负责地图选点、收藏和发送 WGS-84 坐标。第三方代理客户端通过模块拦截 Apple WLOC 请求并持久化当前坐标；本模式不启动本机代理，不使用 App 的 CA，也不需要配置 127.0.0.1:8888。"
-        }
-        return """
-        App 在设备本地运行一个代理服务器（127.0.0.1:8888）。
-
-        通过 WiFi 手动代理配置，让系统发往 Apple 定位域名（gs-loc.apple.com、gsp-ssl.ls.apple.com、bluedot.is.autonavi.com 等）的定位请求经过这个本地代理。代理使用已安装的 CA 证书对 HTTPS 流量做中间人解密，把 Apple 返回的定位坐标改写为你设置的虚拟坐标，再加密返回给系统，从而实现虚拟定位。
-        """
-    }
-
-
-    var signingExpiryStatus: SigningExpiryStatus {
-        SigningExpiry.current()
     }
 
 
@@ -193,19 +152,6 @@ struct SettingsView: View {
     func restoreRealLocation() {
         guard !restoreControlsDisabled else { return }
         session.stop()
-    }
-
-    var virtualLocationIsActive: Bool {
-        if runtimeMode.mode == .developerTunnel {
-            return routeLocation.isSimulating || routeLocation.activity.simulationMayStillBeActive
-        }
-        if runtimeMode.mode == .localWiFi {
-            return actions.virtualLocationEnabled
-        }
-        if case .connected(let active) = thirdPartyProxy.connectionState {
-            return active
-        }
-        return false
     }
 }
 

@@ -5,147 +5,25 @@ import UniformTypeIdentifiers
 extension SettingsView {
     var settingsPage: some View {
         Form {
-            Section("运行模式") {
-                Picker("模式", selection: runtimeModeBinding) {
-                    ForEach(ProxyRuntimeMode.allCases) { mode in
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(mode.displayName)
-                                .font(.body)
-                            Text(mode.subtitle)
-                                .font(.caption2)
-                                .foregroundStyle(.secondary)
-                        }
-                        .padding(.vertical, 2)
-                        .tag(mode)
-                    }
-                }
-                .pickerStyle(.inline)
-                .labelsHidden()
-                .disabled(modeOperationRunning || actions.state.isBusy || routeLocation.isClearing)
+            SettingsRuntimeModeSection(
+                actions: actions,
+                modeOperationRunning: modeOperationRunning,
+                onSelectMode: { switchRuntimeMode(to: $0) }
+            )
 
-                if runtimeMode.mode == .localWiFi, let message = appModeNetworkBlockedMessage {
-                    Text(message)
-                        .font(.footnote)
-                        .foregroundStyle(.orange)
+            SettingsStatusSection(
+                actions: actions,
+                session: session,
+                modeOperationRunning: modeOperationRunning,
+                mapCoordinateSystemName: mapCoordinateSystemName,
+                mapCoordinateSystemUsedFallback: mapCoordinateSystemUsedFallback,
+                showSigningResignSheet: $showSigningResignSheet,
+                onRestoreRealLocation: { restoreRealLocation() },
+                onDetectThirdParty: { detectThirdPartyConnection() },
+                onProxyError: { title, message in
+                    setProxyOperationAlert(title: title, message: message)
                 }
-
-                DisclosureGroup("工作原理") {
-                    Text(workflowDescription)
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.vertical, 4)
-                }
-            }
-
-            Section("状态") {
-                if UIPreview.isEnabled() {
-                    Text("当前是开发者模式，下面的成功状态不会写入正常使用。换成一种运行模式后，下次启动进入真实引导。")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                }
-                if let message = signingExpiryStatus.settingsMessage {
-                    let countdown = signingExpiryStatus.expirationDate.flatMap {
-                        SigningExpiryCountdown.text(until: $0, now: Date())
-                    }
-                    Button {
-                        showSigningResignSheet = true
-                    } label: {
-                        Label(countdown ?? message, systemImage: "calendar.badge.exclamationmark")
-                            .foregroundStyle(signingExpiryStatus.isExpired ? Color.red : Color.orange)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                }
-                if runtimeMode.mode == .localWiFi {
-                    HStack {
-                        Label {
-                            Text("本机代理")
-                        } icon: {
-                            Image(systemName: proxy.isRunning ? "play.circle.fill" : "stop.circle")
-                                .foregroundStyle(proxy.isRunning ? Color.green : Color.secondary)
-                        }
-                        Spacer()
-                        Toggle("", isOn: proxyBinding).labelsHidden()
-                            .tint(.blue)
-                            .disabled(actions.state.isBusy || UIPreview.isEnabled())
-                    }
-                } else if runtimeMode.mode == .developerTunnel {
-                    HStack {
-                        Label {
-                            Text("本机隧道")
-                        } icon: {
-                            Image(systemName: "network")
-                                .foregroundStyle(routeLocation.readiness == .ready ? Color.green : Color.orange)
-                        }
-                        Spacer()
-                        Text(routeLocation.readiness == .ready ? "已就绪" : "未就绪")
-                            .font(.subheadline.weight(.medium))
-                            .foregroundStyle(routeLocation.readiness == .ready ? Color.green : Color.orange)
-                    }
-                } else {
-                    HStack {
-                        Label {
-                            Text("第三方模块")
-                        } icon: {
-                            Image(systemName: thirdPartyStatusIcon)
-                                .foregroundStyle(thirdPartyStatusColor)
-                        }
-                        Spacer()
-                        Text(thirdPartyStatusText)
-                            .font(.subheadline.weight(.medium))
-                            .foregroundStyle(thirdPartyStatusColor)
-                    }
-                    Button {
-                        detectThirdPartyConnection()
-                    } label: {
-                        if thirdPartyProxy.isRequesting {
-                            HStack { ProgressView(); Text("正在检测…") }
-                        } else {
-                            Label("检测连接", systemImage: "network")
-                        }
-                    }
-                    .disabled(thirdPartyProxy.isRequesting || UIPreview.isEnabled())
-                    thirdPartyReadback
-                }
-                HStack {
-                    Label {
-                        Text("虚拟定位")
-                    } icon: {
-                        Image(systemName: virtualLocationIsActive ? "location.fill" : "location.slash")
-                            .foregroundStyle(virtualLocationIsActive ? Color.blue : Color.secondary)
-                    }
-                    Spacer()
-                    Text(virtualLocationStatusText)
-                        .font(.subheadline.weight(virtualLocationIsActive ? .semibold : .regular))
-                        .foregroundStyle(virtualLocationIsActive ? Color.blue : Color.secondary)
-                }
-                if runtimeMode.mode != .developerTunnel {
-                    Button {
-                        restoreRealLocation()
-                    } label: {
-                        Label("恢复真实定位", systemImage: "location.slash")
-                    }
-                    .disabled(restoreControlsDisabled)
-                    Text("关掉当前虚拟定位，让系统回到真实位置。")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                }
-                HStack {
-                    Label {
-                        Text("地图坐标标准")
-                    } icon: {
-                        Image(systemName: "globe")
-                            .foregroundStyle(Color.accentColor)
-                    }
-                    Spacer()
-                    Text(mapCoordinateSystemName).foregroundStyle(.secondary)
-                }
-                if mapCoordinateSystemUsedFallback {
-                    Text("当前位于国内服务区，已自动按国内标准对齐显示")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                }
-            }
+            )
 
             if runtimeMode.mode == .developerTunnel {
                 RouteLocationSettingsSection(session: session)

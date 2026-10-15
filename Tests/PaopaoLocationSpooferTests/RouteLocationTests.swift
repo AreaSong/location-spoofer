@@ -121,6 +121,27 @@ final class RouteLocationTests: XCTestCase {
     }
 
     @MainActor
+    func testRefreshDoesNotPublishUnchangedStatus() throws {
+        var connected = true
+        let store = try readyStore(
+            client: FakeIdeviceClient(results: []),
+            isTunnelConnected: { connected }
+        )
+        var publishes = 0
+        let token = store.objectWillChange.sink { publishes += 1 }
+        store.refresh()
+        store.refresh()
+        XCTAssertEqual(publishes, 0)
+
+        connected = false
+        store.refresh()
+        XCTAssertEqual(publishes, 1)
+        store.refresh()
+        XCTAssertEqual(publishes, 1)
+        token.cancel()
+    }
+
+    @MainActor
     func testTunnelFlapKeepsTheLiveSimulation() async throws {
         let client = FakeIdeviceClient(results: [nil])
         var connected = true

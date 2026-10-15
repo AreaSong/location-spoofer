@@ -1,28 +1,6 @@
 import SwiftUI
 
 extension SettingsView {
-    var proxyBinding: Binding<Bool> {
-        Binding(get: { proxy.isRunning }, set: { on in
-            Task {
-                if on {
-                    do {
-                        try await proxy.start()
-                    } catch {
-                        proxy.error = error.localizedDescription
-                        proxyOperationAlertTitle = "代理操作失败"
-                        proxyOperationError = error.localizedDescription
-                    }
-                } else {
-                    if actions.virtualLocationEnabled {
-                        actions.clear()
-                        RuntimeLogger.info("APP", "Settings", "关闭代理前已同步关闭虚拟定位")
-                    }
-                    proxy.stop()
-                }
-            }
-        })
-    }
-
     var appModeNetworkBlockedMessage: String? {
         AppModeNetworkRequirement.blockedMessage(net.appModeNetworkStatus)
     }

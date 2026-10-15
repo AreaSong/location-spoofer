@@ -4,7 +4,8 @@ import SwiftUI
 /// 独立管理拟真参数 Store，阻断参数拖动滑块时向外层设置页的无谓重绘扩散
 struct LocationSimulationSection: View {
     let mode: ProxyRuntimeMode
-    let controlsDisabled: Bool
+    var modeOperationRunning: Bool
+    @ObservedObject var actions: LocationActionCoordinator
     var onError: ((String, String) -> Void)? = nil
 
     @ObservedObject private var smoothCruise = SmoothCruiseStore.shared
@@ -13,6 +14,11 @@ struct LocationSimulationSection: View {
     @ObservedObject private var randomRadius = RandomRadiusStore.shared
     @ObservedObject private var locationAccuracy = LocationAccuracyStore.shared
     @ObservedObject private var proxy = ProxyManager.shared
+    @ObservedObject private var thirdPartyProxy = ThirdPartyProxyManager.shared
+
+    private var controlsDisabled: Bool {
+        modeOperationRunning || actions.state.isBusy || thirdPartyProxy.isRequesting
+    }
 
     var body: some View {
         Section("定位模拟与防风控") {
@@ -176,15 +182,12 @@ struct LocationSimulationSection: View {
 // MARK: - SettingsView Extension Wrapper
 
 extension SettingsView {
-    var simulationControlsDisabled: Bool {
-        modeOperationRunning || actions.state.isBusy || thirdPartyProxy.isRequesting
-    }
-
     @ViewBuilder
     var locationSimulationSection: some View {
         LocationSimulationSection(
             mode: runtimeMode.mode,
-            controlsDisabled: simulationControlsDisabled
+            modeOperationRunning: modeOperationRunning,
+            actions: actions
         ) { title, message in
             setProxyOperationAlert(title: title, message: message)
         }

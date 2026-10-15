@@ -285,23 +285,24 @@ extension FirstSetupView {
     }
 
     var shadowrocketLoopbackNodeGuide: some View {
-        GroupBox(label: Label("第 3 步：让流量走本机", systemImage: "arrow.triangle.2.circlepath")) {
+        GroupBox(label: Label("第 3 步：添加环回节点", systemImage: "arrow.triangle.2.circlepath")) {
             VStack(alignment: .leading, spacing: 12) {
-                instructionRow(1, "模块里已经写了「\(ShadowrocketLoopbackNode.configLine)」，但小火箭不会把它显示到首页节点列表，首页找不到是正常的。")
-                instructionRow(2, "最快用法：首页把全局路由改成「直连」，再打开连接开关。不要选机场并开「代理」。")
-                instructionRow(3, "若要在首页看到名为「\(ShadowrocketLoopbackNode.name)」的节点：复制下面这一行，打开「配置 → 本地文件」，点带黄点配置右侧 i，进入编辑纯文本，在 [Proxy] 下粘贴后保存。然后选中它，全局路由选「配置」或「直连」。")
-                Text(ShadowrocketLoopbackNode.configLine)
+                instructionRow(1, "保持本 App 打开。环回是本机 SOCKS5（\(ShadowrocketLoopbackNode.host):\(ShadowrocketLoopbackNode.port)），杀掉 App 后这个节点会连不上。")
+                instructionRow(2, "复制环回节点，再打开小火箭。若弹出添加服务器，点添加；也可到首页点 + 粘贴。")
+                instructionRow(3, "首页选中「\(ShadowrocketLoopbackNode.name)」，全局路由可继续用「代理」，再打开连接。不要选机场。")
+                Text(ShadowrocketLoopbackNode.importURI)
                     .font(.caption.monospaced())
                     .textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 CopyButton("复制环回节点", copiedTitle: "已复制环回节点", fillsWidth: true) {
-                    ShadowrocketLoopbackNode.configLine
+                    ThirdPartyModuleRuntime.prepareForLoopbackNode()
+                    return ShadowrocketLoopbackNode.importURI
                 }
                 .buttonStyle(.borderedProminent)
                 Button {
-                    openThirdPartyClient(.shadowrocket)
+                    addShadowrocketLoopbackNode()
                 } label: {
-                    Label("打开 Shadowrocket 继续配置", systemImage: "arrow.up.forward.app")
+                    Label("打开小火箭添加环回节点", systemImage: "arrow.up.forward.app")
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.bordered)
@@ -327,6 +328,15 @@ extension FirstSetupView {
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    func addShadowrocketLoopbackNode() {
+        ThirdPartyModuleRuntime.prepareForLoopbackNode()
+        UIPasteboard.general.string = ShadowrocketLoopbackNode.importURI
+        UIApplication.shared.open(ShadowrocketLoopbackNode.addURL, options: [:]) { opened in
+            guard !opened else { return }
+            openThirdPartyClient(.shadowrocket)
         }
     }
 

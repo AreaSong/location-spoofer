@@ -88,11 +88,13 @@ final class RouteLocationSetupStore: ObservableObject, DeveloperLocationPushing 
         // 网卡上下线只更新就绪状态。模拟进行中如果在这里丢掉连接，
         // 隧道一恢复又会新开一条，系统定位就会在两个坐标之间来回跳。
         let connected = environment.isTunnelConnected()
-        status = RouteLocationStatus(
+        let next = RouteLocationStatus(
             vpnInstalled: environment.isVPNInstalled() || connected,
             tunnelConnected: connected,
             hasPairing: pairingStore.hasPairingFile
         )
+        guard status != next else { return }
+        status = next
     }
 
     func startTunnelMonitor() {

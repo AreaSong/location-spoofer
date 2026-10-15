@@ -49,6 +49,7 @@ struct SigningExpiryStatus: Equatable {
 enum SigningExpiry {
     static let freeSigningWindowDays = 7
     static let mapBannerDays = 2
+    private static var cachedProvision: (bundlePath: String, expiration: Date?)?
     static let resignInstructions = """
     免费 Apple ID 签名大约 7 天，到期后系统会拒绝打开 App。
 
@@ -104,7 +105,13 @@ enum SigningExpiry {
     }
 
     static func current(bundle: Bundle = .main, now: Date = Date()) -> SigningExpiryStatus {
-        let expiration = provisionData(in: bundle).flatMap(parseExpirationDate)
+        let expiration: Date?
+        if let cached = cachedProvision, cached.bundlePath == bundle.bundlePath {
+            expiration = cached.expiration
+        } else {
+            expiration = provisionData(in: bundle).flatMap(parseExpirationDate)
+            cachedProvision = (bundle.bundlePath, expiration)
+        }
         return evaluate(expirationDate: expiration, now: now)
     }
 }

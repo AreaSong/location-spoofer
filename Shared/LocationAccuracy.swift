@@ -56,6 +56,7 @@ final class LocationAccuracyStore: ObservableObject {
 
     func setMeters(_ meters: Int) {
         let value = Self.clamped(meters)
+        guard self.meters != value else { return }
         self.meters = value
         defaults.set(value, forKey: Key.meters)
     }

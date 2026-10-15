@@ -8,7 +8,7 @@
 skip-proxy = %APPEND% 127.0.0.1, localhost, ::1
 
 [Proxy]
-环回 = direct
+环回 = socks5, 127.0.0.1, 18767
 
 [Rule]
 DOMAIN,localhost,DIRECT

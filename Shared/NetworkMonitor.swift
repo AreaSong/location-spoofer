@@ -105,9 +105,15 @@ final class NetworkMonitor: ObservableObject {
         }
         wasSatisfied = satisfied
         wasWiFiEnabled = wifi
-        isSatisfied = satisfied
-        isWiFiEnabled = wifi
-        usesCellular = cellular
+        if isSatisfied != satisfied {
+            isSatisfied = satisfied
+        }
+        if isWiFiEnabled != wifi {
+            isWiFiEnabled = wifi
+        }
+        if usesCellular != cellular {
+            usesCellular = cellular
+        }
         if let reason {
             notifyWiFiChanged(reason: reason)
         }
@@ -124,7 +130,9 @@ final class NetworkMonitor: ObservableObject {
             Task { @MainActor in
                 guard let self else { return }
                 let ssid = Self.fetchSSID()
-                self.currentSSID = ssid
+                if self.currentSSID != ssid {
+                    self.currentSSID = ssid
+                }
                 guard let ssid else { return }
                 guard let previousSSID = self.lastKnownSSID else {
                     // 首次取得 SSID 只是建立基线，不能当作用户切换了 Wi-Fi。
