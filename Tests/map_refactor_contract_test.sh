@@ -222,6 +222,10 @@ grep -q 'sheet(item: $sheetBox.activeSheet)' "$ROOT/App/MapHomePresentation.swif
   || fail "settings must present from the sheet box so the map view does not rebuild on tap"
 grep -q 'struct MapHomeHost: View, Equatable' "$ROOT/App/MapHomePresentation.swift" \
   || fail "the map host must skip body when only the settings sheet changes"
+grep -q 'struct HomeSheetPresentation' "$ROOT/App/MapHomeView.swift" \
+  || fail "settings must use a new sheet identity so dismiss can reopen immediately"
+grep -q 'sheetBox.present(sheet)' "$ROOT/App/MapHomeView.swift" \
+  || fail "tapping settings after dismiss must present a new sheet identity"
 if grep -q 'isSettingsFormReady' "$ROOT/App/SettingsView.swift" "$ROOT"/App/SettingsView+*.swift; then
   fail "settings form must render on the first sheet frame so the page is not black"
 fi
@@ -236,7 +240,7 @@ grep -q 'systemGroupedBackground' "$ROOT/App/MapHomeView.swift" \
   || fail "the presented settings sheet must fill with an opaque grouped background"
 if awk '/func presentHomeSheet/,/^    }/' "$ROOT/App/MapHomeView.swift" | grep -n 'coverHome' | head -1 | awk -F: '{print $1}' | grep -q .; then
   cover_line="$(awk '/func presentHomeSheet/,/^    }/' "$ROOT/App/MapHomeView.swift" | grep -n 'coverHome' | head -1 | awk -F: '{print $1}')"
-  sheet_line="$(awk '/func presentHomeSheet/,/^    }/' "$ROOT/App/MapHomeView.swift" | grep -n 'activeSheet = sheet' | head -1 | awk -F: '{print $1}')"
+  sheet_line="$(awk '/func presentHomeSheet/,/^    }/' "$ROOT/App/MapHomeView.swift" | grep -n 'present(sheet)' | head -1 | awk -F: '{print $1}')"
   if [ -z "$cover_line" ] || [ -z "$sheet_line" ] || [ "$cover_line" -ge "$sheet_line" ]; then
     fail "the map must freeze before SwiftUI presents the settings sheet"
   fi

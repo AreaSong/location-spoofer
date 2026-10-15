@@ -3,9 +3,15 @@ import MapKit
 import UIKit
 import CoreLocation
 
-enum HomeSheet: String, Identifiable {
+enum HomeSheet: String, Equatable {
     case settings, logs, favorites, savedRoutes
-    var id: String { rawValue }
+}
+
+/// 每次打开都换 identity，取消设置后马上再点才能重新 present。
+struct HomeSheetPresentation: Identifiable, Equatable {
+    let kind: HomeSheet
+    let token: UInt64
+    var id: String { "\(kind.rawValue)-\(token)" }
 }
 
 enum SpoofState: Equatable {
@@ -183,8 +189,7 @@ struct MapHomeView: View {
     var activeSpoofLat: Double? { session.writtenLatitude }
     var activeSpoofLon: Double? { session.writtenLongitude }
     var isHomeCoveredBySheet: Bool {
-        sheetBox.activeSheet != nil
-            || showRouteLocationSetup
+        showRouteLocationSetup
             || showSigningResignSheet
             || githubDestination != nil
             || activeTip != nil
@@ -932,7 +937,7 @@ struct MapHomeView: View {
             search.dismissResults()
         }
         sheetBox.coverHome()
-        sheetBox.activeSheet = sheet
+        sheetBox.present(sheet)
     }
 
     var testFavorite: FavoriteLocation { currentSelectionFavorite }

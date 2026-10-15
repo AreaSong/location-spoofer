@@ -15,25 +15,73 @@ final class MapHomeSheetBox: ObservableObject {
     var mapState: MapLocationState?
     var routeClock: RoutePlaybackClock?
     weak var mapCoordinator: MapViewRepresentable.Coordinator?
-    @Published var activeSheet: HomeSheet?
+    @Published var activeSheet: HomeSheetPresentation?
     var onSelectFavorite: (FavoriteLocation) -> Void = { _ in }
     var onRenameFavorite: (FavoriteLocation, String) -> Void = { _, _ in }
     var onSelectSavedRoute: (SavedRoute) -> Void = { _ in }
 
+    private var presentGeneration: UInt64 = 0
+    private var lastDismissUptime: TimeInterval?
+    private var unsuspendMapWork: DispatchWorkItem?
+    private var isRelaunching = false
+
+    private var recentlyDismissed: Bool {
+        guard let lastDismissUptime else { return false }
+        return ProcessInfo.processInfo.systemUptime - lastDismissUptime < 0.6
+    }
+
+    func present(_ kind: HomeSheet) {
+        unsuspendMapWork?.cancel()
+        unsuspendMapWork = nil
+        presentGeneration &+= 1
+        let token = presentGeneration
+        let item = HomeSheetPresentation(kind: kind, token: token)
+        coverHome()
+        guard activeSheet != nil || recentlyDismissed else {
+            activeSheet = item
+            return
+        }
+        isRelaunching = true
+        activeSheet = nil
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.presentGeneration == token else {
+                self?.isRelaunching = false
+                return
+            }
+            self.isRelaunching = false
+            self.coverHome()
+            self.activeSheet = item
+        }
+    }
+
     func coverHome() {
+        unsuspendMapWork?.cancel()
+        unsuspendMapWork = nil
         physicalWalk?.setPublishesUI(false)
         mapState?.setPublishesRealtime(false)
         routeClock?.setPublishesUI(false)
-        guard let coordinator = mapCoordinator, let map = coordinator.map else { return }
-        coordinator.setSuspended(true, on: map)
+        suspendMap(true)
     }
 
     func uncoverHome() {
+        guard !isRelaunching else { return }
+        lastDismissUptime = ProcessInfo.processInfo.systemUptime
         physicalWalk?.setPublishesUI(true)
         mapState?.setPublishesRealtime(true)
         routeClock?.setPublishesUI(true)
+        // 地图手势稍后再开，齿轮立刻可点，避免第一下被 MKMapView 吃掉。
+        let work = DispatchWorkItem { [weak self] in
+            guard let self, self.activeSheet == nil else { return }
+            self.unsuspendMapWork = nil
+            self.suspendMap(false)
+        }
+        unsuspendMapWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35, execute: work)
+    }
+
+    private func suspendMap(_ suspended: Bool) {
         guard let coordinator = mapCoordinator, let map = coordinator.map else { return }
-        coordinator.setSuspended(false, on: map)
+        coordinator.setSuspended(suspended, on: map)
     }
 
     func bindRuntime(
@@ -79,15 +127,15 @@ struct MapHomeContainer: View {
     var body: some View {
         MapHomeHost(setup: setup, sheetBox: sheetBox)
             .equatable()
-            .sheet(item: $sheetBox.activeSheet) { sheet in
+            .sheet(item: $sheetBox.activeSheet) { item in
                 MapHomePresentedSheet(
-                    sheet: sheet,
+                    sheet: item.kind,
                     setup: setup,
                     box: sheetBox,
-                    activeSheet: $sheetBox.activeSheet
+                    activeSheet: presentedKind
                 )
             }
-            .onChange(of: sheetBox.activeSheet) { sheet in
+            .onChange(of: sheetBox.activeSheet?.kind) { sheet in
                 if sheet == nil {
                     sheetBox.uncoverHome()
                 }
@@ -98,6 +146,19 @@ struct MapHomeContainer: View {
                     sheetBox.routeImport?.leavePage()
                 }
             }
+    }
+
+    private var presentedKind: Binding<HomeSheet?> {
+        Binding(
+            get: { sheetBox.activeSheet?.kind },
+            set: { kind in
+                if let kind {
+                    sheetBox.present(kind)
+                } else {
+                    sheetBox.activeSheet = nil
+                }
+            }
+        )
     }
 }
 

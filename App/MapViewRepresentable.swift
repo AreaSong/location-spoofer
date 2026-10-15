@@ -82,8 +82,9 @@ struct MapViewRepresentable: UIViewRepresentable {
     func updateUIView(_ map: MKMapView, context: Context) {
         context.coordinator.parent = self
         homeSheetBox?.mapCoordinator = context.coordinator
-        context.coordinator.setSuspended(isSuspended, on: map)
-        guard !isSuspended else { return }
+        let covered = isSuspended || homeSheetBox?.activeSheet != nil
+        context.coordinator.setSuspended(covered, on: map)
+        guard !covered else { return }
         context.coordinator.consume(cameraCommand, on: map)
         context.coordinator.updateRouteOverlay(routeCoordinates, on: map)
         context.coordinator.updateRoutePins(routePins, on: map)
