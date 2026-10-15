@@ -156,6 +156,29 @@ final class RoutePlaybackTests: XCTestCase {
         XCTAssertEqual(same.wgs84.longitude, pair.wgs84.longitude)
     }
 
+    func testHeadingFollowsCurrentSegment() {
+        let south = CoordinateConverter.coordinatePair(lat: 22.490, lon: 113.950, mapCoordinateSystem: .wgs84)
+        let north = CoordinateConverter.coordinatePair(lat: 22.495, lon: 113.950, mapCoordinateSystem: .wgs84)
+        let east = CoordinateConverter.coordinatePair(lat: 22.495, lon: 113.955, mapCoordinateSystem: .wgs84)
+        let path = RoutePath.make([south, north, east])
+        let corner = path.cumulativeMeters[1] / path.totalMeters
+
+        XCTAssertEqual(RoutePlayback.headingDegrees(path: path, progress: 0) ?? -1, 0, accuracy: 1)
+        XCTAssertEqual(RoutePlayback.headingDegrees(path: path, progress: corner * 0.5) ?? -1, 0, accuracy: 1)
+        XCTAssertEqual(RoutePlayback.headingDegrees(path: path, progress: min(1, corner + 0.01)) ?? -1, 90, accuracy: 2)
+        XCTAssertEqual(RoutePlayback.headingDegrees(path: path, progress: 1) ?? -1, 90, accuracy: 2)
+        XCTAssertEqual(RoutePlayback.headingDegrees(path: path.reversed(), progress: 0) ?? -1, 270, accuracy: 2)
+        XCTAssertNil(RoutePlayback.headingDegrees(path: RoutePath.make([south]), progress: 0))
+    }
+
+    func testBearingUsesShortestLongitude() {
+        let west = CoordinateConverter.coordinatePair(lat: 0, lon: 179.8, mapCoordinateSystem: .wgs84)
+        let east = CoordinateConverter.coordinatePair(lat: 0, lon: -179.8, mapCoordinateSystem: .wgs84)
+        XCTAssertEqual(RoutePlayback.bearing(from: west, to: east), 90, accuracy: 1)
+        XCTAssertEqual(RoutePlayback.bearing(from: east, to: west), 270, accuracy: 1)
+        XCTAssertEqual(RoutePlayback.bearing(from: west, to: west), 0, accuracy: 1)
+    }
+
     func testTurnAngleAndCorneringFactor() {
         let p1 = CoordinateConverter.coordinatePair(lat: 22.490, lon: 113.950, mapCoordinateSystem: .wgs84)
         let p2 = CoordinateConverter.coordinatePair(lat: 22.495, lon: 113.950, mapCoordinateSystem: .wgs84)
@@ -672,6 +695,28 @@ final class RoutePlaybackControllerTests: XCTestCase {
         XCTAssertEqual(route.phase, .playing)
         XCTAssertFalse(route.statusMessage.contains("已走到终点"))
         route.pause()
+    }
+
+    func testPlaybackPublishesTravelHeadingOnClock() {
+        let route = preparedRoute(repeatMode: .once)
+        XCTAssertNil(route.progressHeadingDegrees)
+        XCTAssertNil(route.clock.headingDegrees)
+        route.ignoresWriteGate = true
+        route.tickIntervalNanoseconds = 60_000_000_000
+        route.applyCoordinate = { _ in true }
+        route.requestPlay()
+        route.noteActivated()
+
+        XCTAssertEqual(route.phase, .playing)
+        XCTAssertEqual(route.progressHeadingDegrees ?? -1, 0, accuracy: 2)
+        XCTAssertEqual(route.clock.headingDegrees ?? -1, 0, accuracy: 2)
+        XCTAssertNotNil(route.clock.markerCoordinate)
+
+        route.pause()
+        XCTAssertEqual(route.phase, .paused)
+        XCTAssertEqual(route.clock.headingDegrees ?? -1, 0, accuracy: 2)
+        route.stopPlaybackKeepingLocation()
+        XCTAssertNil(route.clock.headingDegrees)
     }
 
     func testRequestPlayResetsHeadingAfterRoundTripLeg() {

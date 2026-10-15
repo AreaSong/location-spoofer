@@ -553,8 +553,30 @@ final class HomeLayoutRenderingTests: XCTestCase {
         host.view.layoutIfNeeded()
         RunLoop.main.run(until: Date().addingTimeInterval(0.15))
         let frame = bounds.frames["walk"] ?? .zero
-        XCTAssertLessThan(frame.width, 260, "walk popover must hug content, got \(frame)")
+        XCTAssertLessThan(frame.width, 340, "walk popover must hug content, got \(frame)")
         XCTAssertLessThan(frame.height, 80, "closed walk popover must stay a single compact bar, got \(frame)")
+        window.isHidden = true
+    }
+
+    func testWalkPanelShowsInitialHeadingWithoutWalk() {
+        let suite = "WalkPanelHeadingOnly.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let store = PhysicalWalkStore(defaults: defaults)
+        store.setCustomHeadingEnabled(true)
+        let host = UIHostingController(rootView: PhysicalWalkHeadingControls(
+            store: store, controller: PhysicalWalkController(), spoofActive: true
+        ).padding())
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 240))
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        host.view.frame = window.bounds
+        host.view.layoutIfNeeded()
+        RunLoop.main.run(until: Date().addingTimeInterval(0.15))
+        let texts = visibleTexts(in: host.view)
+        XCTAssertTrue(texts.contains { $0.contains("初始指向") }, "got \(texts)")
+        let sliders = descendants(of: host.view).compactMap { $0 as? UISlider }
+        XCTAssertEqual(sliders.count, 1, "heading-only must keep the heading slider and omit stride")
         window.isHidden = true
     }
 

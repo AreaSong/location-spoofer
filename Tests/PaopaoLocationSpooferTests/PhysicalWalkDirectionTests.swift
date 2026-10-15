@@ -235,6 +235,84 @@ final class PhysicalWalkDirectionTests: XCTestCase {
         walk.stopHeading()
     }
 
+    func testRoutePlaybackHeadingReplacesProgressMarker() throws {
+        let clock = RoutePlaybackClock()
+        clock.setMarker(CLLocationCoordinate2D(latitude: 0, longitude: 0))
+        clock.setHeading(90)
+        let parent = MapViewRepresentable(
+            selection: .init(coordinate: .init(latitude: 0, longitude: 0), source: .mapTap, explicitName: nil, revision: 0),
+            initialViewportMeters: 500, cameraCommand: nil,
+            onRealtimeLocationChanged: { _ in }, onUserCenterChanged: { _, _ in },
+            onViewportChanged: { _ in }, onMapTap: { _ in }, onUserZoomChanged: nil,
+            playbackClock: clock,
+            walkHeadingDegrees: 0,
+            walkPuckCoordinate: .init(latitude: 1, longitude: 1),
+            showsWalkHeading: true
+        )
+        let map = MKMapView(frame: CGRect(x: 0, y: 0, width: 390, height: 600))
+        map.camera = MKMapCamera(
+            lookingAtCenter: .init(latitude: 0, longitude: 0),
+            fromDistance: 500,
+            pitch: 0,
+            heading: 0
+        )
+        map.layoutIfNeeded()
+        let coordinator = parent.makeCoordinator()
+        coordinator.installWalkHeadingHud(on: map)
+        coordinator.bindPlaybackClock(clock, on: map)
+        let hud = try XCTUnwrap(coordinator.walkHeadingHud)
+        XCTAssertFalse(hud.isHidden)
+        XCTAssertEqual(hud.headingDegrees, 90, accuracy: 1)
+        XCTAssertEqual(hud.accessibilityValue, "东 90°")
+        XCTAssertFalse(map.annotations.contains { $0 is RouteProgressAnnotation })
+
+        clock.setHeading(180)
+        RunLoop.main.run(until: Date().addingTimeInterval(0.15))
+        XCTAssertEqual(hud.headingDegrees, 180, accuracy: 1)
+        XCTAssertEqual(hud.accessibilityValue, "南 180°")
+
+        clock.setMarker(nil)
+        clock.setHeading(nil)
+        RunLoop.main.run(until: Date().addingTimeInterval(0.15))
+        XCTAssertEqual(hud.headingDegrees, 0, accuracy: 1)
+        coordinator.stopWalkPuckTracking()
+    }
+
+    func testRouteCustomHeadingOverridesPathFan() throws {
+        let clock = RoutePlaybackClock()
+        clock.setMarker(CLLocationCoordinate2D(latitude: 0, longitude: 0))
+        clock.setHeading(90)
+        let parent = MapViewRepresentable(
+            selection: .init(coordinate: .init(latitude: 0, longitude: 0), source: .mapTap, explicitName: nil, revision: 0),
+            initialViewportMeters: 500, cameraCommand: nil,
+            onRealtimeLocationChanged: { _ in }, onUserCenterChanged: { _, _ in },
+            onViewportChanged: { _ in }, onMapTap: { _ in }, onUserZoomChanged: nil,
+            playbackClock: clock,
+            walkHeadingDegrees: 45,
+            walkPuckCoordinate: .init(latitude: 0, longitude: 0),
+            showsWalkHeading: true,
+            prefersCustomWalkHeading: true
+        )
+        let map = MKMapView(frame: CGRect(x: 0, y: 0, width: 390, height: 600))
+        map.camera = MKMapCamera(
+            lookingAtCenter: .init(latitude: 0, longitude: 0),
+            fromDistance: 500,
+            pitch: 0,
+            heading: 0
+        )
+        map.layoutIfNeeded()
+        let coordinator = parent.makeCoordinator()
+        coordinator.installWalkHeadingHud(on: map)
+        coordinator.bindPlaybackClock(clock, on: map)
+        let hud = try XCTUnwrap(coordinator.walkHeadingHud)
+        XCTAssertEqual(hud.headingDegrees, 45, accuracy: 1)
+        XCTAssertEqual(hud.accessibilityValue, "东北 45°")
+        clock.setHeading(180)
+        RunLoop.main.run(until: Date().addingTimeInterval(0.15))
+        XCTAssertEqual(hud.headingDegrees, 45, accuracy: 1)
+        coordinator.stopWalkPuckTracking()
+    }
+
     private func makeMap(heading: Double?) -> MapViewRepresentable {
         MapViewRepresentable(
             selection: .init(coordinate: .init(latitude: 0, longitude: 0), source: .mapTap, explicitName: nil, revision: 0),

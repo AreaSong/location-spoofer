@@ -23,6 +23,7 @@ struct MapViewRepresentable: UIViewRepresentable {
     var walkHeadingDegrees: Double? = nil
     var walkPuckCoordinate: CLLocationCoordinate2D? = nil
     var showsWalkHeading: Bool = false
+    var prefersCustomWalkHeading: Bool = false
     var mapDisplayStyle: MapDisplayStyle = .standard
 
     func makeCoordinator() -> Coordinator { Coordinator(parent: self) }
@@ -83,11 +84,7 @@ struct MapViewRepresentable: UIViewRepresentable {
         if let playbackClock {
             context.coordinator.bindPlaybackClock(playbackClock, on: map)
         }
-        context.coordinator.updateWalkHeadingHud(
-            degrees: walkHeadingDegrees,
-            visible: showsWalkHeading,
-            on: map
-        )
+        context.coordinator.refreshLocationPuck(on: map)
         if map.mapType != mapDisplayStyle.mapKitType {
             map.mapType = mapDisplayStyle.mapKitType
         }
@@ -103,9 +100,11 @@ struct MapViewRepresentable: UIViewRepresentable {
         private var regionChangeWasUserDriven = false
         private var isPinchZoom = false
         weak var centerPin: UIImageView?
-        weak var walkHeadingHud: WalkHeadingHud?
+        var walkHeadingHud: WalkHeadingHud?
         var walkPuckDisplayLink: CADisplayLink?
         var walkPuckDisplayLinkProxy: WalkPuckDisplayLinkProxy?
+        var puckCoordinate: CLLocationCoordinate2D?
+        var puckHeadingDegrees: Double?
         private let pinSize: CGFloat = 38
         // 蓝点实际大小从 MKUserLocationView 取，默认 20pt
         private var userDotDiameter: CGFloat = 20
@@ -336,20 +335,48 @@ struct MapViewRepresentable: UIViewRepresentable {
 
         func bindPlaybackClock(_ clock: RoutePlaybackClock, on map: MKMapView) {
             self.map = map
-            applyProgressMarker(clock.markerCoordinate, on: map)
-            guard boundPlaybackClock !== clock else { return }
-            boundPlaybackClock = clock
-            markerCancellable = clock.$markerCoordinate
-                .receive(on: DispatchQueue.main)
-                .sink { [weak self] coordinate in
-                    guard let self, let map = self.map else { return }
-                    self.applyProgressMarker(coordinate, on: map)
-                }
+            if boundPlaybackClock !== clock {
+                boundPlaybackClock = clock
+                markerCancellable = Publishers.CombineLatest(clock.$markerCoordinate, clock.$headingDegrees)
+                    .receive(on: DispatchQueue.main)
+                    .sink { [weak self] _, _ in
+                        guard let self, let map = self.map else { return }
+                        self.refreshLocationPuck(on: map)
+                    }
+            }
+            refreshLocationPuck(on: map)
         }
 
-        private func applyProgressMarker(_ coordinate: CLLocationCoordinate2D?, on map: MKMapView) {
-            updateRouteProgress(coordinate, on: map)
-            map.showsUserLocation = coordinate == nil
+        func refreshLocationPuck(on map: MKMapView) {
+            if let marker = routeMarkerCoordinate {
+                puckCoordinate = marker
+                updateWalkHeadingHud(
+                    degrees: DisplayedPuckHeading.degrees(
+                        customHeadingEnabled: parent.prefersCustomWalkHeading,
+                        walkHeadingDegrees: parent.walkHeadingDegrees,
+                        routeHeadingDegrees: boundPlaybackClock?.headingDegrees
+                            ?? parent.playbackClock?.headingDegrees
+                    ),
+                    visible: true,
+                    on: map
+                )
+                updateRouteProgress(nil, on: map)
+                map.showsUserLocation = false
+                return
+            }
+            puckCoordinate = parent.walkPuckCoordinate
+            updateWalkHeadingHud(
+                degrees: parent.walkHeadingDegrees,
+                visible: parent.showsWalkHeading,
+                on: map
+            )
+            map.showsUserLocation = true
+        }
+
+        private var routeMarkerCoordinate: CLLocationCoordinate2D? {
+            let coordinate = boundPlaybackClock?.markerCoordinate ?? parent.playbackClock?.markerCoordinate
+            guard let coordinate, CLLocationCoordinate2DIsValid(coordinate) else { return nil }
+            return coordinate
         }
 
         func updateRouteProgress(_ coordinate: CLLocationCoordinate2D?, on map: MKMapView) {
@@ -441,7 +468,7 @@ struct MapViewRepresentable: UIViewRepresentable {
                 for sub in view.subviews where sub.bounds.width > userDotDiameter + 4 {
                     sub.isHidden = true
                 }
-                view.isHidden = parent.showsWalkHeading
+                view.isHidden = walkHeadingHud?.isHidden == false
             }
         }
 

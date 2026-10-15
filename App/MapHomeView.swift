@@ -274,6 +274,7 @@ struct MapHomeView: View {
                 walkHeadingDegrees: physicalWalk.activeHeadingDegrees,
                 walkPuckCoordinate: walkPuckMapCoordinate,
                 showsWalkHeading: walkPuckMapCoordinate != nil,
+                prefersCustomWalkHeading: physicalWalkStore.isCustomHeadingEnabled,
                 mapDisplayStyle: mapStyle.style
             )
             .ignoresSafeArea(.container)

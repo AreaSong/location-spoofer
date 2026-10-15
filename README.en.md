@@ -16,7 +16,7 @@ responses in a controlled test environment.
 [![iOS 15+](https://img.shields.io/badge/iOS-15%2B-111111?logo=apple)](project.yml)
 [![Swift 5.9](https://img.shields.io/badge/Swift-5.9-F05138)](project.yml)
 [![Go 1.23+](https://img.shields.io/badge/Go-1.23%2B-00ADD8?logo=go)](Core/go.mod)
-[![Version](https://img.shields.io/badge/version-v1.2.0.1-2563EB)](docs/CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-v1.2.0.2-2563EB)](docs/CHANGELOG.md)
 
 [Features](#feature-overview) ·
 [How It Works](#how-it-works) ·
@@ -61,7 +61,7 @@ collection services.
   - Supports place search, pasted map links, typed latitude/longitude, map taps, center-point dragging, and zooming;
   - A pending search can be cleared or replaced. Editing cancels the old query and hides its results without starting a new network request. Results scroll; tap “完成” to finish editing and restore map controls.
   - Map tools above the right of the bottom card cycle Standard, Satellite, and Hybrid layers and can return to the current location;
-  - Search, Logs, and Settings share one row, with a compact signing countdown inside Settings. Below Search, tap coordinates to switch and copy GCJ-02 / WGS-84 without a system menu. In Spot mode, 功能 beside the coordinates opens the physical-walking popover; that control is hidden in Route mode. A capsule bar above the bottom card switches Spot / Route, with a marker on Route while playback is active; the card title shows the current place name. Spot shows horizontally scrolling Recents and Favorites; Route shows travel mode, speed, repeat, and drift, and opens saved routes from 已存. Zoom sits under the coordinate row and can be tapped or held to repeat;
+  - Search, Logs, and Settings share one row, with a compact signing countdown inside Settings. Below Search, tap coordinates to switch and copy GCJ-02 / WGS-84 without a system menu. 功能 beside the coordinates opens physical walking and custom heading (“初始指向”); route parameters stay in the bottom card. A capsule bar above the bottom card switches Spot / Route, with a marker on Route while playback is active; the card title shows the current place name. Spot shows horizontally scrolling Recents and Favorites; Route shows travel mode, speed, repeat, and drift, and opens saved routes from 已存. Zoom sits under the coordinate row and can be tapped or held to repeat;
   - Switching to a new spot keeps Stop available. Running or paused routes keep End Route visible; exiting still requires confirmation and leaves the simulated location at the current point;
   - Keeps the latest 10 discrete selections (tap, search, favorite, or realtime fix). Panning the map updates the current
     center only and does not write history;
@@ -77,7 +77,7 @@ collection services.
     always identical. Reported accuracy applies to App Mode and Third-party Proxy Mode only;
   - Motion simulation is available only in App Mode;
   - Optional Smooth Cruise (off by default): while a spot is already active, switching to a new point 50 m–500 km away eases over 1.4 s; starting a route still jumps to the route start. Optional cornering slowdown and speed jitter during route playback is also off by default;
-  - Optional physical walking: off by default and toggled in the Spot-mode 功能 popover; from launch or after spot spoofing, a blue-dot puck shows the current location and heading and uses calibrated true-north heading by default; the fan projects with map rotation and pitch. Movement waits for a valid heading and skips step increments received while heading is unavailable. Slowly rotate the phone and resume walking once heading returns. Pedometer callbacks are cumulative batches; delayed batches still use the heading at receipt. Custom heading (“初始指向”) is off by default; turn it on to set the initial heading with the slider and ±15° and zero the phone attitude, then rotating the phone turns the fan. The step-fallback stride is adjustable. Last custom values persist but are not applied on a successful connect. With walking on, steps move along the live fan; it is mutually exclusive with automatic route playback;
+  - Optional physical walking: off by default and toggled in the 功能 popover; from launch or after spot spoofing, a blue-dot puck shows the current location and heading and uses calibrated true-north heading by default; the fan projects with map rotation and pitch. Movement waits for a valid heading and skips step increments received while heading is unavailable. Slowly rotate the phone and resume walking once heading returns. Pedometer callbacks are cumulative batches; delayed batches still use the heading at receipt. Custom heading (“初始指向”) is off by default and can be turned on in Spot or Route without enabling walking; turn it on to set the initial heading with the slider and ±15° and zero the phone attitude, then rotating the phone turns the fan. Route playback follows the current segment until custom heading is on. The step-fallback stride is adjustable. Last custom values persist but are not applied on a successful connect. With walking on, steps move along the live fan; it is mutually exclusive with automatic route playback;
   - Does not require changes to the target app.
 
 - **Route playback**
@@ -86,6 +86,8 @@ collection services.
   - Routes can be saved, overwritten, and reversed, up to 50 entries. GPX / KML tracks can be imported and played back
     along the recorded path without re-routing. Unzip KMZ to KML first;
   - Route file and clipboard imports read, parse, and simplify in the background. Cancel during preparation or close the route list to discard uncommitted results. File pickers, temporary sheets, and backgrounding do not cancel the import. Synchronous per-route commits already underway are not rolled back; feedback reports actual additions, updates, over-limit skips, and failures;
+  - During play, pause, and finish, the current point uses the same blue-dot fan as Spot mode. With custom heading off it
+    points along the current segment and reverses on round-trip return legs; with 初始指向 on, the fan follows the custom heading. Physical walking remains mutually exclusive with automatic playback;
   - Playback writes coordinates through the current runtime mode: App Mode and Third-party Proxy Mode write through
     the proxy with an 8 m / 5 s write gate; Developer Tunnel Mode pushes every second directly into system location.
 

@@ -28,7 +28,10 @@ final class RoutePlaybackController: ObservableObject {
     @Published private(set) var path: RoutePath?
     @Published private(set) var pathFallback: RoutePathFallback?
     private(set) var progress: Double = 0 {
-        didSet { clock.setProgress(progress) }
+        didSet {
+            clock.setProgress(progress)
+            publishMarker()
+        }
     }
     private(set) var current: CoordinatePair? {
         didSet {

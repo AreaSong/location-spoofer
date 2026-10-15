@@ -56,9 +56,9 @@ extension MapHomeView {
             mapSystem: displayedMapCoordinateSystem,
             selectedSystem: previewCoordinateSystem,
             copied: coordinateCopied,
-            showsFunction: !showsRoutePanelActive,
+            showsFunction: true,
             functionSelected: homePopup == .walk,
-            functionEnabledDot: physicalWalkStore.isEnabled,
+            functionEnabledDot: physicalWalkStore.isEnabled || physicalWalkStore.isCustomHeadingEnabled,
             functionAccessibilityLabel: "功能",
             functionAccessibilityValue: functionAccessibilityValue,
             onCoordinateTap: { toggleHomePopup(.coordinate) },
@@ -249,6 +249,8 @@ extension MapHomeView {
         var parts: [String] = []
         parts.append("真实走动")
         parts.append(physicalWalkStore.isEnabled ? "已开启" : "已关闭")
+        parts.append("初始指向")
+        parts.append(physicalWalkStore.isCustomHeadingEnabled ? "已开启" : "已关闭")
         let open = homePopup == .walk
         parts.append(open ? "已展开" : "已收起")
         return parts.joined(separator: "，")

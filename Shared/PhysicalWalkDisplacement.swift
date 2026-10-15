@@ -202,6 +202,11 @@ enum PhysicalWalkStatusCopy {
     ) -> String {
         if !failureMessage.isEmpty { return failureMessage }
         if !isEnabled {
+            if headingLocked {
+                return headingNote(degrees: headingDegrees, locked: true)
+                    .map { "初始指向已开，\($0)。路线播放时扇形按这个朝向，不再跟路段。" }
+                    ?? "初始指向已开，滑条和 ±15° 设定朝向；路线播放时扇形按这个朝向。"
+            }
             return "打开后，你走动时虚拟点沿扇形方向移动。初始指向可自定义方向。"
         }
         if !spoofActive {
@@ -265,6 +270,20 @@ enum PhysicalWalkStatusCopy {
         guard let degrees else { return nil }
         let name = PhysicalWalkHeadingLock.compassName(degrees)
         return locked ? "朝向\(name)（已锁定）" : "朝向\(name)"
+    }
+}
+
+enum DisplayedPuckHeading {
+    /// 初始指向优先于路线路段朝向；关掉后才跟路段或罗盘。
+    static func degrees(
+        customHeadingEnabled: Bool,
+        walkHeadingDegrees: Double?,
+        routeHeadingDegrees: Double?
+    ) -> Double? {
+        if customHeadingEnabled {
+            return walkHeadingDegrees
+        }
+        return routeHeadingDegrees ?? walkHeadingDegrees
     }
 }
 

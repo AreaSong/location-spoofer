@@ -268,15 +268,40 @@ enum RoutePlayback {
         let target = path.totalMeters * clamped
         if target >= path.totalMeters { return path.points.last ?? first }
 
-        var index = 0
-        while index + 1 < path.cumulativeMeters.count, path.cumulativeMeters[index + 1] < target {
-            index += 1
-        }
+        let index = segmentIndex(path: path, targetMeters: target)
         let startMeters = path.cumulativeMeters[index]
         let endMeters = path.cumulativeMeters[index + 1]
         let span = max(endMeters - startMeters, 0.000_1)
         let local = (target - startMeters) / span
         return interpolate(from: path.points[index], to: path.points[index + 1], progress: local)
+    }
+
+    /// 当前进度所在路段的前进方位角；走完时沿最后一段。单点路径没有朝向。
+    static func headingDegrees(path: RoutePath, progress: Double) -> Double? {
+        guard let segment = headingSegment(path: path, progress: progress) else { return nil }
+        return bearing(from: segment.start, to: segment.end)
+    }
+
+    private static func headingSegment(path: RoutePath, progress: Double) -> (start: CoordinatePair, end: CoordinatePair)? {
+        guard path.points.count >= 2, path.totalMeters > 0 else { return nil }
+        let last = path.points.count - 1
+        let clamped = min(1, max(0, progress))
+        if clamped >= 1 {
+            return (path.points[last - 1], path.points[last])
+        }
+        let index = segmentIndex(path: path, targetMeters: path.totalMeters * clamped)
+        guard index + 1 < path.points.count else {
+            return (path.points[last - 1], path.points[last])
+        }
+        return (path.points[index], path.points[index + 1])
+    }
+
+    private static func segmentIndex(path: RoutePath, targetMeters: Double) -> Int {
+        var index = 0
+        while index + 1 < path.cumulativeMeters.count, path.cumulativeMeters[index + 1] < targetMeters {
+            index += 1
+        }
+        return index
     }
 
     /// 中途改速时按当前进度重算已走时间，避免下一次 tick 把位置跳到新速度对应的远处。
@@ -364,10 +389,11 @@ enum RoutePlayback {
     /// 计算两点间的初始大圆方位角 (0...360 度)
     static func bearing(from start: CoordinatePair, to end: CoordinatePair) -> Double {
         let lat1 = start.wgs84.latitude * .pi / 180
-        let lon1 = start.wgs84.longitude * .pi / 180
         let lat2 = end.wgs84.latitude * .pi / 180
-        let lon2 = end.wgs84.longitude * .pi / 180
-        let dLon = lon2 - lon1
+        let dLon = CoordinateConverter.shortestLongitudeDelta(
+            from: start.wgs84.longitude,
+            to: end.wgs84.longitude
+        ) * .pi / 180
         let y = sin(dLon) * cos(lat2)
         let x = cos(lat1) * sin(lat2) - sin(lat1) * cos(lat2) * cos(dLon)
         let radians = atan2(y, x)

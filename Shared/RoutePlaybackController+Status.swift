@@ -59,11 +59,23 @@ extension RoutePlaybackController {
         }
     }
 
+    var progressHeadingDegrees: Double? {
+        switch phase {
+        case .playing, .paused, .finished:
+            guard let path else { return nil }
+            let active = headingForward ? path : path.reversed()
+            return RoutePlayback.headingDegrees(path: active, progress: progress)
+        case .inactive, .preparing:
+            return nil
+        }
+    }
+
     func refreshProgressMarker() {
         publishMarker()
     }
 
     func publishMarker() {
         clock.setMarker(progressCoordinate)
+        clock.setHeading(progressHeadingDegrees)
     }
 }

@@ -9,6 +9,7 @@ final class RoutePlaybackClock: ObservableObject {
     @Published private(set) var current: CoordinatePair?
     @Published private(set) var statusMessage = ""
     @Published private(set) var markerCoordinate: CLLocationCoordinate2D?
+    @Published private(set) var headingDegrees: Double?
 
     func setProgress(_ value: Double) {
         guard progress != value else { return }
@@ -30,6 +31,11 @@ final class RoutePlaybackClock: ObservableObject {
         markerCoordinate = coordinate
     }
 
+    func setHeading(_ value: Double?) {
+        guard !sameHeading(headingDegrees, value) else { return }
+        headingDegrees = value
+    }
+
     private func sameCoordinate(
         _ lhs: CLLocationCoordinate2D?,
         _ rhs: CLLocationCoordinate2D?
@@ -39,6 +45,19 @@ final class RoutePlaybackClock: ObservableObject {
             return true
         case let (left?, right?):
             return left.latitude == right.latitude && left.longitude == right.longitude
+        default:
+            return false
+        }
+    }
+
+    private func sameHeading(_ lhs: Double?, _ rhs: Double?) -> Bool {
+        switch (lhs, rhs) {
+        case (nil, nil):
+            return true
+        case let (left?, right?):
+            var diff = abs(left - right).truncatingRemainder(dividingBy: 360)
+            if diff > 180 { diff = 360 - diff }
+            return diff < 0.5
         default:
             return false
         }

@@ -104,6 +104,7 @@ final class WalkPuckDisplayLinkProxy: NSObject {
 
 extension MapViewRepresentable.Coordinator {
     func installWalkHeadingHud(on map: MKMapView) {
+        self.map = map
         let size = WalkHeadingHud.hudSize
         let hud = WalkHeadingHud(frame: CGRect(x: 0, y: 0, width: size, height: size))
         hud.isHidden = true
@@ -136,11 +137,15 @@ extension MapViewRepresentable.Coordinator {
     }
 
     func updateWalkHeadingHud(degrees: Double?, visible: Bool, on map: MKMapView) {
+        attachWalkHeadingHud(to: map)
         guard let hud = walkHeadingHud else { return }
         hud.isHidden = !visible
         applyNativeUserLocationVisibility(hidden: visible, on: map)
+        puckHeadingDegrees = degrees
+        if puckCoordinate == nil {
+            puckCoordinate = parent.walkPuckCoordinate
+        }
         if visible {
-            parent.walkHeadingDegrees = degrees
             startWalkPuckTracking()
             positionWalkHeadingHud(on: map)
         } else {
@@ -149,18 +154,28 @@ extension MapViewRepresentable.Coordinator {
     }
 
     func positionWalkHeadingHud(on map: MKMapView) {
+        attachWalkHeadingHud(to: map)
         guard let hud = walkHeadingHud, !hud.isHidden else { return }
-        guard let coordinate = parent.walkPuckCoordinate else {
+        guard let coordinate = puckCoordinate ?? parent.walkPuckCoordinate else {
+            hud.update(geographicDegrees: puckHeadingDegrees, screenDegrees: nil)
             hud.isHidden = true
             applyNativeUserLocationVisibility(hidden: false, on: map)
             stopWalkPuckTracking()
             return
         }
         hud.center = map.convert(coordinate, toPointTo: map)
-        let degrees = parent.walkHeadingDegrees
+        let degrees = puckHeadingDegrees
         hud.update(geographicDegrees: degrees, screenDegrees: degrees.map {
             screenHeading($0, at: coordinate, on: map)
         })
+    }
+
+    private func attachWalkHeadingHud(to map: MKMapView) {
+        self.map = map
+        guard let hud = walkHeadingHud else { return }
+        if hud.superview !== map {
+            map.addSubview(hud)
+        }
     }
 
     private func screenHeading(_ degrees: Double, at coordinate: CLLocationCoordinate2D, on map: MKMapView) -> Double {

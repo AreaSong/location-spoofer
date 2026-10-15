@@ -141,8 +141,8 @@ struct PhysicalWalkHeadingControls: View {
                     .foregroundStyle(.red)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            if store.isEnabled {
-                enabledRows
+            if store.isEnabled || store.isCustomHeadingEnabled {
+                extraRows
                     .transition(.asymmetric(
                         insertion: .move(edge: .top).combined(with: .opacity),
                         removal: .opacity
@@ -163,7 +163,7 @@ struct PhysicalWalkHeadingControls: View {
         barWidth > 1 ? barWidth : 220
     }
 
-    private var enabledRows: some View {
+    private var extraRows: some View {
         VStack(alignment: .leading, spacing: 2) {
             if store.isCustomHeadingEnabled {
                 headingAdjustment
@@ -172,7 +172,9 @@ struct PhysicalWalkHeadingControls: View {
                         removal: .opacity
                     ))
             }
-            strideRow
+            if store.isEnabled {
+                strideRow
+            }
         }
     }
 
@@ -189,9 +191,7 @@ struct PhysicalWalkHeadingControls: View {
                 .accessibilityHidden(true)
             infoButton
             WalkCompactToggle(title: "开启", isOn: enabledBinding, accessibilityLabel: "真实走动")
-            if store.isEnabled {
-                WalkCompactToggle(title: "初始指向", isOn: customHeadingBinding, accessibilityLabel: "初始指向")
-            }
+            WalkCompactToggle(title: "初始指向", isOn: customHeadingBinding, accessibilityLabel: "初始指向")
         }
     }
 

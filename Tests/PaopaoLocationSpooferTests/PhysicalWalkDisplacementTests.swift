@@ -316,6 +316,18 @@ final class PhysicalWalkDisplacementTests: XCTestCase {
         )
         XCTAssertEqual(
             PhysicalWalkStatusCopy.homePanelInfo(
+                isEnabled: false,
+                spoofActive: true,
+                status: .idle,
+                movedMeters: 0,
+                failureMessage: "",
+                headingDegrees: 90,
+                headingLocked: true
+            ),
+            "初始指向已开，朝向东（已锁定）。路线播放时扇形按这个朝向，不再跟路段。 " + PhysicalWalkStatusCopy.strideHelp
+        )
+        XCTAssertEqual(
+            PhysicalWalkStatusCopy.homePanelInfo(
                 isEnabled: true,
                 spoofActive: true,
                 status: .idle,
@@ -445,6 +457,40 @@ final class PhysicalWalkDisplacementTests: XCTestCase {
         )
         XCTAssertEqual(livePuck?.latitude ?? 0, 22.51, accuracy: 0.000_000_1)
         XCTAssertEqual(livePuck?.longitude ?? 0, 113.91, accuracy: 0.000_000_1)
+    }
+
+    func testDisplayedPuckHeadingPrefersCustomOverRoute() {
+        XCTAssertEqual(
+            DisplayedPuckHeading.degrees(
+                customHeadingEnabled: true,
+                walkHeadingDegrees: 45,
+                routeHeadingDegrees: 90
+            ),
+            45
+        )
+        XCTAssertEqual(
+            DisplayedPuckHeading.degrees(
+                customHeadingEnabled: false,
+                walkHeadingDegrees: 45,
+                routeHeadingDegrees: 90
+            ),
+            90
+        )
+        XCTAssertEqual(
+            DisplayedPuckHeading.degrees(
+                customHeadingEnabled: false,
+                walkHeadingDegrees: 45,
+                routeHeadingDegrees: nil
+            ),
+            45
+        )
+        XCTAssertNil(
+            DisplayedPuckHeading.degrees(
+                customHeadingEnabled: true,
+                walkHeadingDegrees: nil,
+                routeHeadingDegrees: 90
+            )
+        )
     }
 
     func testHeadingInstrumentAddsYawDeltaToInitialAndReturnsWhenYawReturns() {
