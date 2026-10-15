@@ -24,6 +24,7 @@ struct SettingsView: View {
     @ObservedObject var actions: LocationActionCoordinator
     @ObservedObject var favoriteImport: FavoriteImportCoordinator
     var isSettingsPresented: () -> Bool
+    var onClose: (() -> Void)? = nil
     @State var showingBugReport = false
     @State var favoritePageID = UUID()
     @ObservedObject var favorites: FavoriteLocationStore
@@ -53,6 +54,15 @@ struct SettingsView: View {
         settingsPage
     }
 
+
+    func closeSettings() {
+        favoriteImport.leavePage()
+        if let onClose {
+            onClose()
+            return
+        }
+        dismiss()
+    }
 
     func setProxyOperationAlert(title: String, message: String) {
         proxyOperationAlertTitle = title

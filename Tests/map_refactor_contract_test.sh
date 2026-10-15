@@ -247,6 +247,14 @@ if awk '/func presentHomeSheet/,/^    }/' "$ROOT/App/MapHomeView.swift" | grep -
 else
   fail "opening settings must freeze the map before presenting the sheet"
 fi
+grep -q 'kind == .settings, presentSettings()' "$ROOT/App/MapHomePresentation.swift" \
+  || fail "settings must open without building a SwiftUI sheet on the gear tap"
+grep -q 'func prepareSettings' "$ROOT/App/MapHomePresentation.swift" \
+  || fail "the settings page must be created before the gear is tapped"
+grep -q 'static let duration: TimeInterval = 0.12' "$ROOT/App/HomeSettingsPresenter.swift" \
+  || fail "settings must slide in faster than the system sheet"
+grep -q 'func installRealContent' "$ROOT/App/HomeSettingsPresenter.swift" \
+  || fail "settings content must be laid out before the gear tap"
 grep -q 'static let puckDiameter: CGFloat = 16' "$ROOT/App/WalkHeadingHud.swift" \
   || fail "walk heading must draw a blue-dot puck on the active virtual coordinate"
 grep -q 'static func fanPath' "$ROOT/App/WalkHeadingHud.swift" \

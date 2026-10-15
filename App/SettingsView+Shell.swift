@@ -16,7 +16,7 @@ extension SettingsView {
             else if isSettingsPresented() { favoriteImport.enterPage(favoritePageID) }
         }
         .toolbar {
-            ToolbarItem(placement: .navigationBarTrailing) { Button("完成") { favoriteImport.leavePage(); dismiss() } }
+            ToolbarItem(placement: .navigationBarTrailing) { Button("完成") { closeSettings() } }
         }
         .sheet(item: $activeTip) { kind in
             TipSheetView(kind: kind)
