@@ -304,7 +304,7 @@ Current client status:
 
 | Client | Module file | Import | Script storage | HTTPS decrypt | WLOC rewrite | On-device status | Note |
 |---|---|---|---|---|---|---|---|
-| Shadowrocket | wloc.module | Provided | Provided | Depends on the client | Provided | Verified on device | Currently used for on-device testing. The module includes a local Direct node named 环回; select it and use Config or Direct global routing instead of Proxy through a remote node |
+| Shadowrocket | wloc.module | Provided | Provided | Depends on the client | Provided | Verified on device | Currently used for on-device testing. The module includes `环回 = direct`, which does not appear on the home node list; use Direct global routing, or paste that line into the current config’s `[Proxy]` section |
 | Surge | wloc.sgmodule | Provided | Provided | Depends on the client | Provided | Not verified on device | Configuration provided |
 | Quantumult X | wloc.conf | Provided | Provided | Depends on the client | Provided | Not verified on device | Configuration provided |
 | Loon | wloc.lpx | Provided | Provided | Depends on the client | Provided | Not verified on device | Configuration provided |

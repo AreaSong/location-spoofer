@@ -285,11 +285,11 @@ extension FirstSetupView {
     }
 
     var shadowrocketLoopbackNodeGuide: some View {
-        GroupBox(label: Label("第 3 步：使用环回节点", systemImage: "arrow.triangle.2.circlepath")) {
+        GroupBox(label: Label("第 3 步：让流量走本机", systemImage: "arrow.triangle.2.circlepath")) {
             VStack(alignment: .leading, spacing: 12) {
-                instructionRow(1, "更新或重新导入模块后，首页本地节点会出现「\(ShadowrocketLoopbackNode.name)」。")
-                instructionRow(2, "选中「\(ShadowrocketLoopbackNode.name)」，全局路由选「配置」或「直连」，再开启连接。选机场并开「代理」会把流量送到外面。")
-                instructionRow(3, "若首页没有该节点，复制下面这一行，粘贴到「配置 → 本地文件 → 编辑纯文本」的 [Proxy] 段。")
+                instructionRow(1, "模块里已经写了「\(ShadowrocketLoopbackNode.configLine)」，但小火箭不会把它显示到首页节点列表，首页找不到是正常的。")
+                instructionRow(2, "最快用法：首页把全局路由改成「直连」，再打开连接开关。不要选机场并开「代理」。")
+                instructionRow(3, "若要在首页看到名为「\(ShadowrocketLoopbackNode.name)」的节点：复制下面这一行，打开「配置 → 本地文件」，点带黄点配置右侧 i，进入编辑纯文本，在 [Proxy] 下粘贴后保存。然后选中它，全局路由选「配置」或「直连」。")
                 Text(ShadowrocketLoopbackNode.configLine)
                     .font(.caption.monospaced())
                     .textSelection(.enabled)
@@ -301,7 +301,7 @@ extension FirstSetupView {
                 Button {
                     openThirdPartyClient(.shadowrocket)
                 } label: {
-                    Label("打开 Shadowrocket 选择环回节点", systemImage: "arrow.up.forward.app")
+                    Label("打开 Shadowrocket 继续配置", systemImage: "arrow.up.forward.app")
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.bordered)

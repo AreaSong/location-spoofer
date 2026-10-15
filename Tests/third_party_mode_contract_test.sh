@@ -113,6 +113,10 @@ grep -q '复制环回节点' "$SETUP" || fail "Shadowrocket setup must expose th
 grep -q '复制环回节点' "$SETTINGS" || fail "Settings must expose the Shadowrocket loopback node copy action"
 grep -q '全局路由选「配置」或「直连」' "$SETUP" \
   || fail "Shadowrocket setup must tell users not to use Proxy routing with a remote node"
+grep -q '首页找不到是正常的' "$SETUP" \
+  || fail "setup must not claim the loopback node appears on the Shadowrocket home list"
+! grep -q '首页本地节点会出现' "$SETUP" \
+  || fail "setup must not promise a home-list node after module import"
 grep -q 'ShadowrocketLoopbackNode.configLine' "$SETUP" \
   || fail "setup loopback copy must use the shared Shadowrocket node definition"
 grep -q 'ShadowrocketLoopbackNode.configLine' "$SETTINGS" \

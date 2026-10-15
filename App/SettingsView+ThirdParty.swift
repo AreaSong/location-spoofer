@@ -128,7 +128,7 @@ struct ThirdPartyConfigurationSection: View {
     @ViewBuilder
     private var clientTipsGroup: some View {
         if thirdPartyClient.selectedClient == .shadowrocket {
-            Text("更新模块后选中「\(ShadowrocketLoopbackNode.name)」，全局路由用「配置」或「直连」。选机场并开「代理」会把流量送到外面。")
+            Text("环回节点写在模块里，不会出现在首页列表。把全局路由改成「直连」，或把复制的「\(ShadowrocketLoopbackNode.configLine)」粘到当前配置纯文本的 [Proxy] 段。选机场并开「代理」会把流量送到外面。")
                 .font(.footnote).foregroundStyle(.secondary)
         } else if thirdPartyClient.selectedClient == .egern {
             Text("Egern 直接使用 Surge 的 .sgmodule 模块。")
