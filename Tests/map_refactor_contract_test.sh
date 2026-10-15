@@ -203,8 +203,19 @@ grep -q 'MapHomeContainer(setup: setup)' "$ROOT/App/ContentView.swift" \
   || fail "the map root must present settings from MapHomeContainer"
 grep -q 'markerCancellable = nil' "$ROOT/App/MapViewRepresentable.swift" \
   || fail "suspending the map must drop the route playback display subscription"
-grep -q 'if !isHomeCoveredBySheet' "$ROOT/App/MapHomeView.swift" \
-  || fail "home overlays must not rebuild under an open sheet"
+if grep -q 'map.isHidden = suspended' "$ROOT/App/MapViewRepresentable.swift"; then
+  fail "suspending the map must keep the presenting backdrop visible"
+fi
+if grep -q 'map.alpha = suspended' "$ROOT/App/MapViewRepresentable.swift"; then
+  fail "suspending the map must not fade the presenting backdrop"
+fi
+grep -q 'allowsHitTesting(!isHomeCoveredBySheet)' "$ROOT/App/MapHomeView.swift" \
+  || fail "the covered map must ignore touches without removing the home chrome"
+if grep -A12 'sheet(item: $activeSheet)' "$ROOT/App/MapHomePresentation.swift" | grep -q 'if let actions = sheetBox.actions'; then
+  fail "settings must present immediately instead of waiting on optional sheet bindings"
+fi
+grep -q 'func bindRuntime' "$ROOT/App/MapHomePresentation.swift" \
+  || fail "home sheet objects must be bound before the first settings tap"
 grep -q 'static let puckDiameter: CGFloat = 16' "$ROOT/App/WalkHeadingHud.swift" \
   || fail "walk heading must draw a blue-dot puck on the active virtual coordinate"
 grep -q 'static func fanPath' "$ROOT/App/WalkHeadingHud.swift" \

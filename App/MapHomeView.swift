@@ -41,18 +41,17 @@ enum RealtimeCoordinateSource: Equatable {
 struct MapHomePresentedSheet: View {
     let sheet: HomeSheet
     let setup: SetupCoordinator
-    let actions: LocationActionCoordinator
-    let favoriteImport: FavoriteImportCoordinator
-    let favorites: FavoriteLocationStore
-    let session: SpoofSession
-    let savedRoutes: SavedRouteStore
-    let recentRoutes: RecentRouteStore
-    let routeImport: RouteImportCoordinator
-    let testFavorite: FavoriteLocation
-    let onSelectFavorite: (FavoriteLocation) -> Void
-    let onRenameFavorite: (FavoriteLocation, String) -> Void
-    let onSelectSavedRoute: (SavedRoute) -> Void
+    var box: MapHomeSheetBox
     @Binding var activeSheet: HomeSheet?
+
+    var actions: LocationActionCoordinator { box.actions! }
+    var favoriteImport: FavoriteImportCoordinator { box.favoriteImport! }
+    var favorites: FavoriteLocationStore { box.favorites! }
+    var session: SpoofSession { box.session! }
+    var savedRoutes: SavedRouteStore { box.savedRoutes! }
+    var recentRoutes: RecentRouteStore { box.recentRoutes! }
+    var routeImport: RouteImportCoordinator { box.routeImport! }
+    var testFavorite: FavoriteLocation { box.testFavorite! }
 
     var body: some View {
         NavigationView {
@@ -66,10 +65,10 @@ struct MapHomePresentedSheet: View {
                 FavoriteListView(
                     favorites: favorites,
                     onSelect: { favorite in
-                        onSelectFavorite(favorite)
+                        box.onSelectFavorite(favorite)
                     },
                     onRename: { favorite, name in
-                        onRenameFavorite(favorite, name)
+                        box.onRenameFavorite(favorite, name)
                     }
                 )
             case .savedRoutes:
@@ -79,11 +78,12 @@ struct MapHomePresentedSheet: View {
                     routeImport: routeImport,
                     isListPresented: { activeSheet == .savedRoutes },
                     onSelect: { saved in
-                        onSelectSavedRoute(saved)
+                        box.onSelectSavedRoute(saved)
                     }
                 )
             }
         }
+        .background(Color(UIColor.systemBackground))
     }
 }
 
@@ -91,10 +91,10 @@ struct MapHomeView: View {
     @Environment(\.scenePhase) private var scenePhase
     @ObservedObject var setup: SetupCoordinator
     @StateObject var favorites: FavoriteLocationStore
-    @StateObject var favoriteImport = FavoriteImportCoordinator()
-    @StateObject var routeImport = RouteImportCoordinator()
-    @StateObject var savedRoutes = SavedRouteStore()
-    @StateObject var recentRoutes = RecentRouteStore()
+    @StateObject var favoriteImport: FavoriteImportCoordinator
+    @StateObject var routeImport: RouteImportCoordinator
+    @StateObject var savedRoutes: SavedRouteStore
+    @StateObject var recentRoutes: RecentRouteStore
     @StateObject var actions: LocationActionCoordinator
     @StateObject var route: RoutePlaybackController
     @StateObject var session: SpoofSession
@@ -193,6 +193,14 @@ struct MapHomeView: View {
         self.sheetBox = sheetBox
         let favoriteStore = FavoriteLocationStore()
         _favorites = StateObject(wrappedValue: favoriteStore)
+        let favoriteImport = FavoriteImportCoordinator()
+        _favoriteImport = StateObject(wrappedValue: favoriteImport)
+        let routeImport = RouteImportCoordinator()
+        _routeImport = StateObject(wrappedValue: routeImport)
+        let savedRoutes = SavedRouteStore()
+        _savedRoutes = StateObject(wrappedValue: savedRoutes)
+        let recentRoutes = RecentRouteStore()
+        _recentRoutes = StateObject(wrappedValue: recentRoutes)
         let savedCoord = LastCoordinateStore.load()
         let initialZoom = savedCoord?.zoomMeters ?? ViewportStore.loadOrDefault()
         let selectedFavorite = favoriteStore.selectedFavorite
@@ -257,12 +265,31 @@ struct MapHomeView: View {
         _actions = StateObject(wrappedValue: actionCoordinator)
         let routeController = RoutePlaybackController()
         _route = StateObject(wrappedValue: routeController)
-        _session = StateObject(wrappedValue: MapHomeView.makeSpoofSession(
+        let session = MapHomeView.makeSpoofSession(
             setup: setup,
             actions: actionCoordinator,
             route: routeController,
             mapState: mapModel
-        ))
+        )
+        _session = StateObject(wrappedValue: session)
+        sheetBox.bindRuntime(
+            actions: actionCoordinator,
+            favoriteImport: favoriteImport,
+            favorites: favoriteStore,
+            session: session,
+            savedRoutes: savedRoutes,
+            recentRoutes: recentRoutes,
+            routeImport: routeImport,
+            testFavorite: FavoriteLocation(
+                name: initialName ?? String(
+                    format: "%.4f, %.4f",
+                    initialCoord.latitude,
+                    initialCoord.longitude
+                ),
+                coordinatePair: initialPair,
+                accuracy: LocationAccuracyStore.shared.meters
+            )
+        )
     }
 
     var body: some View {
@@ -322,17 +349,17 @@ struct MapHomeView: View {
                     ViewportStore.save(distance)
                     LastCoordinateStore.updateZoom(distance)
                 },
-                routeCoordinates: isHomeCoveredBySheet ? [] : route.overlayCoordinates,
-                routePins: isHomeCoveredBySheet ? [] : route.overlayPins,
-                favoritePins: isHomeCoveredBySheet ? [] : FavoriteMapPin.pins(
+                routeCoordinates: route.overlayCoordinates,
+                routePins: route.overlayPins,
+                favoritePins: FavoriteMapPin.pins(
                     from: favorites.displayedFavorites,
                     selectedID: favorites.selectedFavoriteID,
                     mapSystem: displayedMapCoordinateSystem
                 ),
-                playbackClock: isHomeCoveredBySheet ? nil : route.clock,
-                walkHeadingDegrees: isHomeCoveredBySheet ? nil : physicalWalk.activeHeadingDegrees,
-                walkPuckCoordinate: isHomeCoveredBySheet ? nil : walkPuckMapCoordinate,
-                showsWalkHeading: !isHomeCoveredBySheet && walkPuckMapCoordinate != nil,
+                playbackClock: route.clock,
+                walkHeadingDegrees: physicalWalk.activeHeadingDegrees,
+                walkPuckCoordinate: walkPuckMapCoordinate,
+                showsWalkHeading: walkPuckMapCoordinate != nil,
                 prefersCustomWalkHeading: physicalWalkStore.isCustomHeadingEnabled,
                 mapDisplayStyle: mapStyle.style,
                 isSuspended: isHomeCoveredBySheet
@@ -340,33 +367,29 @@ struct MapHomeView: View {
             .ignoresSafeArea(.container)
             .allowsHitTesting(!isHomeCoveredBySheet)
 
-            if !isHomeCoveredBySheet {
-                if homePopup != nil {
-                    Color.black.opacity(0.001)
-                        .ignoresSafeArea()
-                        .onTapGesture {
-                            withAnimation(.spring(response: 0.28, dampingFraction: 0.8)) {
-                                homePopup = nil
-                            }
-                        }
-                        .accessibilityLabel("关闭面板")
-                        .accessibilityAddTraits(.isButton)
-                }
-                MapHomeOverlayLayout(
-                    top: { height in homeTopArea(availableHeight: height) },
-                    bottom: { height in
-                        if !searchFocused {
-                            bottomControls(availableHeight: height)
+            if homePopup != nil {
+                Color.black.opacity(0.001)
+                    .ignoresSafeArea()
+                    .onTapGesture {
+                        withAnimation(.spring(response: 0.28, dampingFraction: 0.8)) {
+                            homePopup = nil
                         }
                     }
-                )
+                    .accessibilityLabel("关闭面板")
+                    .accessibilityAddTraits(.isButton)
             }
+            MapHomeOverlayLayout(
+                top: { height in homeTopArea(availableHeight: height) },
+                bottom: { height in
+                    if !searchFocused {
+                        bottomControls(availableHeight: height)
+                    }
+                }
+            )
         }
         .coordinateSpace(name: "homeOverlay")
         .overlay(alignment: .topLeading) {
-            if !isHomeCoveredBySheet {
-                homeChromePopoverOverlay
-            }
+            homeChromePopoverOverlay
         }
         .background(presentedSheetRebindToken)
         .onPreferenceChange(HomeCoordinateRowFrameKey.self) { coordinateRowFrame = $0 }

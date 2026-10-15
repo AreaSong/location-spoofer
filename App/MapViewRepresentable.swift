@@ -207,13 +207,10 @@ struct MapViewRepresentable: UIViewRepresentable {
         func setSuspended(_ suspended: Bool, on map: MKMapView) {
             let changed = isSuspended != suspended
             isSuspended = suspended
-            map.isHidden = suspended
-            map.alpha = suspended ? 0 : 1
             map.isUserInteractionEnabled = !suspended
             walkPuckDisplayLink?.isPaused = suspended || isAppInBackground
             guard changed else { return }
             if suspended {
-                map.showsUserLocation = false
                 markerCancellable?.cancel()
                 markerCancellable = nil
                 boundPlaybackClock = nil

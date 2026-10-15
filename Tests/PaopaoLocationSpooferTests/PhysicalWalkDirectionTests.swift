@@ -245,11 +245,10 @@ final class PhysicalWalkDirectionTests: XCTestCase {
         XCTAssertFalse(coordinator.walkPuckDisplayLink?.isPaused ?? true)
 
         coordinator.setSuspended(true, on: map)
-        XCTAssertTrue(map.isHidden)
-        XCTAssertEqual(map.alpha, 0)
+        XCTAssertFalse(map.isHidden)
+        XCTAssertEqual(map.alpha, 1)
         XCTAssertFalse(map.isUserInteractionEnabled)
         XCTAssertTrue(coordinator.walkPuckDisplayLink?.isPaused ?? false)
-        XCTAssertFalse(map.showsUserLocation)
 
         coordinator.setSuspended(false, on: map)
         XCTAssertFalse(map.isHidden)

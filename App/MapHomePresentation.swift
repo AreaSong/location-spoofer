@@ -14,6 +14,26 @@ final class MapHomeSheetBox: ObservableObject {
     var onSelectFavorite: (FavoriteLocation) -> Void = { _ in }
     var onRenameFavorite: (FavoriteLocation, String) -> Void = { _, _ in }
     var onSelectSavedRoute: (SavedRoute) -> Void = { _ in }
+
+    func bindRuntime(
+        actions: LocationActionCoordinator,
+        favoriteImport: FavoriteImportCoordinator,
+        favorites: FavoriteLocationStore,
+        session: SpoofSession,
+        savedRoutes: SavedRouteStore,
+        recentRoutes: RecentRouteStore,
+        routeImport: RouteImportCoordinator,
+        testFavorite: FavoriteLocation
+    ) {
+        self.actions = actions
+        self.favoriteImport = favoriteImport
+        self.favorites = favorites
+        self.session = session
+        self.savedRoutes = savedRoutes
+        self.recentRoutes = recentRoutes
+        self.routeImport = routeImport
+        self.testFavorite = testFavorite
+    }
 }
 
 /// 设置等 sheet 挂在这里，不跟首页的高频 Store 一起失效。
@@ -25,31 +45,12 @@ struct MapHomeContainer: View {
     var body: some View {
         MapHomeView(setup: setup, activeSheet: $activeSheet, sheetBox: sheetBox)
             .sheet(item: $activeSheet) { sheet in
-                if let actions = sheetBox.actions,
-                   let favoriteImport = sheetBox.favoriteImport,
-                   let favorites = sheetBox.favorites,
-                   let session = sheetBox.session,
-                   let savedRoutes = sheetBox.savedRoutes,
-                   let recentRoutes = sheetBox.recentRoutes,
-                   let routeImport = sheetBox.routeImport,
-                   let testFavorite = sheetBox.testFavorite {
-                    MapHomePresentedSheet(
-                        sheet: sheet,
-                        setup: setup,
-                        actions: actions,
-                        favoriteImport: favoriteImport,
-                        favorites: favorites,
-                        session: session,
-                        savedRoutes: savedRoutes,
-                        recentRoutes: recentRoutes,
-                        routeImport: routeImport,
-                        testFavorite: testFavorite,
-                        onSelectFavorite: sheetBox.onSelectFavorite,
-                        onRenameFavorite: sheetBox.onRenameFavorite,
-                        onSelectSavedRoute: sheetBox.onSelectSavedRoute,
-                        activeSheet: $activeSheet
-                    )
-                }
+                MapHomePresentedSheet(
+                    sheet: sheet,
+                    setup: setup,
+                    box: sheetBox,
+                    activeSheet: $activeSheet
+                )
             }
     }
 }
