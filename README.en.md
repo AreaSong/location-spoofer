@@ -16,7 +16,7 @@ responses in a controlled test environment.
 [![iOS 15+](https://img.shields.io/badge/iOS-15%2B-111111?logo=apple)](project.yml)
 [![Swift 5.9](https://img.shields.io/badge/Swift-5.9-F05138)](project.yml)
 [![Go 1.23+](https://img.shields.io/badge/Go-1.23%2B-00ADD8?logo=go)](Core/go.mod)
-[![Version](https://img.shields.io/badge/version-v1.2.0.3-2563EB)](docs/CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-v1.2.0.4-2563EB)](docs/CHANGELOG.md)
 
 [Features](#feature-overview) ·
 [How It Works](#how-it-works) ·
@@ -61,7 +61,7 @@ collection services.
   - Supports place search, pasted map links, typed latitude/longitude, map taps, center-point dragging, and zooming;
   - A pending search can be cleared or replaced. Editing cancels the old query and hides its results without starting a new network request. Results scroll; tap “完成” to finish editing and restore map controls.
   - Map tools above the right of the bottom card cycle Standard, Satellite, and Hybrid layers and can return to the current location;
-  - Search, Logs, and Settings share one row, with a compact signing countdown inside Settings. Below Search, tap coordinates to switch and copy GCJ-02 / WGS-84 without a system menu. 功能 beside the coordinates opens physical walking and custom heading (“初始指向”); route parameters stay in the bottom card. A capsule bar above the bottom card switches Spot / Route, with a marker on Route while playback is active; the card title shows the current place name. Spot shows horizontally scrolling Recents and Favorites; Route shows travel mode, speed, repeat, and drift, and opens saved routes from 已存. Zoom sits under the coordinate row and can be tapped or held to repeat. Opening Settings, Favorites, saved routes, or other home sheets pauses map and heading redraws so sheet scrolling is not interrupted; physical-walk sampling and location writes continue;
+  - Search, Logs, and Settings share one row, with a compact signing countdown inside Settings. Below Search, tap coordinates to switch and copy GCJ-02 / WGS-84 without a system menu. 功能 beside the coordinates opens physical walking and custom heading (“初始指向”); route parameters stay in the bottom card. A capsule bar above the bottom card switches Spot / Route, with a marker on Route while playback is active; the card title shows the current place name. Spot shows horizontally scrolling Recents and Favorites; Route shows travel mode, speed, repeat, and drift, and opens saved routes from 已存. Zoom sits under the coordinate row and can be tapped or held to repeat. Settings, Favorites, saved routes, and other home sheets open immediately; the settings form fills in on the next frame so the first presentation is not blocked by a full-page redraw. Map and heading redraws pause after the sheet is on screen so scrolling is not interrupted; physical-walk sampling and location writes continue;
   - Switching to a new spot keeps Stop available. Running or paused routes keep End Route visible; exiting still requires confirmation and leaves the simulated location at the current point;
   - Keeps the latest 10 discrete selections (tap, search, favorite, or realtime fix). Panning the map updates the current
     center only and does not write history;

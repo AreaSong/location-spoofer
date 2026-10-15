@@ -23,7 +23,7 @@ struct AppRemoteConfiguration: Decodable, Equatable {
     let communityPromptClients: [String]
 
     static let fallback = AppRemoteConfiguration(
-        latestVersion: "1.2.0.3",
+        latestVersion: "1.2.0.4",
         minimumSupportedVersion: "1.0.0",
         communityPromptClients: [
             ThirdPartyProxyClient.surge.rawValue,
