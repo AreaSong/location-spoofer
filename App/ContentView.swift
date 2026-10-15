@@ -29,7 +29,7 @@ struct ContentView: View {
                 FirstSetupView(setup: setup, onComplete: finishInitialSetup, onPreview: finishUIPreview)
             case .map:
                 NavigationView {
-                    MapHomeView(setup: setup)
+                    MapHomeContainer(setup: setup)
                 }
                 .fullScreenCover(isPresented: $setup.needsSetup) {
                     FirstSetupView(setup: setup, onComplete: finishPresentedSetup, onPreview: finishUIPreview)

@@ -20,6 +20,8 @@ final class PhysicalWalkController: ObservableObject {
     var onStop: (() async -> Void)?
     var onStart: (() -> Bool)?
     var onFailure: ((String) -> Void)?
+    /// 首页被 sheet 盖住时不把朝向/位移发到 SwiftUI，走动采样和写入照常进行。
+    private var publishesUI = true
 
     private let sensor: PhysicalWalkSensing
     private let heading: PhysicalWalkHeadingSensing
@@ -154,6 +156,18 @@ final class PhysicalWalkController: ObservableObject {
         }
     }
 
+    func setPublishesUI(_ enabled: Bool) {
+        guard publishesUI != enabled else { return }
+        publishesUI = enabled
+        guard enabled else { return }
+        if let engine {
+            movedMeters = engine.movedMeters
+            currentLatitude = engine.latitude
+            currentLongitude = engine.longitude
+        }
+        publishActiveHeading()
+    }
+
     func startHeadingPreview() {
         attachHeadingHandler(appliesWalk: isTracking)
         heading.start()
@@ -234,20 +248,22 @@ final class PhysicalWalkController: ObservableObject {
             strideMeters: strideMeters()
         )
         self.engine = engine
-        movedMeters = engine.movedMeters
-        currentLatitude = engine.latitude
-        currentLongitude = engine.longitude
-        let nextDegrees = direction?.degrees
-        if shouldUpdateActiveHeading(from: activeHeadingDegrees, to: nextDegrees) {
-            activeHeadingDegrees = nextDegrees
-        }
-        switch result {
-        case .unchanged:
-            status = direction == nil ? .waitingForHeading : .tracking
-        case .waitingForHeading:
-            status = .waitingForHeading
-        case .moved:
-            status = .tracking
+        if publishesUI {
+            movedMeters = engine.movedMeters
+            currentLatitude = engine.latitude
+            currentLongitude = engine.longitude
+            let nextDegrees = direction?.degrees
+            if shouldUpdateActiveHeading(from: activeHeadingDegrees, to: nextDegrees) {
+                activeHeadingDegrees = nextDegrees
+            }
+            switch result {
+            case .unchanged:
+                status = direction == nil ? .waitingForHeading : .tracking
+            case .waitingForHeading:
+                status = .waitingForHeading
+            case .moved:
+                status = .tracking
+            }
         }
         return result
     }
@@ -293,6 +309,7 @@ final class PhysicalWalkController: ObservableObject {
     }
 
     private func publishActiveHeading() {
+        guard publishesUI else { return }
         let nextDegrees = resolvedHeading()?.degrees
         if shouldUpdateActiveHeading(from: activeHeadingDegrees, to: nextDegrees) {
             activeHeadingDegrees = nextDegrees

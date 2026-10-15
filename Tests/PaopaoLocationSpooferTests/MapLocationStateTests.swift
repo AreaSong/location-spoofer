@@ -1,3 +1,4 @@
+import Combine
 import XCTest
 import CoreLocation
 import MapKit
@@ -186,6 +187,22 @@ final class MapLocationStateTests: XCTestCase {
         XCTAssertEqual(state.selection.coordinate.latitude, 31.23, accuracy: 0.000001)
         XCTAssertEqual(state.selection.revision, revision)
         XCTAssertEqual(state.selection.source, .search)
+    }
+
+    func testSuspendedRealtimeDoesNotPublishUntilResumed() {
+        let state = MapLocationState(initialCoordinate: initial)
+        state.updateRealtimeLocation(CLLocation(latitude: 30.42, longitude: 114.25))
+        var publishes = 0
+        let token = state.objectWillChange.sink { publishes += 1 }
+        state.setPublishesRealtime(false)
+        state.updateRealtimeLocation(CLLocation(latitude: 31.23, longitude: 121.47))
+        XCTAssertEqual(publishes, 0)
+        XCTAssertEqual(state.realtimeCoordinate?.latitude ?? 0, 30.42, accuracy: 0.000001)
+
+        state.setPublishesRealtime(true)
+        XCTAssertEqual(state.realtimeCoordinate?.latitude ?? 0, 31.23, accuracy: 0.000001)
+        XCTAssertGreaterThanOrEqual(publishes, 1)
+        token.cancel()
     }
 
     func testMapCoordinateSystemChangeClearsSupersededRealtimeSampleWithoutMovingSelection() {

@@ -130,6 +130,8 @@ final class MapLocationState: ObservableObject {
     @Published private(set) var viewportMeters: CLLocationDistance
     @Published private(set) var placeDescriptor: MapPlaceDescriptor?
 
+    private var publishesRealtime = true
+    private var pendingRealtimeLocation: CLLocation?
     private var nextSelectionRevision: UInt64 = 0
     private var nextCameraCommandID: UInt64 = 0
     private var nextRealtimeIntentID: UInt64 = 0
@@ -209,7 +211,20 @@ final class MapLocationState: ObservableObject {
         return true
     }
 
+    func setPublishesRealtime(_ enabled: Bool) {
+        guard publishesRealtime != enabled else { return }
+        publishesRealtime = enabled
+        guard enabled else { return }
+        let pending = pendingRealtimeLocation
+        pendingRealtimeLocation = nil
+        updateRealtimeLocation(pending ?? realtimeLocation)
+    }
+
     func updateRealtimeLocation(_ location: CLLocation?) {
+        if !publishesRealtime {
+            pendingRealtimeLocation = location
+            return
+        }
         guard let location else {
             realtimeLocation = nil
             realtimeCoordinate = nil

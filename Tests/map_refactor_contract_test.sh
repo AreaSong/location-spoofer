@@ -191,6 +191,20 @@ grep -q 'initialHeadingDegrees' "$ROOT/App/MapHomeView+PhysicalWalk.swift" \
   || fail "heading slider must bind to the initial heading, not the live fan"
 grep -q 'func startWalkPuckTracking' "$ROOT/App/WalkHeadingHud.swift" \
   || fail "walk puck must keep tracking the spoofed coordinate while the map moves"
+grep -q 'var isSuspended: Bool = false' "$ROOT/App/MapViewRepresentable.swift" \
+  || fail "home sheets must be able to freeze the live map"
+grep -q 'isSuspended: isHomeCoveredBySheet' "$ROOT/App/MapHomeView.swift" \
+  || fail "settings and other home sheets must suspend map rendering"
+grep -q 'physicalWalk.setPublishesUI(!covered)' "$ROOT/App/MapHomeView.swift" \
+  || fail "heading and walk pose must not invalidate SwiftUI while a home sheet is open"
+grep -q 'struct MapHomeContainer' "$ROOT/App/MapHomePresentation.swift" \
+  || fail "settings sheets must hang off a home container that does not observe map stores"
+grep -q 'MapHomeContainer(setup: setup)' "$ROOT/App/ContentView.swift" \
+  || fail "the map root must present settings from MapHomeContainer"
+grep -q 'markerCancellable = nil' "$ROOT/App/MapViewRepresentable.swift" \
+  || fail "suspending the map must drop the route playback display subscription"
+grep -q 'if !isHomeCoveredBySheet' "$ROOT/App/MapHomeView.swift" \
+  || fail "home overlays must not rebuild under an open sheet"
 grep -q 'static let puckDiameter: CGFloat = 16' "$ROOT/App/WalkHeadingHud.swift" \
   || fail "walk heading must draw a blue-dot puck on the active virtual coordinate"
 grep -q 'static func fanPath' "$ROOT/App/WalkHeadingHud.swift" \

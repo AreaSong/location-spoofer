@@ -1,5 +1,59 @@
 import SwiftUI
 
+/// 首页 sheet 需要的对象引用。外壳不观察这些 Store，避免地图刷新打断设置滚动。
+@MainActor
+final class MapHomeSheetBox: ObservableObject {
+    var actions: LocationActionCoordinator?
+    var favoriteImport: FavoriteImportCoordinator?
+    var favorites: FavoriteLocationStore?
+    var session: SpoofSession?
+    var savedRoutes: SavedRouteStore?
+    var recentRoutes: RecentRouteStore?
+    var routeImport: RouteImportCoordinator?
+    var testFavorite: FavoriteLocation?
+    var onSelectFavorite: (FavoriteLocation) -> Void = { _ in }
+    var onRenameFavorite: (FavoriteLocation, String) -> Void = { _, _ in }
+    var onSelectSavedRoute: (SavedRoute) -> Void = { _ in }
+}
+
+/// 设置等 sheet 挂在这里，不跟首页的高频 Store 一起失效。
+struct MapHomeContainer: View {
+    @ObservedObject var setup: SetupCoordinator
+    @State private var activeSheet: HomeSheet?
+    @StateObject private var sheetBox = MapHomeSheetBox()
+
+    var body: some View {
+        MapHomeView(setup: setup, activeSheet: $activeSheet, sheetBox: sheetBox)
+            .sheet(item: $activeSheet) { sheet in
+                if let actions = sheetBox.actions,
+                   let favoriteImport = sheetBox.favoriteImport,
+                   let favorites = sheetBox.favorites,
+                   let session = sheetBox.session,
+                   let savedRoutes = sheetBox.savedRoutes,
+                   let recentRoutes = sheetBox.recentRoutes,
+                   let routeImport = sheetBox.routeImport,
+                   let testFavorite = sheetBox.testFavorite {
+                    MapHomePresentedSheet(
+                        sheet: sheet,
+                        setup: setup,
+                        actions: actions,
+                        favoriteImport: favoriteImport,
+                        favorites: favorites,
+                        session: session,
+                        savedRoutes: savedRoutes,
+                        recentRoutes: recentRoutes,
+                        routeImport: routeImport,
+                        testFavorite: testFavorite,
+                        onSelectFavorite: sheetBox.onSelectFavorite,
+                        onRenameFavorite: sheetBox.onRenameFavorite,
+                        onSelectSavedRoute: sheetBox.onSelectSavedRoute,
+                        activeSheet: $activeSheet
+                    )
+                }
+            }
+    }
+}
+
 /// 只决定首页按钮的呈现与派发目标，定位、路线停止与确认仍由原控制器执行。
 enum HomeSecondaryAction: Equatable {
     case exitRoute, stopLocation

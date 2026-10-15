@@ -38,6 +38,55 @@ enum RealtimeCoordinateSource: Equatable {
     }
 }
 
+struct MapHomePresentedSheet: View {
+    let sheet: HomeSheet
+    let setup: SetupCoordinator
+    let actions: LocationActionCoordinator
+    let favoriteImport: FavoriteImportCoordinator
+    let favorites: FavoriteLocationStore
+    let session: SpoofSession
+    let savedRoutes: SavedRouteStore
+    let recentRoutes: RecentRouteStore
+    let routeImport: RouteImportCoordinator
+    let testFavorite: FavoriteLocation
+    let onSelectFavorite: (FavoriteLocation) -> Void
+    let onRenameFavorite: (FavoriteLocation, String) -> Void
+    let onSelectSavedRoute: (SavedRoute) -> Void
+    @Binding var activeSheet: HomeSheet?
+
+    var body: some View {
+        NavigationView {
+            switch sheet {
+            case .settings: SettingsView(
+                setup: setup, actions: actions, favoriteImport: favoriteImport,
+                isSettingsPresented: { activeSheet == .settings }, favorites: favorites, session: session
+            )
+            case .logs: RuntimeLogsView(setup: setup, actions: actions, testFavorite: testFavorite)
+            case .favorites:
+                FavoriteListView(
+                    favorites: favorites,
+                    onSelect: { favorite in
+                        onSelectFavorite(favorite)
+                    },
+                    onRename: { favorite, name in
+                        onRenameFavorite(favorite, name)
+                    }
+                )
+            case .savedRoutes:
+                SavedRouteListView(
+                    store: savedRoutes,
+                    recentRoutes: recentRoutes,
+                    routeImport: routeImport,
+                    isListPresented: { activeSheet == .savedRoutes },
+                    onSelect: { saved in
+                        onSelectSavedRoute(saved)
+                    }
+                )
+            }
+        }
+    }
+}
+
 struct MapHomeView: View {
     @Environment(\.scenePhase) private var scenePhase
     @ObservedObject var setup: SetupCoordinator
@@ -71,7 +120,8 @@ struct MapHomeView: View {
     @FocusState var searchFocused: Bool
     @Namespace var modeBarNamespace
     @State var mapRuntimeDidStart = false
-    @State var activeSheet: HomeSheet?
+    @Binding var activeSheet: HomeSheet?
+    let sheetBox: MapHomeSheetBox
     @State var showEnableTip = false
     @State var showDisableTip = false
     @State var activeTip: TipKind?
@@ -129,9 +179,18 @@ struct MapHomeView: View {
     var spoofState: SpoofState { session.state }
     var activeSpoofLat: Double? { session.writtenLatitude }
     var activeSpoofLon: Double? { session.writtenLongitude }
+    var isHomeCoveredBySheet: Bool {
+        activeSheet != nil
+            || showRouteLocationSetup
+            || showSigningResignSheet
+            || githubDestination != nil
+            || activeTip != nil
+    }
 
-    init(setup: SetupCoordinator) {
+    init(setup: SetupCoordinator, activeSheet: Binding<HomeSheet?>, sheetBox: MapHomeSheetBox) {
         self.setup = setup
+        _activeSheet = activeSheet
+        self.sheetBox = sheetBox
         let favoriteStore = FavoriteLocationStore()
         _favorites = StateObject(wrappedValue: favoriteStore)
         let savedCoord = LastCoordinateStore.load()
@@ -263,46 +322,53 @@ struct MapHomeView: View {
                     ViewportStore.save(distance)
                     LastCoordinateStore.updateZoom(distance)
                 },
-                routeCoordinates: route.overlayCoordinates,
-                routePins: route.overlayPins,
-                favoritePins: FavoriteMapPin.pins(
+                routeCoordinates: isHomeCoveredBySheet ? [] : route.overlayCoordinates,
+                routePins: isHomeCoveredBySheet ? [] : route.overlayPins,
+                favoritePins: isHomeCoveredBySheet ? [] : FavoriteMapPin.pins(
                     from: favorites.displayedFavorites,
                     selectedID: favorites.selectedFavoriteID,
                     mapSystem: displayedMapCoordinateSystem
                 ),
-                playbackClock: route.clock,
-                walkHeadingDegrees: physicalWalk.activeHeadingDegrees,
-                walkPuckCoordinate: walkPuckMapCoordinate,
-                showsWalkHeading: walkPuckMapCoordinate != nil,
+                playbackClock: isHomeCoveredBySheet ? nil : route.clock,
+                walkHeadingDegrees: isHomeCoveredBySheet ? nil : physicalWalk.activeHeadingDegrees,
+                walkPuckCoordinate: isHomeCoveredBySheet ? nil : walkPuckMapCoordinate,
+                showsWalkHeading: !isHomeCoveredBySheet && walkPuckMapCoordinate != nil,
                 prefersCustomWalkHeading: physicalWalkStore.isCustomHeadingEnabled,
-                mapDisplayStyle: mapStyle.style
+                mapDisplayStyle: mapStyle.style,
+                isSuspended: isHomeCoveredBySheet
             )
             .ignoresSafeArea(.container)
+            .allowsHitTesting(!isHomeCoveredBySheet)
 
-            if homePopup != nil {
-                Color.black.opacity(0.001)
-                    .ignoresSafeArea()
-                    .onTapGesture {
-                        withAnimation(.spring(response: 0.28, dampingFraction: 0.8)) {
-                            homePopup = nil
+            if !isHomeCoveredBySheet {
+                if homePopup != nil {
+                    Color.black.opacity(0.001)
+                        .ignoresSafeArea()
+                        .onTapGesture {
+                            withAnimation(.spring(response: 0.28, dampingFraction: 0.8)) {
+                                homePopup = nil
+                            }
+                        }
+                        .accessibilityLabel("关闭面板")
+                        .accessibilityAddTraits(.isButton)
+                }
+                MapHomeOverlayLayout(
+                    top: { height in homeTopArea(availableHeight: height) },
+                    bottom: { height in
+                        if !searchFocused {
+                            bottomControls(availableHeight: height)
                         }
                     }
-                    .accessibilityLabel("关闭面板")
-                    .accessibilityAddTraits(.isButton)
+                )
             }
-            MapHomeOverlayLayout(
-                top: { height in homeTopArea(availableHeight: height) },
-                bottom: { height in
-                    if !searchFocused {
-                        bottomControls(availableHeight: height)
-                    }
-                }
-            )
         }
         .coordinateSpace(name: "homeOverlay")
         .overlay(alignment: .topLeading) {
-            homeChromePopoverOverlay
+            if !isHomeCoveredBySheet {
+                homeChromePopoverOverlay
+            }
         }
+        .background(presentedSheetRebindToken)
         .onPreferenceChange(HomeCoordinateRowFrameKey.self) { coordinateRowFrame = $0 }
         .onPreferenceChange(HomeZoomControlFrameKey.self) { zoomControlFrame = $0 }
         .ignoresSafeArea(.keyboard)
@@ -312,39 +378,6 @@ struct MapHomeView: View {
         .onChange(of: activeSheet) { sheet in if sheet != nil { homePopup = nil } }
         .onChange(of: displayedMapCoordinateSystem) { previewCoordinateSystem = $0 }
         .onChange(of: cachedSelectionPair) { _ in previewCoordinateSystem = displayedMapCoordinateSystem }
-        .sheet(item: $activeSheet) { sheet in
-            NavigationView {
-                switch sheet {
-                case .settings: SettingsView(
-                    setup: setup, actions: actions, favoriteImport: favoriteImport,
-                    isSettingsPresented: { activeSheet == .settings }, favorites: favorites, session: session
-                )
-                case .logs: RuntimeLogsView(setup: setup, actions: actions, testFavorite: testFavorite)
-                case .favorites:
-                    FavoriteListView(
-                        favorites: favorites,
-                        onSelect: { favorite in
-                            select(favorite)
-                        },
-                        onRename: { favorite, name in
-                            favorites.rename(favorite.id, to: name)
-                            mapState.updateExplicitName(name, forFavoriteID: favorite.id)
-                        }
-                    )
-                case .savedRoutes:
-                    SavedRouteListView(
-                        store: savedRoutes,
-                        recentRoutes: recentRoutes,
-                        routeImport: routeImport,
-                        isListPresented: { activeSheet == .savedRoutes },
-                        onSelect: { saved in
-                            let previous = route.phase
-                            settleRouteSimulation(after: route.load(saved), from: previous)
-                        }
-                    )
-                }
-            }
-        }
         .sheet(item: $activeTip) { kind in
             TipSheetView(kind: kind, runtimeMode: runtimeMode.mode)
         }
@@ -503,6 +536,10 @@ struct MapHomeView: View {
             if sheet != .settings { favoriteImport.leavePage() }
             if sheet != .savedRoutes { routeImport.leavePage() }
             if sheet != nil { search.dismissResults() }
+        }
+        .onChange(of: isHomeCoveredBySheet) { covered in
+            physicalWalk.setPublishesUI(!covered)
+            mapState.setPublishesRealtime(!covered)
         }
         .onChange(of: scenePhase) { phase in
             if phase == .background { search.dismissResults() }
@@ -862,6 +899,76 @@ struct MapHomeView: View {
     }
 
     var testFavorite: FavoriteLocation { currentSelectionFavorite }
+
+    var presentedSheetRebindToken: some View {
+        bindPresentedSheet()
+        return Color.clear
+            .accessibilityHidden(true)
+    }
+
+    func bindPresentedSheet() {
+        sheetBox.actions = actions
+        sheetBox.favoriteImport = favoriteImport
+        sheetBox.favorites = favorites
+        sheetBox.session = session
+        sheetBox.savedRoutes = savedRoutes
+        sheetBox.recentRoutes = recentRoutes
+        sheetBox.routeImport = routeImport
+        sheetBox.testFavorite = testFavorite
+        bindFavoriteSheetActions()
+        bindSavedRouteSheetAction()
+    }
+
+    func bindFavoriteSheetActions() {
+        let search = self.search
+        let favorites = self.favorites
+        let mapState = self.mapState
+        let cachedSelectionPair = $cachedSelectionPair
+        let geocodeDebounceTask = $geocodeDebounceTask
+        let reverseGeocodeTask = $reverseGeocodeTask
+        sheetBox.onSelectFavorite = { favorite in
+            search.dismissResults()
+            geocodeDebounceTask.wrappedValue?.cancel()
+            reverseGeocodeTask.wrappedValue?.cancel()
+            favorites.select(favorite.id)
+            RuntimeLogger.info("APP", "坐标转换", "点击收藏点并回显到地图", details: [
+                "当前地图标准": CoordinateConverter.currentMapCoordinateSystem.diagnosticName,
+                "地图取值字段": CoordinateConverter.currentMapCoordinateSystem == .gcj02 ? "coordinatePair.gcj02" : "coordinatePair.wgs84",
+                "保存数据包含": "国际标准(WGS-84)+国内标准(GCJ-02)"
+            ])
+            mapState.selectFavorite(
+                favorite.coordinatePair.coordinate(for: CoordinateConverter.currentMapCoordinateSystem),
+                id: favorite.id,
+                name: favorite.name
+            )
+            LastCoordinateStore.save(
+                coordinatePair: favorite.coordinatePair,
+                zoomMeters: mapState.viewportMeters
+            )
+            cachedSelectionPair.wrappedValue = favorite.coordinatePair
+            RecentSelectionStore.shared.record(name: favorite.name, coordinatePair: favorite.coordinatePair)
+        }
+        sheetBox.onRenameFavorite = { favorite, name in
+            favorites.rename(favorite.id, to: name)
+            mapState.updateExplicitName(name, forFavoriteID: favorite.id)
+        }
+    }
+
+    func bindSavedRouteSheetAction() {
+        let route = self.route
+        sheetBox.onSelectSavedRoute = { saved in
+            let previous = route.phase
+            let pendingWrite = route.load(saved)
+            guard RouteLocationStop.shouldClearSimulation(
+                from: previous,
+                to: route.phase,
+                activationWritePending: pendingWrite != nil
+            ) else { return }
+            Task { @MainActor in
+                await pendingWrite?.value
+            }
+        }
+    }
 
 }
 

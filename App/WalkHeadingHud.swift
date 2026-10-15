@@ -120,6 +120,7 @@ extension MapViewRepresentable.Coordinator {
         let link = CADisplayLink(target: proxy, selector: #selector(WalkPuckDisplayLinkProxy.tick))
         link.add(to: .main, forMode: .common)
         walkPuckDisplayLink = link
+        link.isPaused = isSuspended || isAppInBackground
     }
 
     func stopWalkPuckTracking() {
@@ -129,8 +130,8 @@ extension MapViewRepresentable.Coordinator {
     }
 
     @objc func tickWalkPuckPosition() {
-        guard let map else {
-            stopWalkPuckTracking()
+        guard !isSuspended, let map else {
+            if map == nil { stopWalkPuckTracking() }
             return
         }
         positionWalkHeadingHud(on: map)

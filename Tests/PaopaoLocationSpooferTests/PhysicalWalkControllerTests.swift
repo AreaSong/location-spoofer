@@ -1,3 +1,4 @@
+import Combine
 import CoreMotion
 import XCTest
 @testable import PaopaoLocationSpoofer
@@ -219,6 +220,28 @@ final class PhysicalWalkControllerTests: XCTestCase {
         XCTAssertFalse(wrote)
         XCTAssertEqual(failure, "需要运动与健身权限才能真实走动。")
         XCTAssertFalse(BackgroundKeepAlive.shared.holds(.physicalWalk))
+    }
+
+    func testSuspendedUIDoesNotPublishHeading() {
+        let heading = FakePhysicalWalkHeading()
+        heading.latestMapHeadingDegrees = 10
+        let controller = PhysicalWalkController(sensor: FakePhysicalWalkSensor(), heading: heading)
+        controller.startHeadingPreview()
+        XCTAssertEqual(controller.activeHeadingDegrees ?? -1, 10, accuracy: 0.01)
+
+        var publishes = 0
+        let token = controller.objectWillChange.sink { publishes += 1 }
+        controller.setPublishesUI(false)
+        heading.latestMapHeadingDegrees = 90
+        heading.onChange?()
+        XCTAssertEqual(publishes, 0)
+        XCTAssertEqual(controller.activeHeadingDegrees ?? -1, 10, accuracy: 0.01)
+
+        controller.setPublishesUI(true)
+        XCTAssertEqual(controller.activeHeadingDegrees ?? -1, 90, accuracy: 0.01)
+        XCTAssertGreaterThanOrEqual(publishes, 1)
+        token.cancel()
+        controller.stopHeading()
     }
 
     func testAvailableAbsoluteHeadingWritesImmediately() async {

@@ -235,6 +235,52 @@ final class PhysicalWalkDirectionTests: XCTestCase {
         walk.stopHeading()
     }
 
+    func testSuspendingMapPausesWalkDisplayLink() throws {
+        let parent = makeMap(heading: 90)
+        let map = MKMapView(frame: CGRect(x: 0, y: 0, width: 390, height: 600))
+        let coordinator = parent.makeCoordinator()
+        coordinator.installWalkHeadingHud(on: map)
+        coordinator.updateWalkHeadingHud(degrees: 90, visible: true, on: map)
+        XCTAssertNotNil(coordinator.walkPuckDisplayLink)
+        XCTAssertFalse(coordinator.walkPuckDisplayLink?.isPaused ?? true)
+
+        coordinator.setSuspended(true, on: map)
+        XCTAssertTrue(map.isHidden)
+        XCTAssertEqual(map.alpha, 0)
+        XCTAssertFalse(map.isUserInteractionEnabled)
+        XCTAssertTrue(coordinator.walkPuckDisplayLink?.isPaused ?? false)
+        XCTAssertFalse(map.showsUserLocation)
+
+        coordinator.setSuspended(false, on: map)
+        XCTAssertFalse(map.isHidden)
+        XCTAssertEqual(map.alpha, 1)
+        XCTAssertTrue(map.isUserInteractionEnabled)
+        coordinator.stopWalkPuckTracking()
+    }
+
+    func testSuspendingMapCancelsPlaybackClockSink() throws {
+        let clock = RoutePlaybackClock()
+        clock.setMarker(CLLocationCoordinate2D(latitude: 0, longitude: 0))
+        let parent = MapViewRepresentable(
+            selection: .init(coordinate: .init(latitude: 0, longitude: 0), source: .mapTap, explicitName: nil, revision: 0),
+            initialViewportMeters: 500, cameraCommand: nil,
+            onRealtimeLocationChanged: { _ in }, onUserCenterChanged: { _, _ in },
+            onViewportChanged: { _ in }, onMapTap: { _ in }, onUserZoomChanged: nil,
+            playbackClock: clock
+        )
+        let map = MKMapView(frame: CGRect(x: 0, y: 0, width: 390, height: 600))
+        let coordinator = parent.makeCoordinator()
+        coordinator.bindPlaybackClock(clock, on: map)
+        XCTAssertTrue(coordinator.hasPlaybackClockSink)
+
+        coordinator.setSuspended(true, on: map)
+        XCTAssertFalse(coordinator.hasPlaybackClockSink)
+
+        coordinator.setSuspended(false, on: map)
+        XCTAssertTrue(coordinator.hasPlaybackClockSink)
+        coordinator.stopWalkPuckTracking()
+    }
+
     func testRoutePlaybackHeadingReplacesProgressMarker() throws {
         let clock = RoutePlaybackClock()
         clock.setMarker(CLLocationCoordinate2D(latitude: 0, longitude: 0))

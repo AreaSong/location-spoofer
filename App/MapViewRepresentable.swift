@@ -25,6 +25,8 @@ struct MapViewRepresentable: UIViewRepresentable {
     var showsWalkHeading: Bool = false
     var prefersCustomWalkHeading: Bool = false
     var mapDisplayStyle: MapDisplayStyle = .standard
+    /// 首页被 sheet 盖住时停掉地图合成和 60fps 扇形追踪，避免设置页滚动卡顿。
+    var isSuspended: Bool = false
 
     func makeCoordinator() -> Coordinator { Coordinator(parent: self) }
 
@@ -77,6 +79,8 @@ struct MapViewRepresentable: UIViewRepresentable {
 
     func updateUIView(_ map: MKMapView, context: Context) {
         context.coordinator.parent = self
+        context.coordinator.setSuspended(isSuspended, on: map)
+        guard !isSuspended else { return }
         context.coordinator.consume(cameraCommand, on: map)
         context.coordinator.updateRouteOverlay(routeCoordinates, on: map)
         context.coordinator.updateRoutePins(routePins, on: map)
@@ -110,7 +114,8 @@ struct MapViewRepresentable: UIViewRepresentable {
         private var userDotDiameter: CGFloat = 20
         private var keyboardObserverTokens: [NSObjectProtocol] = []
         private var appLifecycleTokens: [NSObjectProtocol] = []
-        private var isAppInBackground = false
+        private(set) var isAppInBackground = false
+        private(set) var isSuspended = false
         private var lastForwardedRealtimeTimestamp: Date?
         private var lastRouteCoordinates: [CLLocationCoordinate2D] = []
         private var lastRoutePins: [RouteMapPin] = []
@@ -197,6 +202,28 @@ struct MapViewRepresentable: UIViewRepresentable {
             })
         }
 
+        var hasPlaybackClockSink: Bool { markerCancellable != nil }
+
+        func setSuspended(_ suspended: Bool, on map: MKMapView) {
+            let changed = isSuspended != suspended
+            isSuspended = suspended
+            map.isHidden = suspended
+            map.alpha = suspended ? 0 : 1
+            map.isUserInteractionEnabled = !suspended
+            walkPuckDisplayLink?.isPaused = suspended || isAppInBackground
+            guard changed else { return }
+            if suspended {
+                map.showsUserLocation = false
+                markerCancellable?.cancel()
+                markerCancellable = nil
+                boundPlaybackClock = nil
+            } else if let clock = parent.playbackClock {
+                bindPlaybackClock(clock, on: map)
+            } else {
+                refreshLocationPuck(on: map)
+            }
+        }
+
         private func handleDidEnterBackground() {
             isAppInBackground = true
             walkPuckDisplayLink?.isPaused = true
@@ -207,7 +234,7 @@ struct MapViewRepresentable: UIViewRepresentable {
 
         private func handleWillEnterForeground() {
             isAppInBackground = false
-            walkPuckDisplayLink?.isPaused = false
+            walkPuckDisplayLink?.isPaused = isSuspended
             if let ann = progressAnnotation, let view = map?.view(for: ann) {
                 if let halo = view.layer.sublayers?.first(where: { $0.name == "halo" }) {
                     halo.removeFromSuperlayer()
@@ -335,12 +362,12 @@ struct MapViewRepresentable: UIViewRepresentable {
 
         func bindPlaybackClock(_ clock: RoutePlaybackClock, on map: MKMapView) {
             self.map = map
-            if boundPlaybackClock !== clock {
+            if boundPlaybackClock !== clock || markerCancellable == nil {
                 boundPlaybackClock = clock
                 markerCancellable = Publishers.CombineLatest(clock.$markerCoordinate, clock.$headingDegrees)
                     .receive(on: DispatchQueue.main)
                     .sink { [weak self] _, _ in
-                        guard let self, let map = self.map else { return }
+                        guard let self, !self.isSuspended, let map = self.map else { return }
                         self.refreshLocationPuck(on: map)
                     }
             }
@@ -348,6 +375,7 @@ struct MapViewRepresentable: UIViewRepresentable {
         }
 
         func refreshLocationPuck(on map: MKMapView) {
+            guard !isSuspended else { return }
             if let marker = routeMarkerCoordinate {
                 puckCoordinate = marker
                 updateWalkHeadingHud(
@@ -473,6 +501,7 @@ struct MapViewRepresentable: UIViewRepresentable {
         }
 
         func mapView(_ mapView: MKMapView, didUpdate userLocation: MKUserLocation) {
+            guard !isSuspended else { return }
             guard let location = visibleUserLocationSample(userLocation) else {
                 RuntimeLogger.warning("APP", "实时定位", "MapKit 蓝点更新但 location 为空", details: [
                     "来源": "MKMapView.didUpdate"
@@ -495,6 +524,7 @@ struct MapViewRepresentable: UIViewRepresentable {
         }
 
         func mapView(_ mapView: MKMapView, regionWillChangeAnimated animated: Bool) {
+            guard !isSuspended else { return }
             let activeRecognizers = activeGestureRecognizers(on: mapView)
             let hasActiveGesture = !activeRecognizers.isEmpty
 
@@ -529,6 +559,7 @@ struct MapViewRepresentable: UIViewRepresentable {
         }
 
         func mapView(_ mapView: MKMapView, regionDidChangeAnimated animated: Bool) {
+            guard !isSuspended else { return }
             let distance = visibleVerticalDistance(in: mapView)
             parent.onViewportChanged(distance)
             updatePinPosition(on: mapView)
