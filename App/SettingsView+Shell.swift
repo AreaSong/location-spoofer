@@ -4,23 +4,12 @@ import UniformTypeIdentifiers
 
 extension SettingsView {
     var settingsPage: some View {
-        Group {
-            if isSettingsFormReady {
-                settingsForm
-            } else {
-                Color(UIColor.systemBackground)
-            }
-        }
+        settingsForm
         .navigationTitle("设置")
         .navigationBarTitleDisplayMode(.inline)
         .onAppear {
             refreshMapCoordinateSystemDisplay()
             if isSettingsPresented(), !showingBugReport { favoriteImport.enterPage(favoritePageID) }
-            if !isSettingsFormReady {
-                DispatchQueue.main.async {
-                    isSettingsFormReady = true
-                }
-            }
         }
         .onChange(of: showingBugReport) { showing in
             if showing { favoriteImport.leavePage() }
@@ -253,5 +242,7 @@ extension SettingsView {
                     .foregroundStyle(.secondary)
             }
         }
+        .background(Color(UIColor.systemGroupedBackground))
+        .transaction { $0.animation = nil }
     }
 }

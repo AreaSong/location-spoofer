@@ -1,3 +1,4 @@
+import Combine
 import CoreLocation
 import CoreMotion
 import MapKit
@@ -255,6 +256,25 @@ final class PhysicalWalkDirectionTests: XCTestCase {
         XCTAssertEqual(map.alpha, 1)
         XCTAssertTrue(map.isUserInteractionEnabled)
         coordinator.stopWalkPuckTracking()
+    }
+
+    func testRouteClockSkipsPublishesWhenFrozen() {
+        let clock = RoutePlaybackClock()
+        clock.setProgress(0.1)
+        var publishes = 0
+        let token = clock.objectWillChange.sink { publishes += 1 }
+        clock.setPublishesUI(false)
+        clock.setProgress(0.5)
+        clock.setStatusMessage("沿路前进")
+        XCTAssertEqual(publishes, 0)
+        XCTAssertEqual(clock.progress, 0.1, accuracy: 0.0001)
+        XCTAssertEqual(clock.statusMessage, "")
+
+        clock.setPublishesUI(true)
+        XCTAssertEqual(clock.progress, 0.5, accuracy: 0.0001)
+        XCTAssertEqual(clock.statusMessage, "沿路前进")
+        XCTAssertGreaterThanOrEqual(publishes, 1)
+        token.cancel()
     }
 
     func testSuspendingMapCancelsPlaybackClockSink() throws {

@@ -27,6 +27,7 @@ struct MapViewRepresentable: UIViewRepresentable {
     var mapDisplayStyle: MapDisplayStyle = .standard
     /// 首页被 sheet 盖住时停掉地图合成和 60fps 扇形追踪，避免设置页滚动卡顿。
     var isSuspended: Bool = false
+    var homeSheetBox: MapHomeSheetBox? = nil
 
     func makeCoordinator() -> Coordinator { Coordinator(parent: self) }
 
@@ -74,11 +75,13 @@ struct MapViewRepresentable: UIViewRepresentable {
         context.coordinator.map = map
         context.coordinator.setupKeyboardObservers()
         context.coordinator.setupAppLifecycleObservers()
+        homeSheetBox?.mapCoordinator = context.coordinator
         return map
     }
 
     func updateUIView(_ map: MKMapView, context: Context) {
         context.coordinator.parent = self
+        homeSheetBox?.mapCoordinator = context.coordinator
         context.coordinator.setSuspended(isSuspended, on: map)
         guard !isSuspended else { return }
         context.coordinator.consume(cameraCommand, on: map)

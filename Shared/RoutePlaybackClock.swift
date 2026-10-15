@@ -10,29 +10,94 @@ final class RoutePlaybackClock: ObservableObject {
     @Published private(set) var statusMessage = ""
     @Published private(set) var markerCoordinate: CLLocationCoordinate2D?
     @Published private(set) var headingDegrees: Double?
+    /// 首页被 sheet 盖住时不把进度发到 SwiftUI，播放和写入照常进行。
+    private var publishesUI = true
+    private var pendingProgress: Double?
+    private var pendingCurrent: CoordinatePair?
+    private var pendingStatusMessage: String?
+    private var pendingMarker: CLLocationCoordinate2D?
+    private var pendingHeading: Double?
+    private var hasPendingCurrent = false
+    private var hasPendingMarker = false
+    private var hasPendingHeading = false
+
+    func setPublishesUI(_ enabled: Bool) {
+        guard publishesUI != enabled else { return }
+        publishesUI = enabled
+        guard enabled else { return }
+        if let value = pendingProgress {
+            pendingProgress = nil
+            setProgress(value)
+        }
+        if hasPendingCurrent {
+            hasPendingCurrent = false
+            let value = pendingCurrent
+            pendingCurrent = nil
+            setCurrent(value)
+        }
+        if let value = pendingStatusMessage {
+            pendingStatusMessage = nil
+            setStatusMessage(value)
+        }
+        if hasPendingMarker {
+            hasPendingMarker = false
+            let value = pendingMarker
+            pendingMarker = nil
+            setMarker(value)
+        }
+        if hasPendingHeading {
+            hasPendingHeading = false
+            let value = pendingHeading
+            pendingHeading = nil
+            setHeading(value)
+        }
+    }
 
     func setProgress(_ value: Double) {
         guard progress != value else { return }
+        guard publishesUI else {
+            pendingProgress = value
+            return
+        }
         progress = value
     }
 
     func setCurrent(_ value: CoordinatePair?) {
         guard current != value else { return }
+        guard publishesUI else {
+            pendingCurrent = value
+            hasPendingCurrent = true
+            return
+        }
         current = value
     }
 
     func setStatusMessage(_ value: String) {
         guard statusMessage != value else { return }
+        guard publishesUI else {
+            pendingStatusMessage = value
+            return
+        }
         statusMessage = value
     }
 
     func setMarker(_ coordinate: CLLocationCoordinate2D?) {
         guard !sameCoordinate(markerCoordinate, coordinate) else { return }
+        guard publishesUI else {
+            pendingMarker = coordinate
+            hasPendingMarker = true
+            return
+        }
         markerCoordinate = coordinate
     }
 
     func setHeading(_ value: Double?) {
         guard !sameHeading(headingDegrees, value) else { return }
+        guard publishesUI else {
+            pendingHeading = value
+            hasPendingHeading = true
+            return
+        }
         headingDegrees = value
     }
 

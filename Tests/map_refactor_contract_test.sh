@@ -222,10 +222,27 @@ grep -q 'sheet(item: $sheetBox.activeSheet)' "$ROOT/App/MapHomePresentation.swif
   || fail "settings must present from the sheet box so the map view does not rebuild on tap"
 grep -q 'struct MapHomeHost: View, Equatable' "$ROOT/App/MapHomePresentation.swift" \
   || fail "the map host must skip body when only the settings sheet changes"
-grep -q 'isSettingsFormReady' "$ROOT/App/SettingsView.swift" \
-  || fail "settings form must not block the first sheet presentation frame"
-grep -q '@Binding var isMapSuspended' "$ROOT/App/MapHomeView.swift" \
-  || fail "map freeze must wait until the settings sheet is on screen"
+if grep -q 'isSettingsFormReady' "$ROOT/App/SettingsView.swift" "$ROOT"/App/SettingsView+*.swift; then
+  fail "settings form must render on the first sheet frame so the page is not black"
+fi
+if grep -q '@Binding var isMapSuspended' "$ROOT/App/MapHomeView.swift"; then
+  fail "covering a home sheet must not rebuild the map via a SwiftUI binding"
+fi
+grep -q 'func coverHome()' "$ROOT/App/MapHomePresentation.swift" \
+  || fail "home GPU work must pause without invalidating the map view"
+grep -q 'routeClock?.setPublishesUI(false)' "$ROOT/App/MapHomePresentation.swift" \
+  || fail "route progress ticks must not rebuild the home while a sheet is open"
+grep -q 'systemGroupedBackground' "$ROOT/App/MapHomeView.swift" \
+  || fail "the presented settings sheet must fill with an opaque grouped background"
+if awk '/func presentHomeSheet/,/^    }/' "$ROOT/App/MapHomeView.swift" | grep -n 'coverHome' | head -1 | awk -F: '{print $1}' | grep -q .; then
+  cover_line="$(awk '/func presentHomeSheet/,/^    }/' "$ROOT/App/MapHomeView.swift" | grep -n 'coverHome' | head -1 | awk -F: '{print $1}')"
+  sheet_line="$(awk '/func presentHomeSheet/,/^    }/' "$ROOT/App/MapHomeView.swift" | grep -n 'activeSheet = sheet' | head -1 | awk -F: '{print $1}')"
+  if [ -z "$cover_line" ] || [ -z "$sheet_line" ] || [ "$cover_line" -ge "$sheet_line" ]; then
+    fail "the map must freeze before SwiftUI presents the settings sheet"
+  fi
+else
+  fail "opening settings must freeze the map before presenting the sheet"
+fi
 grep -q 'static let puckDiameter: CGFloat = 16' "$ROOT/App/WalkHeadingHud.swift" \
   || fail "walk heading must draw a blue-dot puck on the active virtual coordinate"
 grep -q 'static func fanPath' "$ROOT/App/WalkHeadingHud.swift" \

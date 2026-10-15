@@ -11,10 +11,30 @@ final class MapHomeSheetBox: ObservableObject {
     var recentRoutes: RecentRouteStore?
     var routeImport: RouteImportCoordinator?
     var testFavorite: FavoriteLocation?
+    var physicalWalk: PhysicalWalkController?
+    var mapState: MapLocationState?
+    var routeClock: RoutePlaybackClock?
+    weak var mapCoordinator: MapViewRepresentable.Coordinator?
     @Published var activeSheet: HomeSheet?
     var onSelectFavorite: (FavoriteLocation) -> Void = { _ in }
     var onRenameFavorite: (FavoriteLocation, String) -> Void = { _, _ in }
     var onSelectSavedRoute: (SavedRoute) -> Void = { _ in }
+
+    func coverHome() {
+        physicalWalk?.setPublishesUI(false)
+        mapState?.setPublishesRealtime(false)
+        routeClock?.setPublishesUI(false)
+        guard let coordinator = mapCoordinator, let map = coordinator.map else { return }
+        coordinator.setSuspended(true, on: map)
+    }
+
+    func uncoverHome() {
+        physicalWalk?.setPublishesUI(true)
+        mapState?.setPublishesRealtime(true)
+        routeClock?.setPublishesUI(true)
+        guard let coordinator = mapCoordinator, let map = coordinator.map else { return }
+        coordinator.setSuspended(false, on: map)
+    }
 
     func bindRuntime(
         actions: LocationActionCoordinator,
@@ -41,27 +61,23 @@ final class MapHomeSheetBox: ObservableObject {
 /// 外壳因 sheet 失效时，用相等性跳过首页 body，避免点设置卡在整页重绘上。
 struct MapHomeHost: View, Equatable {
     let setup: SetupCoordinator
-    @Binding var isMapSuspended: Bool
     let sheetBox: MapHomeSheetBox
 
     static func == (lhs: MapHomeHost, rhs: MapHomeHost) -> Bool {
-        lhs.isMapSuspended == rhs.isMapSuspended
-            && lhs.setup === rhs.setup
-            && lhs.sheetBox === rhs.sheetBox
+        lhs.setup === rhs.setup && lhs.sheetBox === rhs.sheetBox
     }
 
     var body: some View {
-        MapHomeView(setup: setup, isMapSuspended: $isMapSuspended, sheetBox: sheetBox)
+        MapHomeView(setup: setup, sheetBox: sheetBox)
     }
 }
 
 struct MapHomeContainer: View {
     @ObservedObject var setup: SetupCoordinator
-    @State private var isMapSuspended = false
     @StateObject private var sheetBox = MapHomeSheetBox()
 
     var body: some View {
-        MapHomeHost(setup: setup, isMapSuspended: $isMapSuspended, sheetBox: sheetBox)
+        MapHomeHost(setup: setup, sheetBox: sheetBox)
             .equatable()
             .sheet(item: $sheetBox.activeSheet) { sheet in
                 MapHomePresentedSheet(
@@ -70,17 +86,10 @@ struct MapHomeContainer: View {
                     box: sheetBox,
                     activeSheet: $sheetBox.activeSheet
                 )
-                .onAppear {
-                    DispatchQueue.main.async {
-                        if sheetBox.activeSheet == sheet {
-                            isMapSuspended = true
-                        }
-                    }
-                }
             }
             .onChange(of: sheetBox.activeSheet) { sheet in
                 if sheet == nil {
-                    isMapSuspended = false
+                    sheetBox.uncoverHome()
                 }
                 if sheet != .settings {
                     sheetBox.favoriteImport?.leavePage()

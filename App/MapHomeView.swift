@@ -54,36 +54,40 @@ struct MapHomePresentedSheet: View {
     var testFavorite: FavoriteLocation { box.testFavorite! }
 
     var body: some View {
-        NavigationView {
-            switch sheet {
-            case .settings: SettingsView(
-                setup: setup, actions: actions, favoriteImport: favoriteImport,
-                isSettingsPresented: { activeSheet == .settings }, favorites: favorites, session: session
-            )
-            case .logs: RuntimeLogsView(setup: setup, actions: actions, testFavorite: testFavorite)
-            case .favorites:
-                FavoriteListView(
-                    favorites: favorites,
-                    onSelect: { favorite in
-                        box.onSelectFavorite(favorite)
-                    },
-                    onRename: { favorite, name in
-                        box.onRenameFavorite(favorite, name)
-                    }
+        ZStack {
+            Color(UIColor.systemGroupedBackground)
+                .ignoresSafeArea()
+            NavigationView {
+                switch sheet {
+                case .settings: SettingsView(
+                    setup: setup, actions: actions, favoriteImport: favoriteImport,
+                    isSettingsPresented: { activeSheet == .settings }, favorites: favorites, session: session
                 )
-            case .savedRoutes:
-                SavedRouteListView(
-                    store: savedRoutes,
-                    recentRoutes: recentRoutes,
-                    routeImport: routeImport,
-                    isListPresented: { activeSheet == .savedRoutes },
-                    onSelect: { saved in
-                        box.onSelectSavedRoute(saved)
-                    }
-                )
+                case .logs: RuntimeLogsView(setup: setup, actions: actions, testFavorite: testFavorite)
+                case .favorites:
+                    FavoriteListView(
+                        favorites: favorites,
+                        onSelect: { favorite in
+                            box.onSelectFavorite(favorite)
+                        },
+                        onRename: { favorite, name in
+                            box.onRenameFavorite(favorite, name)
+                        }
+                    )
+                case .savedRoutes:
+                    SavedRouteListView(
+                        store: savedRoutes,
+                        recentRoutes: recentRoutes,
+                        routeImport: routeImport,
+                        isListPresented: { activeSheet == .savedRoutes },
+                        onSelect: { saved in
+                            box.onSelectSavedRoute(saved)
+                        }
+                    )
+                }
             }
+            .navigationViewStyle(StackNavigationViewStyle())
         }
-        .background(Color(UIColor.systemBackground))
     }
 }
 
@@ -120,7 +124,6 @@ struct MapHomeView: View {
     @FocusState var searchFocused: Bool
     @Namespace var modeBarNamespace
     @State var mapRuntimeDidStart = false
-    @Binding var isMapSuspended: Bool
     let sheetBox: MapHomeSheetBox
     @State var showEnableTip = false
     @State var showDisableTip = false
@@ -180,16 +183,15 @@ struct MapHomeView: View {
     var activeSpoofLat: Double? { session.writtenLatitude }
     var activeSpoofLon: Double? { session.writtenLongitude }
     var isHomeCoveredBySheet: Bool {
-        isMapSuspended
+        sheetBox.activeSheet != nil
             || showRouteLocationSetup
             || showSigningResignSheet
             || githubDestination != nil
             || activeTip != nil
     }
 
-    init(setup: SetupCoordinator, isMapSuspended: Binding<Bool>, sheetBox: MapHomeSheetBox) {
+    init(setup: SetupCoordinator, sheetBox: MapHomeSheetBox) {
         self.setup = setup
-        _isMapSuspended = isMapSuspended
         self.sheetBox = sheetBox
         let favoriteStore = FavoriteLocationStore()
         _favorites = StateObject(wrappedValue: favoriteStore)
@@ -290,6 +292,9 @@ struct MapHomeView: View {
                 accuracy: LocationAccuracyStore.shared.meters
             )
         )
+        sheetBox.mapState = mapModel
+        sheetBox.routeClock = routeController.clock
+        sheetBox.physicalWalk = _physicalWalk.wrappedValue
     }
 
     var body: some View {
@@ -362,7 +367,8 @@ struct MapHomeView: View {
                 showsWalkHeading: walkPuckMapCoordinate != nil,
                 prefersCustomWalkHeading: physicalWalkStore.isCustomHeadingEnabled,
                 mapDisplayStyle: mapStyle.style,
-                isSuspended: isHomeCoveredBySheet
+                isSuspended: isHomeCoveredBySheet,
+                homeSheetBox: sheetBox
             )
             .ignoresSafeArea(.container)
             .allowsHitTesting(!isHomeCoveredBySheet)
@@ -925,6 +931,7 @@ struct MapHomeView: View {
         if search.isSearching || !search.results.isEmpty || !search.error.isEmpty {
             search.dismissResults()
         }
+        sheetBox.coverHome()
         sheetBox.activeSheet = sheet
     }
 
@@ -945,6 +952,9 @@ struct MapHomeView: View {
         sheetBox.recentRoutes = recentRoutes
         sheetBox.routeImport = routeImport
         sheetBox.testFavorite = testFavorite
+        sheetBox.physicalWalk = physicalWalk
+        sheetBox.mapState = mapState
+        sheetBox.routeClock = route.clock
         bindFavoriteSheetActions()
         bindSavedRouteSheetAction()
     }

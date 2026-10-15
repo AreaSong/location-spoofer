@@ -221,11 +221,14 @@ extension MapHomeView {
 
     func syncRouteActivity(clearStale: Bool = false, retryCreation: Bool = false) {
         guard #available(iOS 16.2, *) else { return }
-        routeCommand = routeCommand.reconcile(
+        let nextCommand = routeCommand.reconcile(
             phase: route.phase,
             interruption: route.interruption,
             waitingForActivation: route.waitingForActivation
         )
+        if nextCommand != routeCommand {
+            routeCommand = nextCommand
+        }
         let travelSymbol = route.travelMode.symbolName
         let routeName = route.editingSavedRoute?.name ?? route.travelMode.displayName
         let confirmStopped = route.phase == .preparing
