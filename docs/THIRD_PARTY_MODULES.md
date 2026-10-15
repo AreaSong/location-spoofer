@@ -32,6 +32,14 @@ location rewriting no longer needs GitHub.
 | `wloc.lpx` | Loon |
 | `wloc.stoverride` | Stash |
 
+`wloc.module` also defines a local Direct node `环回 = direct`, appends
+`skip-proxy` for localhost, and adds loopback CIDR `DIRECT` rules. That keeps
+`127.0.0.1:18766` and LAN loopback from going out through a remote node.
+The module does not add `FINAL,DIRECT`, so an existing proxy profile keeps
+its own default policy. After updating the module, select `环回` and use
+Config or Direct global routing; Proxy routing with a remote node still
+sends other traffic outside.
+
 No `?v=` cache-bust is appended. Re-importing the subscription in the proxy
 client re-fetches the module. Script files live at
 `ThirdParty/WlocScripts/dist/v1/` and are referenced by each module's

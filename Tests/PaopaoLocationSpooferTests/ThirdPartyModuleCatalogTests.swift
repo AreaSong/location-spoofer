@@ -30,8 +30,28 @@ final class ThirdPartyModuleCatalogTests: XCTestCase {
         )
         XCTAssertTrue(rewritten.contains("http://127.0.0.1:18766/dist/v1/wloc.js"))
         XCTAssertTrue(rewritten.contains("http://127.0.0.1:18766/dist/v1/wloc-settings.js"))
+        XCTAssertTrue(rewritten.contains(ShadowrocketLoopbackNode.configLine))
+        XCTAssertTrue(rewritten.contains(ShadowrocketLoopbackNode.skipProxyLine))
+        XCTAssertTrue(rewritten.contains(ShadowrocketLoopbackNode.loopbackV4Rule))
+        XCTAssertTrue(rewritten.contains(ShadowrocketLoopbackNode.loopbackV6Rule))
+        XCTAssertFalse(rewritten.contains("FINAL,DIRECT"))
         XCTAssertFalse(rewritten.contains("Yu9191/wloc"))
         XCTAssertFalse(rewritten.contains("raw.githubusercontent.com"))
+    }
+
+    func testShadowrocketModuleDefinesLoopbackNodeWithoutHijackingFinalProxy() throws {
+        let root = try repositoryScriptsRoot()
+        let text = try String(
+            contentsOf: root.appendingPathComponent("modules/wloc.module"),
+            encoding: .utf8
+        )
+        XCTAssertTrue(text.contains("[Proxy]"))
+        XCTAssertTrue(text.contains(ShadowrocketLoopbackNode.configLine))
+        XCTAssertTrue(text.contains(ShadowrocketLoopbackNode.skipProxyLine))
+        XCTAssertTrue(text.contains("DOMAIN,localhost,DIRECT"))
+        XCTAssertTrue(text.contains(ShadowrocketLoopbackNode.loopbackV4Rule))
+        XCTAssertTrue(text.contains(ShadowrocketLoopbackNode.loopbackV6Rule))
+        XCTAssertFalse(text.contains("FINAL,DIRECT"))
     }
 
     func testHTTPServesRewrittenModuleAndRejectsUnknownPaths() throws {
@@ -43,6 +63,8 @@ final class ThirdPartyModuleCatalogTests: XCTestCase {
         XCTAssertEqual(module.status, 200)
         let text = String(data: module.body, encoding: .utf8) ?? ""
         XCTAssertTrue(text.contains("http://127.0.0.1:18766/dist/v1/wloc.js"))
+        XCTAssertTrue(text.contains(ShadowrocketLoopbackNode.configLine))
+        XCTAssertTrue(text.contains(ShadowrocketLoopbackNode.skipProxyLine))
 
         let health = ThirdPartyModuleHTTP.response(
             for: "GET /health HTTP/1.1\r\n\r\n",

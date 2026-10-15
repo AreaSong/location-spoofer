@@ -219,6 +219,7 @@ extension FirstSetupView {
 
             if client == .shadowrocket {
                 shadowrocketHTTPSDecryptionGuide
+                shadowrocketLoopbackNodeGuide
             } else {
                 GroupBox(label: Label("第 2 步：完成 \(client.name) 配置", systemImage: "slider.horizontal.3")) {
                     VStack(alignment: .leading, spacing: 12) {
@@ -266,7 +267,7 @@ extension FirstSetupView {
                     title: "授权 Shadowrocket 证书",
                     caption: "1 打开 Shadowrocket 证书项并按提示安装、授权。"
                 )
-                instructionRow(5, "返回 HTTPS 解密页面，点击右上角勾号保存，然后开启代理。")
+                instructionRow(5, "返回 HTTPS 解密页面，点击右上角勾号保存，然后回到首页开启连接。")
 
                 Button {
                     openThirdPartyClient(.shadowrocket)
@@ -279,6 +280,31 @@ extension FirstSetupView {
                 Text("App 只能唤起 Shadowrocket，无法通过公开接口直接跳转到“模块”或“HTTPS 解密”页面。")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    var shadowrocketLoopbackNodeGuide: some View {
+        GroupBox(label: Label("第 3 步：使用环回节点", systemImage: "arrow.triangle.2.circlepath")) {
+            VStack(alignment: .leading, spacing: 12) {
+                instructionRow(1, "更新或重新导入模块后，首页本地节点会出现「\(ShadowrocketLoopbackNode.name)」。")
+                instructionRow(2, "选中「\(ShadowrocketLoopbackNode.name)」，全局路由选「配置」或「直连」，再开启连接。选机场并开「代理」会把流量送到外面。")
+                instructionRow(3, "若首页没有该节点，复制下面这一行，粘贴到「配置 → 本地文件 → 编辑纯文本」的 [Proxy] 段。")
+                Text(ShadowrocketLoopbackNode.configLine)
+                    .font(.caption.monospaced())
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                CopyButton("复制环回节点", copiedTitle: "已复制环回节点", fillsWidth: true) {
+                    ShadowrocketLoopbackNode.configLine
+                }
+                .buttonStyle(.borderedProminent)
+                Button {
+                    openThirdPartyClient(.shadowrocket)
+                } label: {
+                    Label("打开 Shadowrocket 选择环回节点", systemImage: "arrow.up.forward.app")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
             }
         }
     }
