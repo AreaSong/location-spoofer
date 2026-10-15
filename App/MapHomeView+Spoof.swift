@@ -195,7 +195,7 @@ extension MapHomeView {
                 .multilineTextAlignment(.center)
                 .foregroundStyle(.secondary)
             Button(LocationUseBlock.openSettingsTitle) {
-                activeSheet = .settings
+                presentHomeSheet(.settings)
             }
             .buttonStyle(.borderedProminent)
             .controlSize(.large)

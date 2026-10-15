@@ -211,11 +211,21 @@ if grep -q 'map.alpha = suspended' "$ROOT/App/MapViewRepresentable.swift"; then
 fi
 grep -q 'allowsHitTesting(!isHomeCoveredBySheet)' "$ROOT/App/MapHomeView.swift" \
   || fail "the covered map must ignore touches without removing the home chrome"
-if grep -A12 'sheet(item: $activeSheet)' "$ROOT/App/MapHomePresentation.swift" | grep -q 'if let actions = sheetBox.actions'; then
+if grep -A12 'sheet(item: $sheetBox.activeSheet)' "$ROOT/App/MapHomePresentation.swift" | grep -q 'if let actions = sheetBox.actions'; then
   fail "settings must present immediately instead of waiting on optional sheet bindings"
 fi
 grep -q 'func bindRuntime' "$ROOT/App/MapHomePresentation.swift" \
   || fail "home sheet objects must be bound before the first settings tap"
+grep -q 'func presentHomeSheet' "$ROOT/App/MapHomeView.swift" \
+  || fail "home chrome must present sheets without binding activeSheet on the map view"
+grep -q 'sheet(item: $sheetBox.activeSheet)' "$ROOT/App/MapHomePresentation.swift" \
+  || fail "settings must present from the sheet box so the map view does not rebuild on tap"
+grep -q 'struct MapHomeHost: View, Equatable' "$ROOT/App/MapHomePresentation.swift" \
+  || fail "the map host must skip body when only the settings sheet changes"
+grep -q 'isSettingsFormReady' "$ROOT/App/SettingsView.swift" \
+  || fail "settings form must not block the first sheet presentation frame"
+grep -q '@Binding var isMapSuspended' "$ROOT/App/MapHomeView.swift" \
+  || fail "map freeze must wait until the settings sheet is on screen"
 grep -q 'static let puckDiameter: CGFloat = 16' "$ROOT/App/WalkHeadingHud.swift" \
   || fail "walk heading must draw a blue-dot puck on the active virtual coordinate"
 grep -q 'static func fanPath' "$ROOT/App/WalkHeadingHud.swift" \

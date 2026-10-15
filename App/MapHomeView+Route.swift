@@ -337,7 +337,7 @@ extension MapHomeView {
     }
 
     func openSavedRoutes() {
-        activeSheet = .savedRoutes
+        presentHomeSheet(.savedRoutes)
     }
 
     func promptSaveRoute() {

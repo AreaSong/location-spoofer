@@ -358,7 +358,7 @@ extension MapHomeView {
                 ForEach(favorites.displayedFavorites) { favorite in favoriteChip(favorite) }
             },
             onClearRecents: { recentSelections.removeAll() },
-            onManageFavorites: { activeSheet = .favorites }
+            onManageFavorites: { presentHomeSheet(.favorites) }
         )
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }

@@ -4,6 +4,98 @@ import UniformTypeIdentifiers
 
 extension SettingsView {
     var settingsPage: some View {
+        Group {
+            if isSettingsFormReady {
+                settingsForm
+            } else {
+                Color(UIColor.systemBackground)
+            }
+        }
+        .navigationTitle("设置")
+        .navigationBarTitleDisplayMode(.inline)
+        .onAppear {
+            refreshMapCoordinateSystemDisplay()
+            if isSettingsPresented(), !showingBugReport { favoriteImport.enterPage(favoritePageID) }
+            if !isSettingsFormReady {
+                DispatchQueue.main.async {
+                    isSettingsFormReady = true
+                }
+            }
+        }
+        .onChange(of: showingBugReport) { showing in
+            if showing { favoriteImport.leavePage() }
+            else if isSettingsPresented() { favoriteImport.enterPage(favoritePageID) }
+        }
+        .toolbar {
+            ToolbarItem(placement: .navigationBarTrailing) { Button("完成") { favoriteImport.leavePage(); dismiss() } }
+        }
+        .sheet(item: $activeTip) { kind in
+            TipSheetView(kind: kind)
+        }
+        .sheet(item: $githubDestination) { destination in
+            SafariView(url: destination.url)
+                .ignoresSafeArea()
+        }
+        .sheet(isPresented: $showSigningResignSheet) {
+            SigningResignGuideView()
+        }
+        .alert(proxyOperationAlertTitle, isPresented: Binding(
+            get: { !proxyOperationError.isEmpty },
+            set: { if !$0 { proxyOperationError = "" } }
+        )) {
+            Button("知道了", role: .cancel) {}
+        } message: {
+            Text(proxyOperationError)
+        }
+        .alert(item: $updateCheckResult) { result in
+            updateCheckAlert(for: result)
+        }
+        .alert(thirdPartyClearRecovery?.alertTitle ?? ThirdPartyModeSwitchRecovery.title, isPresented: Binding(
+            get: { thirdPartyClearRecovery != nil },
+            set: { if !$0 { thirdPartyClearRecovery = nil } }
+        ), presenting: thirdPartyClearRecovery) { recovery in
+            if recovery.isLegacyUnverified {
+                Button(ThirdPartyModeSwitchRecovery.unusedLegacyTitle) {
+                    switchAfterConfirmingUnusedLegacyCoordinates(recovery)
+                }
+            }
+            Button("重试清理") {
+                guard recovery.applies(from: runtimeMode.mode, to: recovery.destination) else { return }
+                switchRuntimeMode(to: recovery.destination)
+            }
+            Button(ThirdPartyModeSwitchRecovery.continueTitle) {
+                switchRuntimeMode(to: recovery.destination, confirmedThirdPartyDisabled: recovery)
+            }
+            Button("取消", role: .cancel) {}
+        } message: { recovery in
+            Text(recovery.message)
+        }
+        .confirmationDialog(
+            "重置证书？",
+            isPresented: $showCertificateResetConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("重置并生成新证书", role: .destructive) {
+                resetCertificateAuthority()
+            }
+            Button("取消", role: .cancel) {}
+        } message: {
+            Text("当前虚拟定位和本地代理将停止。App 会删除钥匙串中的设备 CA、立即生成新证书，并打开安装与信任引导。你还需要前往 iOS「设置 → 通用 → VPN 与设备管理」手动删除旧证书，然后重新下载安装并完全信任新证书。")
+        }
+        .fileImporter(isPresented: $showFavoriteImporter, allowedContentTypes: [.json]) { result in
+            importFavorites(from: result)
+        }
+        .alert(favoriteImport.notice?.title ?? "收藏", isPresented: Binding(
+            get: { favoriteImport.notice != nil },
+            set: { if !$0 { favoriteImport.notice = nil } }
+        )) {
+            Button("知道了", role: .cancel) {}
+        } message: {
+            Text(favoriteImport.notice?.message ?? "")
+        }
+    }
+
+    var settingsForm: some View {
         Form {
             SettingsRuntimeModeSection(
                 actions: actions,
@@ -160,83 +252,6 @@ extension SettingsView {
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             }
-        }
-        .navigationTitle("设置")
-        .navigationBarTitleDisplayMode(.inline)
-        .onAppear {
-            refreshMapCoordinateSystemDisplay()
-            if isSettingsPresented(), !showingBugReport { favoriteImport.enterPage(favoritePageID) }
-        }
-        .onChange(of: showingBugReport) { showing in
-            if showing { favoriteImport.leavePage() }
-            else if isSettingsPresented() { favoriteImport.enterPage(favoritePageID) }
-        }
-        .toolbar {
-            ToolbarItem(placement: .navigationBarTrailing) { Button("完成") { favoriteImport.leavePage(); dismiss() } }
-        }
-        .sheet(item: $activeTip) { kind in
-            TipSheetView(kind: kind)
-        }
-        .sheet(item: $githubDestination) { destination in
-            SafariView(url: destination.url)
-                .ignoresSafeArea()
-        }
-        .sheet(isPresented: $showSigningResignSheet) {
-            SigningResignGuideView()
-        }
-        .alert(proxyOperationAlertTitle, isPresented: Binding(
-            get: { !proxyOperationError.isEmpty },
-            set: { if !$0 { proxyOperationError = "" } }
-        )) {
-            Button("知道了", role: .cancel) {}
-        } message: {
-            Text(proxyOperationError)
-        }
-        .alert(item: $updateCheckResult) { result in
-            updateCheckAlert(for: result)
-        }
-        .alert(thirdPartyClearRecovery?.alertTitle ?? ThirdPartyModeSwitchRecovery.title, isPresented: Binding(
-            get: { thirdPartyClearRecovery != nil },
-            set: { if !$0 { thirdPartyClearRecovery = nil } }
-        ), presenting: thirdPartyClearRecovery) { recovery in
-            if recovery.isLegacyUnverified {
-                Button(ThirdPartyModeSwitchRecovery.unusedLegacyTitle) {
-                    switchAfterConfirmingUnusedLegacyCoordinates(recovery)
-                }
-            }
-            Button("重试清理") {
-                guard recovery.applies(from: runtimeMode.mode, to: recovery.destination) else { return }
-                switchRuntimeMode(to: recovery.destination)
-            }
-            Button(ThirdPartyModeSwitchRecovery.continueTitle) {
-                switchRuntimeMode(to: recovery.destination, confirmedThirdPartyDisabled: recovery)
-            }
-            Button("取消", role: .cancel) {}
-        } message: { recovery in
-            Text(recovery.message)
-        }
-        .confirmationDialog(
-            "重置证书？",
-            isPresented: $showCertificateResetConfirmation,
-            titleVisibility: .visible
-        ) {
-            Button("重置并生成新证书", role: .destructive) {
-                resetCertificateAuthority()
-            }
-            Button("取消", role: .cancel) {}
-        } message: {
-            Text("当前虚拟定位和本地代理将停止。App 会删除钥匙串中的设备 CA、立即生成新证书，并打开安装与信任引导。你还需要前往 iOS「设置 → 通用 → VPN 与设备管理」手动删除旧证书，然后重新下载安装并完全信任新证书。")
-        }
-        .fileImporter(isPresented: $showFavoriteImporter, allowedContentTypes: [.json]) { result in
-            importFavorites(from: result)
-        }
-        .alert(favoriteImport.notice?.title ?? "收藏", isPresented: Binding(
-            get: { favoriteImport.notice != nil },
-            set: { if !$0 { favoriteImport.notice = nil } }
-        )) {
-            Button("知道了", role: .cancel) {}
-        } message: {
-            Text(favoriteImport.notice?.message ?? "")
         }
     }
 }

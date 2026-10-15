@@ -120,7 +120,7 @@ struct MapHomeView: View {
     @FocusState var searchFocused: Bool
     @Namespace var modeBarNamespace
     @State var mapRuntimeDidStart = false
-    @Binding var activeSheet: HomeSheet?
+    @Binding var isMapSuspended: Bool
     let sheetBox: MapHomeSheetBox
     @State var showEnableTip = false
     @State var showDisableTip = false
@@ -180,16 +180,16 @@ struct MapHomeView: View {
     var activeSpoofLat: Double? { session.writtenLatitude }
     var activeSpoofLon: Double? { session.writtenLongitude }
     var isHomeCoveredBySheet: Bool {
-        activeSheet != nil
+        isMapSuspended
             || showRouteLocationSetup
             || showSigningResignSheet
             || githubDestination != nil
             || activeTip != nil
     }
 
-    init(setup: SetupCoordinator, activeSheet: Binding<HomeSheet?>, sheetBox: MapHomeSheetBox) {
+    init(setup: SetupCoordinator, isMapSuspended: Binding<Bool>, sheetBox: MapHomeSheetBox) {
         self.setup = setup
-        _activeSheet = activeSheet
+        _isMapSuspended = isMapSuspended
         self.sheetBox = sheetBox
         let favoriteStore = FavoriteLocationStore()
         _favorites = StateObject(wrappedValue: favoriteStore)
@@ -398,7 +398,6 @@ struct MapHomeView: View {
         .navigationBarHidden(true)
         .onChange(of: showsRoutePanelActive) { _ in homePopup = nil }
         .onChange(of: searchFocused) { focused in if focused { homePopup = nil } }
-        .onChange(of: activeSheet) { sheet in if sheet != nil { homePopup = nil } }
         .onChange(of: displayedMapCoordinateSystem) { previewCoordinateSystem = $0 }
         .onChange(of: cachedSelectionPair) { _ in previewCoordinateSystem = displayedMapCoordinateSystem }
         .sheet(item: $activeTip) { kind in
@@ -554,11 +553,6 @@ struct MapHomeView: View {
             realtimeButtonTask = nil
             favoriteSaveTask?.cancel()
             favoriteSaveTask = nil
-        }
-        .onChange(of: activeSheet) { sheet in
-            if sheet != .settings { favoriteImport.leavePage() }
-            if sheet != .savedRoutes { routeImport.leavePage() }
-            if sheet != nil { search.dismissResults() }
         }
         .onChange(of: isHomeCoveredBySheet) { covered in
             physicalWalk.setPublishesUI(!covered)
@@ -784,7 +778,7 @@ struct MapHomeView: View {
                     .accessibilityLabel("结束搜索输入")
             } else {
                 MapChromeIconButton(systemImage: "list.bullet.rectangle", accessibilityLabel: "日志") {
-                    activeSheet = .logs
+                    presentHomeSheet(.logs)
                 }
                 homeSettingsButton
             }
@@ -861,7 +855,7 @@ struct MapHomeView: View {
                     saveCurrentSelectionAsFavorite()
                 }
             },
-            onOpenSettings: { activeSheet = .settings },
+            onOpenSettings: { presentHomeSheet(.settings) },
             onPrimaryTap: { homePopup = nil; handlePeekTap() },
             onSecondaryTap: { homePopup = nil; handleHomeSecondaryTap() },
             viaTitle: homeViaActionTitle,
@@ -919,6 +913,19 @@ struct MapHomeView: View {
             mapCoordinate: mapState.selection.coordinate,
             mapCoordinateSystem: CoordinateConverter.currentMapCoordinateSystem
         )
+    }
+
+    func presentHomeSheet(_ sheet: HomeSheet) {
+        if homePopup != nil {
+            homePopup = nil
+        }
+        if searchFocused {
+            searchFocused = false
+        }
+        if search.isSearching || !search.results.isEmpty || !search.error.isEmpty {
+            search.dismissResults()
+        }
+        sheetBox.activeSheet = sheet
     }
 
     var testFavorite: FavoriteLocation { currentSelectionFavorite }

@@ -125,7 +125,7 @@ extension MapHomeView {
 
     var allFavoritesButton: some View {
         Button("全部") {
-            activeSheet = .favorites
+            presentHomeSheet(.favorites)
         }
         .buttonStyle(CapsuleChipStyle(tint: .primary))
         .accessibilityLabel("打开收藏列表")

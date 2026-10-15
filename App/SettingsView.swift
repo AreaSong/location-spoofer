@@ -48,6 +48,7 @@ struct SettingsView: View {
     @State var mapCoordinateSystemUsedFallback = false
     @State var showFavoriteImporter = false
     @State var showSigningResignSheet = false
+    @State var isSettingsFormReady = false
 
     var body: some View {
         settingsPage

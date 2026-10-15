@@ -6,7 +6,7 @@ extension MapHomeView {
             HomeSettingsButton(
                 status: SigningExpiry.evaluate(expirationDate: signingExpiryStatus.expirationDate, now: context.date),
                 now: context.date,
-                onOpen: { activeSheet = .settings }
+                onOpen: { presentHomeSheet(.settings) }
             )
         }
     }

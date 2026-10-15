@@ -11,6 +11,7 @@ final class MapHomeSheetBox: ObservableObject {
     var recentRoutes: RecentRouteStore?
     var routeImport: RouteImportCoordinator?
     var testFavorite: FavoriteLocation?
+    @Published var activeSheet: HomeSheet?
     var onSelectFavorite: (FavoriteLocation) -> Void = { _ in }
     var onRenameFavorite: (FavoriteLocation, String) -> Void = { _, _ in }
     var onSelectSavedRoute: (SavedRoute) -> Void = { _ in }
@@ -37,20 +38,56 @@ final class MapHomeSheetBox: ObservableObject {
 }
 
 /// 设置等 sheet 挂在这里，不跟首页的高频 Store 一起失效。
+/// 外壳因 sheet 失效时，用相等性跳过首页 body，避免点设置卡在整页重绘上。
+struct MapHomeHost: View, Equatable {
+    let setup: SetupCoordinator
+    @Binding var isMapSuspended: Bool
+    let sheetBox: MapHomeSheetBox
+
+    static func == (lhs: MapHomeHost, rhs: MapHomeHost) -> Bool {
+        lhs.isMapSuspended == rhs.isMapSuspended
+            && lhs.setup === rhs.setup
+            && lhs.sheetBox === rhs.sheetBox
+    }
+
+    var body: some View {
+        MapHomeView(setup: setup, isMapSuspended: $isMapSuspended, sheetBox: sheetBox)
+    }
+}
+
 struct MapHomeContainer: View {
     @ObservedObject var setup: SetupCoordinator
-    @State private var activeSheet: HomeSheet?
+    @State private var isMapSuspended = false
     @StateObject private var sheetBox = MapHomeSheetBox()
 
     var body: some View {
-        MapHomeView(setup: setup, activeSheet: $activeSheet, sheetBox: sheetBox)
-            .sheet(item: $activeSheet) { sheet in
+        MapHomeHost(setup: setup, isMapSuspended: $isMapSuspended, sheetBox: sheetBox)
+            .equatable()
+            .sheet(item: $sheetBox.activeSheet) { sheet in
                 MapHomePresentedSheet(
                     sheet: sheet,
                     setup: setup,
                     box: sheetBox,
-                    activeSheet: $activeSheet
+                    activeSheet: $sheetBox.activeSheet
                 )
+                .onAppear {
+                    DispatchQueue.main.async {
+                        if sheetBox.activeSheet == sheet {
+                            isMapSuspended = true
+                        }
+                    }
+                }
+            }
+            .onChange(of: sheetBox.activeSheet) { sheet in
+                if sheet == nil {
+                    isMapSuspended = false
+                }
+                if sheet != .settings {
+                    sheetBox.favoriteImport?.leavePage()
+                }
+                if sheet != .savedRoutes {
+                    sheetBox.routeImport?.leavePage()
+                }
             }
     }
 }
