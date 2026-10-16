@@ -227,8 +227,8 @@ grep -q '关闭系统定位服务' "$ROOT/App/TipViews.swift" \
 grep -q '还不跳点再重启手机' "$ROOT/App/TipViews.swift" \
   || fail "iOS 26 third-party activation must keep reboot as a fallback"
 grep -q 'if spoofState == .active' "$MAP" || fail "manual help must follow the shared spoof state"
-grep -q 'MARKETING_VERSION: "1.2.0.6"' "$ROOT/project.yml" || fail "marketing version must be 1.2.0.6"
-grep -q 'CURRENT_PROJECT_VERSION: "23"' "$ROOT/project.yml" || fail "build version must be 23"
+grep -q 'MARKETING_VERSION: "1.2.0.7"' "$ROOT/project.yml" || fail "marketing version must be 1.2.0.7"
+grep -q 'CURRENT_PROJECT_VERSION: "24"' "$ROOT/project.yml" || fail "build version must be 24"
 
 grep -q 'func mustSucceed' "$ROOT/Shared/RuntimeModeSwitchCleanup.swift" \
   || fail "mode cleanup must define mandatory persisted-location cleanup"
