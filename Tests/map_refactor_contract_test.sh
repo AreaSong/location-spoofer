@@ -342,6 +342,12 @@ for argument in ["favorites: favorites", "favoriteImport: favoriteImport", "isSe
 PY_CHECK
 # 第 7 阶段将搜索结果构造移入模型，文案契约仍需保留。
 grep -q '按国内标准(GCJ-02)选点' "$ROOT/App/MapSearchModel.swift" || fail "typed coordinates must offer an explicit GCJ-02 choice"
+! grep -q 'if searchFocused || search.isSearching || !search.results.isEmpty || !search.error.isEmpty' "$MAP_HOME" \
+  || fail "search field must stay in one top-tree identity; do not swap the whole header on focus"
+grep -q 'search.hasVisibleResults' "$MAP_HOME" || fail "search results chrome must follow hasVisibleResults"
+grep -q 'applyEditedText' "$ROOT/App/MapSearchViews.swift" || fail "search field must ignore identical TextField writes"
+grep -q 'ignoresSafeArea(.keyboard)' "$ROOT/App/MapHomeOverlayLayout.swift" \
+  || fail "home overlay geometry must ignore keyboard safe area"
 ! grep -q '当前地图：' "$MAP_HOME" || fail "expanded spot must not spend a row on 当前地图"
 grep -q 'bottomCardExpandedHeightFraction' "$ROOT/App/AppStyle.swift" \
   || fail "expanded bottom card must cap height against the screen"

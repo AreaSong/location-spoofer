@@ -4,34 +4,27 @@ import UIKit
 extension MapHomeView {
     @ViewBuilder
     func homeTopArea(availableHeight: CGFloat) -> some View {
-        if searchFocused || search.isSearching || !search.results.isEmpty || !search.error.isEmpty {
-            VStack(spacing: 6) {
-                topControls
-                if let block = locationUseBlock {
-                    HomeFittingScrollView(maxHeight: 80) { locationUnavailableOverlay(block) }
-                        .onAppear { pauseRouteIfLocationBlocked() }
-                }
-                searchResultList
-            }
-            .frame(maxHeight: availableHeight, alignment: .top)
-            .accessibilityIdentifier("home.topArea")
-        } else {
-            homeTopHeader
-                .frame(maxWidth: .infinity, maxHeight: availableHeight, alignment: .top)
-                .accessibilityIdentifier("home.topArea")
-        }
-    }
-
-    private var homeTopHeader: some View {
+        // 搜索框必须留在同一身份上。按焦点整棵切换顶部树会在成为第一响应者时重建输入框并卡死。
         VStack(alignment: .leading, spacing: 6) {
             topControls
             if let block = locationUseBlock {
-                locationUnavailableOverlay(block)
-                    .onAppear { pauseRouteIfLocationBlocked() }
+                if search.hasVisibleResults {
+                    HomeFittingScrollView(maxHeight: 80) { locationUnavailableOverlay(block) }
+                        .onAppear { pauseRouteIfLocationBlocked() }
+                } else {
+                    locationUnavailableOverlay(block)
+                        .onAppear { pauseRouteIfLocationBlocked() }
+                }
             }
-            homeCoordinateSummary
-            homeZoomAndFunctionRow
+            if search.hasVisibleResults {
+                searchResultList
+            } else if !searchFocused {
+                homeCoordinateSummary
+                homeZoomAndFunctionRow
+            }
         }
+        .frame(maxWidth: .infinity, maxHeight: availableHeight, alignment: .top)
+        .accessibilityIdentifier("home.topArea")
     }
 
     private var homeZoomAndFunctionRow: some View {

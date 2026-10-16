@@ -11,7 +11,7 @@ struct MapSearchField: View {
                 .font(.system(size: 16, weight: .medium))
                 .foregroundStyle(.secondary)
                 .accessibilityHidden(true)
-            TextField("搜索地点或坐标", text: $search.text)
+            TextField("搜索地点或坐标", text: searchFieldText)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
                 .submitLabel(.search)
@@ -47,6 +47,14 @@ struct MapSearchField: View {
         )
         .shadow(color: .black.opacity(0.12), radius: 8, y: 3)
         .accessibilityAction(named: "搜索") { onSubmit() }
+    }
+
+    /// TextField 成为第一响应者时会把当前值再写回；相同字符串不能再发布，否则首页会空转。
+    private var searchFieldText: Binding<String> {
+        Binding(
+            get: { search.text },
+            set: { search.applyEditedText($0) }
+        )
     }
 }
 

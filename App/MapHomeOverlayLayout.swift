@@ -60,6 +60,7 @@ struct MapHomeOverlayLayout<Top: View, Bottom: View>: View {
             .frame(width: size.width, height: size.height, alignment: .topLeading)
             .offset(x: -safe.leading, y: -safe.top)
         }
+        .ignoresSafeArea(.keyboard)
     }
 }
 

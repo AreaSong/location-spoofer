@@ -54,6 +54,12 @@ final class MapSearchModel: ObservableObject {
     @Published private(set) var results: [SearchLocationResult] = []
     @Published private(set) var error = ""
     @Published private(set) var isSearching = false
+    var hasVisibleResults: Bool { isSearching || !results.isEmpty || !error.isEmpty }
+
+    func applyEditedText(_ newValue: String) {
+        guard newValue != text else { return }
+        text = newValue
+    }
     private(set) var submittedQuery: String?
     private var generation: UInt64 = 0
     private var request: MapSearchRequest?

@@ -1,3 +1,4 @@
+import Combine
 import XCTest
 import MapKit
 @testable import PaopaoLocationSpoofer
@@ -218,6 +219,53 @@ final class MapSearchModelTests: XCTestCase {
         XCTAssertEqual(model.text, "  中文测试  ")
         request.succeed("结果")
         await task.value
+    }
+
+    func testVisibleResultsFollowSearchProgress() async throws {
+        let request = ControlledMapSearch()
+        let model = MapSearchModel { _, _ in request }
+        XCTAssertFalse(model.hasVisibleResults)
+        model.text = "A"
+        let task = try XCTUnwrap(model.submit(system: .wgs84, preferred: .wgs84))
+        XCTAssertTrue(model.hasVisibleResults)
+        await request.waitUntilStarted()
+        request.succeed("结果")
+        await task.value
+        XCTAssertTrue(model.hasVisibleResults)
+        model.dismissResults()
+        XCTAssertFalse(model.hasVisibleResults)
+    }
+
+    func testVisibleResultsStayUpForSearchError() async throws {
+        let request = ControlledMapSearch()
+        let model = MapSearchModel { _, _ in request }
+        model.text = "失败"
+        let task = try XCTUnwrap(model.submit(system: .wgs84, preferred: .wgs84))
+        await request.waitUntilStarted()
+        request.fail(URLError(.notConnectedToInternet))
+        await task.value
+        XCTAssertTrue(model.hasVisibleResults)
+        XCTAssertFalse(model.error.isEmpty)
+    }
+
+    func testReplayingTheSameEditedTextDoesNotPublishOrDismissResults() async throws {
+        let request = ControlledMapSearch()
+        let model = MapSearchModel { _, _ in request }
+        model.text = "A"
+        let task = try XCTUnwrap(model.submit(system: .wgs84, preferred: .wgs84))
+        await request.waitUntilStarted()
+        request.succeed("结果")
+        await task.value
+        XCTAssertEqual(model.results.map(\.name), ["结果"])
+        var publishes = 0
+        let token = model.objectWillChange.sink { publishes += 1 }
+        model.applyEditedText("A")
+        XCTAssertEqual(publishes, 0)
+        XCTAssertEqual(model.results.map(\.name), ["结果"])
+        model.applyEditedText("B")
+        XCTAssertGreaterThanOrEqual(publishes, 1)
+        XCTAssertTrue(model.results.isEmpty)
+        _ = token
     }
 }
 
