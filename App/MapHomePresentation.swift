@@ -24,44 +24,10 @@ final class MapHomeSheetBox: ObservableObject {
     private var lastDismissUptime: TimeInterval?
     private var unsuspendMapWork: DispatchWorkItem?
     private var isRelaunching = false
-    private let settingsPresenter = HomeSettingsPresenter()
-    let settingsPageID = UUID()
-    var settingsOnScreen = false
 
     private var recentlyDismissed: Bool {
         guard let lastDismissUptime else { return false }
         return ProcessInfo.processInfo.systemUptime - lastDismissUptime < 0.6
-    }
-
-    func prepareSettings(setup: SetupCoordinator) {
-        settingsPresenter.onDismiss = { [weak self] in
-            self?.finishSettingsDismiss()
-        }
-        settingsPresenter.prepare(setup: setup, box: self)
-    }
-
-    func presentSettings() -> Bool {
-        guard actions != nil, favoriteImport != nil, favorites != nil, session != nil else { return false }
-        settingsOnScreen = true
-        favoriteImport?.enterPage(settingsPageID)
-        guard settingsPresenter.show() else {
-            settingsOnScreen = false
-            return false
-        }
-        return true
-    }
-
-    func dismissSettings() {
-        guard settingsOnScreen || settingsPresenter.isShown else { return }
-        settingsOnScreen = false
-        settingsPresenter.hide()
-    }
-
-    private func finishSettingsDismiss() {
-        settingsOnScreen = false
-        favoriteImport?.leavePage()
-        guard !settingsPresenter.isShown else { return }
-        uncoverHome()
     }
 
     func present(_ kind: HomeSheet) {
@@ -70,9 +36,6 @@ final class MapHomeSheetBox: ObservableObject {
         presentGeneration &+= 1
         let token = presentGeneration
         coverHome()
-        if kind == .settings, presentSettings() {
-            return
-        }
         let item = HomeSheetPresentation(kind: kind, token: token)
         guard activeSheet != nil || recentlyDismissed else {
             activeSheet = item
@@ -164,7 +127,6 @@ struct MapHomeContainer: View {
     var body: some View {
         MapHomeHost(setup: setup, sheetBox: sheetBox)
             .equatable()
-            .onAppear { sheetBox.prepareSettings(setup: setup) }
             .sheet(item: $sheetBox.activeSheet) { item in
                 MapHomePresentedSheet(
                     sheet: item.kind,

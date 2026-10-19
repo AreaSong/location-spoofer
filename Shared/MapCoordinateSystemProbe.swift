@@ -374,3 +374,42 @@ private final class MapCoordinateSystemProbeResolver: @unchecked Sendable {
         continuation?.resume(returning: nextResult)
     }
 }
+
+/// MapKit 蓝点每秒都会回调，但地图坐标类型只会随设备所在地区变化。
+/// 固定锚点探测是一次 MKLocalSearch 网络请求，不能按样本触发：
+/// 只有蓝点离上次确认探测的位置足够远才重探，两次探测之间保留冷却期，
+/// 冷却期内到达的合格样本延后到冷却结束再探测，不丢掉最后一次跳点。
+struct BluePointCoordinateSystemProbeGate: Equatable {
+    /// 小于国内 GCJ 偏移（约数百米），切换类型后的重投影样本会再确认一次。
+    static let minimumDistanceMeters: CLLocationDistance = 200
+    static let cooldown: TimeInterval = 10
+    /// 合并同一样本触发的 didUpdate/regionDidChange。
+    static let coalesceDelay: TimeInterval = 0.35
+
+    private(set) var confirmedLatitude: Double?
+    private(set) var confirmedLongitude: Double?
+    private(set) var lastAttemptAt: Date?
+
+    func needsProbe(latitude: Double, longitude: Double) -> Bool {
+        guard let confirmedLatitude, let confirmedLongitude else { return true }
+        let confirmed = CLLocation(latitude: confirmedLatitude, longitude: confirmedLongitude)
+        let sample = CLLocation(latitude: latitude, longitude: longitude)
+        return sample.distance(from: confirmed) >= Self.minimumDistanceMeters
+    }
+
+    func delayBeforeProbe(now: Date) -> TimeInterval {
+        guard let lastAttemptAt else { return Self.coalesceDelay }
+        let remaining = Self.cooldown - now.timeIntervalSince(lastAttemptAt)
+        return max(Self.coalesceDelay, remaining)
+    }
+
+    mutating func noteAttempt(at date: Date) {
+        lastAttemptAt = date
+    }
+
+    /// 探测成功（无论类型是否变化）才记下位置；失败时下一个样本过了冷却期会重试。
+    mutating func noteConfirmed(latitude: Double, longitude: Double) {
+        confirmedLatitude = latitude
+        confirmedLongitude = longitude
+    }
+}

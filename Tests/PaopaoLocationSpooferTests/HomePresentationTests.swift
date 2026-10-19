@@ -32,3 +32,37 @@ final class HomePresentationTests: XCTestCase {
         }
     }
 }
+
+@MainActor
+final class MapHomeSheetBoxTests: XCTestCase {
+    func testSettingsPresentsThroughSystemSheetLikeLogs() {
+        let box = MapHomeSheetBox()
+
+        box.present(.logs)
+        XCTAssertEqual(box.activeSheet?.kind, .logs)
+
+        box.activeSheet = nil
+        box.present(.settings)
+
+        // 设置页走同一个 .sheet(item:)，才有卡片滑入和下拉关闭。
+        XCTAssertEqual(box.activeSheet?.kind, .settings)
+    }
+
+    func testReopeningSettingsGetsFreshSheetIdentity() {
+        let box = MapHomeSheetBox()
+        box.present(.settings)
+        let first = box.activeSheet?.id
+
+        box.activeSheet = nil
+        let reopened = expectation(description: "settings reopened")
+        box.present(.settings)
+        // 刚关闭后再点会延后一帧重新呈现；identity 必须换新，SwiftUI 才会再次 present。
+        DispatchQueue.main.async {
+            XCTAssertEqual(box.activeSheet?.kind, .settings)
+            XCTAssertNotEqual(box.activeSheet?.id, first)
+            reopened.fulfill()
+        }
+        wait(for: [reopened], timeout: 1)
+    }
+}
+

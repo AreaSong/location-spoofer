@@ -112,4 +112,58 @@ final class CoordinateConverterTests: XCTestCase {
         XCTAssertEqual(back.lat, gcjLat, accuracy: 0.000_001)
         XCTAssertEqual(back.lon, gcjLon, accuracy: 0.000_001)
     }
+
+    func testBluePointProbeGateProbesFirstSampleAfterCoalesceDelay() {
+        let gate = BluePointCoordinateSystemProbeGate()
+
+        XCTAssertTrue(gate.needsProbe(latitude: 22.5445, longitude: 113.9411))
+        XCTAssertEqual(
+            gate.delayBeforeProbe(now: Date()),
+            BluePointCoordinateSystemProbeGate.coalesceDelay,
+            accuracy: 0.000_1
+        )
+    }
+
+    func testBluePointProbeGateSkipsStationaryAndSmallMoves() {
+        var gate = BluePointCoordinateSystemProbeGate()
+        gate.noteConfirmed(latitude: 22.5445, longitude: 113.9411)
+
+        XCTAssertFalse(gate.needsProbe(latitude: 22.5445, longitude: 113.9411))
+        // 约 110 米：GPS 抖动和步行不应触发 MKLocalSearch。
+        XCTAssertFalse(gate.needsProbe(latitude: 22.5455, longitude: 113.9411))
+    }
+
+    func testBluePointProbeGateReprobesAfterLargeJump() {
+        var gate = BluePointCoordinateSystemProbeGate()
+        gate.noteConfirmed(latitude: 22.5445, longitude: 113.9411)
+
+        // 约 330 米，和深圳到香港这类跨区跳点一样需要重新确认。
+        XCTAssertTrue(gate.needsProbe(latitude: 22.5475, longitude: 113.9411))
+        XCTAssertTrue(gate.needsProbe(latitude: 22.2838, longitude: 114.1584))
+    }
+
+    func testBluePointProbeGateDefersJumpsInsideCooldownInsteadOfDroppingThem() {
+        var gate = BluePointCoordinateSystemProbeGate()
+        let attempt = Date(timeIntervalSince1970: 1_800_000_000)
+        gate.noteAttempt(at: attempt)
+
+        XCTAssertEqual(
+            gate.delayBeforeProbe(now: attempt.addingTimeInterval(3)),
+            BluePointCoordinateSystemProbeGate.cooldown - 3,
+            accuracy: 0.000_1
+        )
+        XCTAssertEqual(
+            gate.delayBeforeProbe(now: attempt.addingTimeInterval(60)),
+            BluePointCoordinateSystemProbeGate.coalesceDelay,
+            accuracy: 0.000_1
+        )
+    }
+
+    func testBluePointProbeGateRetriesWhenProbeWasNotConfirmed() {
+        var gate = BluePointCoordinateSystemProbeGate()
+        gate.noteAttempt(at: Date(timeIntervalSince1970: 1_800_000_000))
+
+        // 探测失败不记录位置，同一地点的下一个样本仍需要探测。
+        XCTAssertTrue(gate.needsProbe(latitude: 22.5445, longitude: 113.9411))
+    }
 }

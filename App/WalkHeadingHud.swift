@@ -8,17 +8,31 @@ final class WalkHeadingHud: UIView {
     static let fanDegrees: CGFloat = 70
     static var hudSize: CGFloat { fanRadius * 2 }
 
+    /// 显示链路每帧都会调用；小于这个差值的角度变化肉眼不可见，不重建扇形路径。
+    static let minimumVisibleHeadingChange: Double = 0.1
+
     var headingDegrees: Double = 0 {
-        didSet { layoutFan() }
+        didSet {
+            // 和上次画出的角度比，连续的小步变化累积起来仍会重画。
+            guard abs(headingDegrees - drawnHeadingDegrees) >= Self.minimumVisibleHeadingChange else { return }
+            layoutFan()
+        }
     }
+    private var drawnHeadingDegrees: Double = 0
 
     func update(geographicDegrees: Double?, screenDegrees: Double?) {
-        fanLayer.isHidden = geographicDegrees == nil
+        let hidesFan = geographicDegrees == nil
+        if fanLayer.isHidden != hidesFan {
+            withoutImplicitAnimation { fanLayer.isHidden = hidesFan }
+        }
         if let screenDegrees {
             headingDegrees = screenDegrees
         }
         // VoiceOver 仍描述地理方向，不能把屏幕相对角度读成方位。
-        accessibilityValue = PhysicalWalkHeadingLock.labeledDegrees(geographicDegrees)
+        let label = PhysicalWalkHeadingLock.labeledDegrees(geographicDegrees)
+        if accessibilityValue != label {
+            accessibilityValue = label
+        }
     }
 
     private let fanLayer = CAShapeLayer()
@@ -63,12 +77,22 @@ final class WalkHeadingHud: UIView {
     }
 
     private func layoutFan() {
-        fanLayer.path = Self.fanPath(
+        let path = Self.fanPath(
             in: bounds,
             headingDegrees: headingDegrees,
             radius: Self.fanRadius,
             spreadDegrees: Self.fanDegrees
         )
+        // 独立 CAShapeLayer 改 path 默认带 0.25 秒隐式动画；每帧改就会叠动画、扇形拖尾。
+        withoutImplicitAnimation { fanLayer.path = path }
+        drawnHeadingDegrees = headingDegrees
+    }
+
+    private func withoutImplicitAnimation(_ changes: () -> Void) {
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        changes()
+        CATransaction.commit()
     }
 
     static func fanPath(
@@ -164,7 +188,10 @@ extension MapViewRepresentable.Coordinator {
             stopWalkPuckTracking()
             return
         }
-        hud.center = map.convert(coordinate, toPointTo: map)
+        let center = map.convert(coordinate, toPointTo: map)
+        if hud.center != center {
+            hud.center = center
+        }
         let degrees = puckHeadingDegrees
         hud.update(geographicDegrees: degrees, screenDegrees: degrees.map {
             screenHeading($0, at: coordinate, on: map)

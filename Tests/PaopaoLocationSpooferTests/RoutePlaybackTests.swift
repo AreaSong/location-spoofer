@@ -283,6 +283,56 @@ final class RoutePlaybackTests: XCTestCase {
 
 @MainActor
 final class RoutePlaybackControllerTests: XCTestCase {
+    func testOverlayCoordinatesConvertImportedPathOnlyOncePerPath() {
+        let route = makeRoute()
+        let points = (0..<2_000).map { index in
+            CoordinateConverter.coordinatePair(
+                lat: 22.494 + Double(index) * 0.000_01,
+                lon: 113.951,
+                mapCoordinateSystem: .wgs84
+            )
+        }
+        route.load(SavedRoute(
+            name: "合成长轨迹", start: points[0], end: points[points.count - 1],
+            travelMode: .walk, speedKilometersPerHour: 5, offsetMeters: 0,
+            repeatMode: .once, pathPoints: points
+        ))
+        let baseline = route.pathOverlayComputations
+
+        let first = route.overlayCoordinates
+        for _ in 0..<50 { _ = route.overlayCoordinates }
+
+        XCTAssertEqual(route.pathOverlayComputations, baseline + 1)
+        XCTAssertEqual(first.count, points.count)
+        let system = CoordinateConverter.currentMapCoordinateSystem
+        XCTAssertEqual(first[10].latitude, points[10].coordinate(for: system).latitude, accuracy: 0.000_000_1)
+        XCTAssertEqual(first[10].longitude, points[10].coordinate(for: system).longitude, accuracy: 0.000_000_1)
+    }
+
+    func testOverlayCoordinatesRecomputeAfterPathChanges() {
+        let route = makeRoute()
+        let points = (0..<20).map { index in
+            CoordinateConverter.coordinatePair(
+                lat: 22.494 + Double(index) * 0.000_1,
+                lon: 113.951,
+                mapCoordinateSystem: .wgs84
+            )
+        }
+        route.load(SavedRoute(
+            name: "合成路线", start: points[0], end: points[points.count - 1],
+            travelMode: .walk, speedKilometersPerHour: 5, offsetMeters: 0,
+            repeatMode: .once, pathPoints: points
+        ))
+        let forward = route.overlayCoordinates
+
+        route.reverseDirection()
+        let reversed = route.overlayCoordinates
+
+        // 缓存必须随路径失效，倒走后覆盖层跟着掉头。
+        XCTAssertEqual(reversed.first?.latitude ?? 0, forward.last?.latitude ?? 1, accuracy: 0.000_000_1)
+        XCTAssertEqual(reversed.last?.latitude ?? 0, forward.first?.latitude ?? 1, accuracy: 0.000_000_1)
+    }
+
     func testApplyDriveModeSetsDefaultCarSpeed() {
         let route = makeRoute()
         route.applyTravelMode(.drive)

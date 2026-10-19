@@ -178,6 +178,8 @@ struct MapHomeView: View {
     @State var mapCoordinateSystemRefreshTask: Task<Void, Never>?
     @State var mapCoordinateSystemRefreshID: UInt64 = 0
     @State var bluePointRefreshPending = false
+    @State var bluePointProbeGate = BluePointCoordinateSystemProbeGate()
+    @State var mapCoordinateSystemProbeRunning = false
     @State var realtimeButtonTask: Task<Void, Never>?
     @State var favoriteSaveTask: Task<Void, Never>?
     @State var displayedMapCoordinateSystem = CoordinateConverter.currentMapCoordinateSystem
@@ -362,12 +364,13 @@ struct MapHomeView: View {
                 routeCoordinates: route.overlayCoordinates,
                 routePins: route.overlayPins,
                 favoritePins: FavoriteMapPin.pins(
-                    from: favorites.displayedFavorites,
+                    // 标注与排序无关：用存储顺序，避免每次首页重算都排序一遍。
+                    from: favorites.favorites,
                     selectedID: favorites.selectedFavoriteID,
                     mapSystem: displayedMapCoordinateSystem
                 ),
                 playbackClock: route.clock,
-                walkHeadingDegrees: physicalWalk.activeHeadingDegrees,
+                walkHeading: physicalWalk.headingFeed,
                 walkPuckCoordinate: walkPuckMapCoordinate,
                 showsWalkHeading: walkPuckMapCoordinate != nil,
                 prefersCustomWalkHeading: physicalWalkStore.isCustomHeadingEnabled,

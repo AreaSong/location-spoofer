@@ -16,9 +16,7 @@ extension MapHomeView {
     var physicalWalkIslandSignature: String {
         guard physicalWalk.isTracking else { return "off" }
         let meters = Int(physicalWalk.movedMeters.rounded())
-        let heading = physicalWalk.activeHeadingDegrees.map {
-            PhysicalWalkHeadingLock.compassName($0)
-        } ?? ""
+        let heading = physicalWalk.headingCompassName ?? ""
         return "\(meters)|\(heading)"
     }
 
@@ -120,9 +118,18 @@ extension MapHomeView {
 struct PhysicalWalkHeadingControls: View {
     @ObservedObject var store: PhysicalWalkStore
     @ObservedObject var controller: PhysicalWalkController
+    /// 度数文字要跟着罗盘走；控制器只在方位名变化时发布。
+    @ObservedObject private var heading: PhysicalWalkHeadingFeed
     let spoofActive: Bool
     @State private var showsInfo = false
     @State private var barWidth: CGFloat = 0
+
+    init(store: PhysicalWalkStore, controller: PhysicalWalkController, spoofActive: Bool) {
+        self.store = store
+        self.controller = controller
+        _heading = ObservedObject(wrappedValue: controller.headingFeed)
+        self.spoofActive = spoofActive
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
@@ -229,7 +236,7 @@ struct PhysicalWalkHeadingControls: View {
             status: controller.status,
             movedMeters: controller.movedMeters,
             failureMessage: store.lastFailureMessage,
-            headingDegrees: controller.activeHeadingDegrees,
+            headingDegrees: heading.degrees,
             headingLocked: store.isCustomHeadingEnabled
         )
     }
@@ -243,7 +250,7 @@ struct PhysicalWalkHeadingControls: View {
                         .font(.caption2.weight(.medium))
                         .foregroundStyle(Color.secondary)
                         .frame(width: 14)
-                    Text(PhysicalWalkHeadingLock.labeledDegrees(controller.activeHeadingDegrees))
+                    Text(PhysicalWalkHeadingLock.labeledDegrees(heading.degrees))
                         .font(.caption2.monospacedDigit().weight(.medium))
                         .foregroundStyle(Color.primary)
                         .lineLimit(1)

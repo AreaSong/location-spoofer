@@ -25,7 +25,12 @@ final class RoutePlaybackController: ObservableObject {
     @Published private(set) var start: CoordinatePair?
     @Published private(set) var end: CoordinatePair?
     @Published private(set) var vias: [CoordinatePair] = []
-    @Published private(set) var path: RoutePath?
+    @Published private(set) var path: RoutePath? {
+        didSet { pathOverlayCache = nil }
+    }
+    /// 首页每次重算都会读覆盖层；导入轨迹可达数千点，GCJ 换算只在路径或地图类型变化时做。
+    private var pathOverlayCache: (system: CoordinateConverter.MapCoordinateSystem, coordinates: [CLLocationCoordinate2D])?
+    private(set) var pathOverlayComputations = 0
     @Published private(set) var pathFallback: RoutePathFallback?
     private(set) var progress: Double = 0 {
         didSet {
@@ -148,7 +153,13 @@ final class RoutePlaybackController: ObservableObject {
     var overlayCoordinates: [CLLocationCoordinate2D] {
         let system = CoordinateConverter.currentMapCoordinateSystem
         if let path, path.points.count >= 2 {
-            return path.points.map { $0.coordinate(for: system) }
+            if let cache = pathOverlayCache, cache.system == system {
+                return cache.coordinates
+            }
+            let coordinates = path.points.map { $0.coordinate(for: system) }
+            pathOverlayCache = (system, coordinates)
+            pathOverlayComputations += 1
+            return coordinates
         }
         return previewAnchors.map { $0.coordinate(for: system) }
     }

@@ -96,6 +96,15 @@ grep -q '固定锚点名称未列入白名单' "$PROBE" || fail "unknown fixed-a
 grep -q 'forFixedAnchorFirstResultName name: String) -> MapCoordinateSystem?' "$PROBE" || fail "fixed-anchor name mapping must return nil for unknown names"
 grep -q 'scheduleBluePointMapCoordinateSystemRefresh()' "$MAP_HOME" || fail "native blue-point samples must trigger runtime map-type refresh while spoofing"
 ! grep -A3 'func scheduleBluePointMapCoordinateSystemRefresh' "$MAP_HOME" | grep -q 'spoofState == .active' || fail "blue-point map-type refresh must also detect the return to physical location"
+BLUE_POINT_SCHEDULE="$(awk '/func scheduleBluePointMapCoordinateSystemRefresh\(\)/,/^    }$/' "$MAP_HOME")"
+grep -q 'needsProbe' <<<"$BLUE_POINT_SCHEDULE" || fail "blue-point samples must be gated before starting a MKLocalSearch probe"
+# 探测进行中必须先记 pending 再比距离，否则跳回原位的样本会被当成没动丢掉。
+[ "$(grep -n 'mapCoordinateSystemRefreshTask == nil' <<<"$BLUE_POINT_SCHEDULE" | head -1 | cut -d: -f1)" -lt \
+  "$(grep -n 'needsProbe' <<<"$BLUE_POINT_SCHEDULE" | head -1 | cut -d: -f1)" ] \
+  || fail "in-flight blue-point probes must mark pending before the distance gate"
+AWAIT_REFRESH="$(awk '/func awaitCoordinatedMapCoordinateSystemRefresh/,/^    }$/' "$MAP_HOME")"
+grep -q 'if mapCoordinateSystemProbeRunning' <<<"$AWAIT_REFRESH" && grep -q 'pendingRefresh.cancel()' <<<"$AWAIT_REFRESH" \
+  || fail "coordinated refresh must not wait out a sleeping blue-point cooldown"
 grep -q 'awaitCoordinatedMapCoordinateSystemRefresh(reason: "点击实时定位")' "$MAP_HOME" || fail "realtime button must await the coordinated map-type refresh"
 grep -q 'favorites.selectMatching(coordinatePair: pair)' "$MAP_HOME" || fail "realtime selection must restore a matching favorite selection"
 grep -q 'awaitCoordinatedMapCoordinateSystemRefresh(reason: "保存收藏")' "$MAP_HOME" || fail "favorite save must await the coordinated map-type refresh"
@@ -247,14 +256,15 @@ if awk '/func presentHomeSheet/,/^    }/' "$ROOT/App/MapHomeView.swift" | grep -
 else
   fail "opening settings must freeze the map before presenting the sheet"
 fi
-grep -q 'kind == .settings, presentSettings()' "$ROOT/App/MapHomePresentation.swift" \
-  || fail "settings must open without building a SwiftUI sheet on the gear tap"
-grep -q 'func prepareSettings' "$ROOT/App/MapHomePresentation.swift" \
-  || fail "the settings page must be created before the gear is tapped"
-grep -q 'static let duration: TimeInterval = 0.12' "$ROOT/App/HomeSettingsPresenter.swift" \
-  || fail "settings must slide in faster than the system sheet"
-grep -q 'func installRealContent' "$ROOT/App/HomeSettingsPresenter.swift" \
-  || fail "settings content must be laid out before the gear tap"
+# 设置页和日志页同为系统 sheet：卡片滑入、下拉关闭，不再挂独立窗口预排。
+! test -e "$ROOT/App/HomeSettingsPresenter.swift" \
+  || fail "settings must not use a separate prebuilt window"
+! grep -q 'presentSettings\|prepareSettings\|HomeSettingsPresenter' "$ROOT/App/MapHomePresentation.swift" \
+  || fail "settings must present through the shared home sheet like logs"
+grep -q 'case .settings: SettingsView(' "$MAP_HOME_MAIN" && grep -q 'case .logs: RuntimeLogsView(' "$MAP_HOME_MAIN" \
+  || fail "settings and logs must share MapHomePresentedSheet"
+grep -q '\.sheet(item: \$sheetBox.activeSheet)' "$ROOT/App/MapHomePresentation.swift" \
+  || fail "home pages must use the system sheet"
 grep -q 'static let puckDiameter: CGFloat = 16' "$ROOT/App/WalkHeadingHud.swift" \
   || fail "walk heading must draw a blue-dot puck on the active virtual coordinate"
 grep -q 'static func fanPath' "$ROOT/App/WalkHeadingHud.swift" \

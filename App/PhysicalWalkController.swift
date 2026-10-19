@@ -2,6 +2,17 @@ import Combine
 import CoreMotion
 import Foundation
 
+/// 罗盘朝向单独发布：设备姿态每 0.1 秒回调一次，只让画扇形和显示度数的小视图重绘，
+/// 不让观察控制器的首页整页重算。
+@MainActor
+final class PhysicalWalkHeadingFeed: ObservableObject {
+    @Published fileprivate(set) var degrees: Double?
+
+    init(degrees: Double? = nil) {
+        self.degrees = degrees
+    }
+}
+
 @MainActor
 final class PhysicalWalkController: ObservableObject {
     @Published private(set) var isTracking = false
@@ -12,7 +23,19 @@ final class PhysicalWalkController: ObservableObject {
     @Published private(set) var headingMode: PhysicalWalkHeadingMode = .followCompass
     @Published private(set) var usesCustomHeading = false
     @Published private(set) var initialHeadingDegrees: Double = 0
-    @Published private(set) var activeHeadingDegrees: Double?
+    /// 首页文案和灵动岛只显示八方位，方位名变了才让观察控制器的视图重算。
+    @Published private(set) var headingCompassName: String?
+    let headingFeed = PhysicalWalkHeadingFeed()
+    private(set) var activeHeadingDegrees: Double? {
+        get { headingFeed.degrees }
+        set {
+            headingFeed.degrees = newValue
+            let name = newValue.map(PhysicalWalkHeadingLock.compassName)
+            if headingCompassName != name {
+                headingCompassName = name
+            }
+        }
+    }
 
     var ignoresWriteGate = false
     var strideMeters: () -> Double = { PhysicalWalkDisplacement.defaultStrideMeters }

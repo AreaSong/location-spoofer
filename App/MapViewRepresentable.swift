@@ -20,7 +20,9 @@ struct MapViewRepresentable: UIViewRepresentable {
     var routePins: [RouteMapPin] = []
     var favoritePins: [FavoriteMapPin] = []
     var playbackClock: RoutePlaybackClock?
-    var walkHeadingDegrees: Double? = nil
+    /// 传对象不传度数：朝向变化由协调器直接订阅，首页 body 不必跟着重算。
+    var walkHeading: PhysicalWalkHeadingFeed? = nil
+    var walkHeadingDegrees: Double? { walkHeading?.degrees }
     var walkPuckCoordinate: CLLocationCoordinate2D? = nil
     var showsWalkHeading: Bool = false
     var prefersCustomWalkHeading: Bool = false
@@ -92,6 +94,7 @@ struct MapViewRepresentable: UIViewRepresentable {
         if let playbackClock {
             context.coordinator.bindPlaybackClock(playbackClock, on: map)
         }
+        context.coordinator.bindWalkHeading(walkHeading, on: map)
         context.coordinator.refreshLocationPuck(on: map)
         if map.mapType != mapDisplayStyle.mapKitType {
             map.mapType = mapDisplayStyle.mapKitType
@@ -127,6 +130,8 @@ struct MapViewRepresentable: UIViewRepresentable {
         private var progressAnnotation: RouteProgressAnnotation?
         private var boundPlaybackClock: RoutePlaybackClock?
         private var markerCancellable: AnyCancellable?
+        private weak var boundWalkHeading: PhysicalWalkHeadingFeed?
+        private var walkHeadingCancellable: AnyCancellable?
         private var pinAnnotations: [RoutePinAnnotation] = []
         private var favoriteAnnotations: [FavoritePinAnnotation] = []
         private var isPinLifted = false
@@ -373,6 +378,20 @@ struct MapViewRepresentable: UIViewRepresentable {
                     }
             }
             refreshLocationPuck(on: map)
+        }
+
+        func bindWalkHeading(_ feed: PhysicalWalkHeadingFeed?, on map: MKMapView) {
+            self.map = map
+            guard boundWalkHeading !== feed || (feed != nil && walkHeadingCancellable == nil) else { return }
+            boundWalkHeading = feed
+            walkHeadingCancellable = feed?.$degrees
+                .removeDuplicates()
+                // @Published 在 willSet 发出；切回主队列后 parent 读到的才是新值。
+                .receive(on: DispatchQueue.main)
+                .sink { [weak self] _ in
+                    guard let self, !self.isSuspended, let map = self.map else { return }
+                    self.refreshLocationPuck(on: map)
+                }
         }
 
         func refreshLocationPuck(on map: MKMapView) {

@@ -236,6 +236,25 @@ final class PhysicalWalkDirectionTests: XCTestCase {
         walk.stopHeading()
     }
 
+    func testWalkHeadingHudSkipsInvisibleRedrawsAndDisablesImplicitAnimation() throws {
+        let hud = WalkHeadingHud(frame: CGRect(x: 0, y: 0, width: WalkHeadingHud.hudSize, height: WalkHeadingHud.hudSize))
+        let fan = try XCTUnwrap(hud.layer.sublayers?.compactMap { $0 as? CAShapeLayer }.first)
+        hud.update(geographicDegrees: 90, screenDegrees: 90)
+        let drawn = try XCTUnwrap(fan.path)
+
+        // 显示链路每帧都会喂同一个或几乎相同的角度，不应重建路径。
+        hud.update(geographicDegrees: 90, screenDegrees: 90)
+        hud.update(geographicDegrees: 90.05, screenDegrees: 90.05)
+        XCTAssertTrue(fan.path === drawn)
+
+        // 小步累积超过阈值仍要重画，扇形不能卡在旧方向。
+        hud.update(geographicDegrees: 90.1, screenDegrees: 90.1)
+        hud.update(geographicDegrees: 90.15, screenDegrees: 90.15)
+        XCTAssertFalse(fan.path === drawn)
+        XCTAssertNil(fan.animationKeys(), "逐帧改 path 不能叠加隐式动画")
+        XCTAssertEqual(hud.accessibilityValue, "东 90°")
+    }
+
     func testSuspendingMapPausesWalkDisplayLink() throws {
         let parent = makeMap(heading: 90)
         let map = MKMapView(frame: CGRect(x: 0, y: 0, width: 390, height: 600))
@@ -310,7 +329,7 @@ final class PhysicalWalkDirectionTests: XCTestCase {
             onRealtimeLocationChanged: { _ in }, onUserCenterChanged: { _, _ in },
             onViewportChanged: { _ in }, onMapTap: { _ in }, onUserZoomChanged: nil,
             playbackClock: clock,
-            walkHeadingDegrees: 0,
+            walkHeading: PhysicalWalkHeadingFeed(degrees: 0),
             walkPuckCoordinate: .init(latitude: 1, longitude: 1),
             showsWalkHeading: true
         )
@@ -353,7 +372,7 @@ final class PhysicalWalkDirectionTests: XCTestCase {
             onRealtimeLocationChanged: { _ in }, onUserCenterChanged: { _, _ in },
             onViewportChanged: { _ in }, onMapTap: { _ in }, onUserZoomChanged: nil,
             playbackClock: clock,
-            walkHeadingDegrees: 45,
+            walkHeading: PhysicalWalkHeadingFeed(degrees: 45),
             walkPuckCoordinate: .init(latitude: 0, longitude: 0),
             showsWalkHeading: true,
             prefersCustomWalkHeading: true
@@ -384,7 +403,7 @@ final class PhysicalWalkDirectionTests: XCTestCase {
             initialViewportMeters: 500, cameraCommand: nil,
             onRealtimeLocationChanged: { _ in }, onUserCenterChanged: { _, _ in },
             onViewportChanged: { _ in }, onMapTap: { _ in }, onUserZoomChanged: nil,
-            walkHeadingDegrees: heading, walkPuckCoordinate: .init(latitude: 0, longitude: 0),
+            walkHeading: PhysicalWalkHeadingFeed(degrees: heading), walkPuckCoordinate: .init(latitude: 0, longitude: 0),
             showsWalkHeading: true
         )
     }

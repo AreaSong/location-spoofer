@@ -244,6 +244,48 @@ final class PhysicalWalkControllerTests: XCTestCase {
         controller.stopHeading()
     }
 
+    func testHeadingJitterInsideOneCompassSectorOnlyPublishesHeadingFeed() {
+        let heading = FakePhysicalWalkHeading()
+        heading.latestMapHeadingDegrees = 80
+        let controller = PhysicalWalkController(sensor: FakePhysicalWalkSensor(), heading: heading)
+        controller.startHeadingPreview()
+        XCTAssertEqual(controller.headingCompassName, "东")
+
+        var controllerPublishes = 0
+        var feedPublishes = 0
+        let controllerToken = controller.objectWillChange.sink { controllerPublishes += 1 }
+        let feedToken = controller.headingFeed.objectWillChange.sink { feedPublishes += 1 }
+        for degrees in [81.0, 83.0, 86.0, 90.0, 95.0, 100.0] {
+            heading.latestMapHeadingDegrees = degrees
+            heading.onChange?()
+        }
+
+        // 观察控制器的首页不随每次罗盘采样重算；画扇形的订阅方仍拿到每次变化。
+        XCTAssertEqual(controllerPublishes, 0)
+        XCTAssertEqual(feedPublishes, 6)
+        XCTAssertEqual(controller.activeHeadingDegrees ?? -1, 100, accuracy: 0.01)
+        controllerToken.cancel()
+        feedToken.cancel()
+        controller.stopHeading()
+    }
+
+    func testHeadingCrossingCompassSectorPublishesControllerOnce() {
+        let heading = FakePhysicalWalkHeading()
+        heading.latestMapHeadingDegrees = 100
+        let controller = PhysicalWalkController(sensor: FakePhysicalWalkSensor(), heading: heading)
+        controller.startHeadingPreview()
+
+        var publishes = 0
+        let token = controller.objectWillChange.sink { publishes += 1 }
+        heading.latestMapHeadingDegrees = 120
+        heading.onChange?()
+
+        XCTAssertEqual(publishes, 1)
+        XCTAssertEqual(controller.headingCompassName, "东南")
+        token.cancel()
+        controller.stopHeading()
+    }
+
     func testAvailableAbsoluteHeadingWritesImmediately() async {
         let sensor = FakePhysicalWalkSensor()
         let heading = FakePhysicalWalkHeading()

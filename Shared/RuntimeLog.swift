@@ -46,7 +46,9 @@ struct RuntimeLogEntry: Codable, Identifiable, Equatable {
 }
 
 enum RuntimeLogStore {
-    private static let lock = NSLock()
+    /// 日志从主线程高频写入；打开文件、写入和 fsync 都放到串行队列，保持顺序且不卡界面。
+    /// 读取和清空走同一队列的 sync，排在已提交的写入之后，读到的总是完整结果。
+    private static let io = DispatchQueue(label: "RuntimeLogStore.io", qos: .utility)
     private static let decoder = JSONDecoder()
     private static let encoder = JSONEncoder()
     private static let maximumBytes: UInt64 = 1_500_000
@@ -55,8 +57,15 @@ enum RuntimeLogStore {
     private static var lastPrunedAt: Date?
 
     static func append(_ entry: RuntimeLogEntry) {
-        lock.lock()
-        defer { lock.unlock() }
+        // 错误多发生在崩溃或被杀之前，排查最需要；它们少，同步落盘不影响流畅度。
+        if entry.level == .error {
+            io.sync { appendNow(entry) }
+        } else {
+            io.async { appendNow(entry) }
+        }
+    }
+
+    private static func appendNow(_ entry: RuntimeLogEntry) {
         do {
             let now = Date()
             try pruneExpiredLogsIfNeeded(now: now)
@@ -80,8 +89,10 @@ enum RuntimeLogStore {
     }
 
     static func loadAll(limit: Int = 800) -> [RuntimeLogEntry] {
-        lock.lock()
-        defer { lock.unlock() }
+        io.sync { loadAllNow(limit: limit) }
+    }
+
+    private static func loadAllNow(limit: Int) -> [RuntimeLogEntry] {
         let directory = logDirectory
         try? pruneExpiredLogs(in: directory, now: Date())
         guard let urls = try? FileManager.default.contentsOfDirectory(
@@ -96,10 +107,10 @@ enum RuntimeLogStore {
     }
 
     static func clearAll() {
-        lock.lock()
-        defer { lock.unlock() }
-        try? FileManager.default.removeItem(at: logDirectory)
-        lastPrunedAt = nil
+        io.sync {
+            try? FileManager.default.removeItem(at: logDirectory)
+            lastPrunedAt = nil
+        }
     }
 
     private static func logURL(for source: String) throws -> URL {
