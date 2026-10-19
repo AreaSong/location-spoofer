@@ -355,6 +355,11 @@ enum Haptics {
     private static let selectionFeedback = UISelectionFeedbackGenerator()
     private static let notificationFeedback = UINotificationFeedbackGenerator()
 
+    /// 预计会马上落针时提前唤醒震动引擎。
+    static func prepareLight() {
+        lightImpact.prepare()
+    }
+
     /// 轻微敲击（如地图落针、小按钮轻点）
     static func light() {
         lightImpact.prepare()

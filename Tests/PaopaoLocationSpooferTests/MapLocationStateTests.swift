@@ -189,7 +189,113 @@ final class MapLocationStateTests: XCTestCase {
         XCTAssertEqual(state.selection.source, .search)
     }
 
-    func testSuspendedRealtimeDoesNotPublishUntilResumed() {
+    func testUnchangedViewportDoesNotPublish() {
+        let state = MapLocationState(initialCoordinate: initial, initialViewportMeters: 2_000)
+        var publishes = 0
+        let token = state.objectWillChange.sink { publishes += 1 }
+
+        state.updateViewport(distanceMeters: 2_000)
+        XCTAssertEqual(publishes, 0)
+
+        state.updateViewport(distanceMeters: 3_000)
+        XCTAssertEqual(publishes, 1)
+        XCTAssertEqual(state.viewportMeters, 3_000)
+        token.cancel()
+    }
+
+    private func makePanCoordinator(
+        onCenter: @escaping (CLLocationCoordinate2D) -> Void,
+        onViewport: @escaping () -> Void = {}
+    ) -> MapViewRepresentable.Coordinator {
+        MapViewRepresentable(
+            selection: .init(coordinate: initial, source: .initial, explicitName: nil, revision: 0),
+            initialViewportMeters: 2_000, cameraCommand: nil,
+            onRealtimeLocationChanged: { _ in },
+            onUserCenterChanged: { center, _ in onCenter(center) },
+            onViewportChanged: { _ in onViewport() },
+            onMapTap: { _ in }, onUserZoomChanged: nil
+        ).makeCoordinator()
+    }
+
+    private func waitPastPanSettle() {
+        let settled = expectation(description: "pan settle window elapsed")
+        DispatchQueue.main.asyncAfter(deadline: .now() + MapViewRepresentable.Coordinator.panSettleDelay + 0.2) {
+            settled.fulfill()
+        }
+        wait(for: [settled], timeout: 2)
+    }
+
+    func testFinishingPanCommitsSelectionOnlyAfterSettleWindow() {
+        var centers: [CLLocationCoordinate2D] = []
+        var viewportUpdates = 0
+        let coordinator = makePanCoordinator(onCenter: { centers.append($0) }, onViewport: { viewportUpdates += 1 })
+        let center = CLLocationCoordinate2D(latitude: 31.2181, longitude: 121.4556)
+
+        coordinator.finishUserPan(center: center, distance: 2_000)
+        // 地图刚停下不立刻判定：两手交替滑时下一划可能马上开始。
+        XCTAssertTrue(centers.isEmpty)
+        XCTAssertEqual(viewportUpdates, 0)
+
+        waitPastPanSettle()
+        XCTAssertEqual(centers.count, 1)
+        XCTAssertEqual(centers.first?.latitude ?? 0, center.latitude, accuracy: 1e-9)
+        XCTAssertEqual(centers.first?.longitude ?? 0, center.longitude, accuracy: 1e-9)
+    }
+
+    func testAlternatingPansCommitOnlyTheLastStop() {
+        var centers: [CLLocationCoordinate2D] = []
+        let coordinator = makePanCoordinator(onCenter: { centers.append($0) })
+        let right = CLLocationCoordinate2D(latitude: 31.20, longitude: 121.40)
+        let left = CLLocationCoordinate2D(latitude: 31.25, longitude: 121.50)
+
+        coordinator.finishUserPan(center: right, distance: 2_000)
+        // 换手：下一划开始时丢弃上一划的待提交结果。
+        coordinator.cancelPendingPanCommit()
+        coordinator.finishUserPan(center: left, distance: 2_000)
+
+        waitPastPanSettle()
+        XCTAssertEqual(centers.count, 1)
+        XCTAssertEqual(centers.first?.latitude ?? 0, left.latitude, accuracy: 1e-9)
+    }
+
+    func testTapFlushesPendingPanBeforeItsOwnSelection() {
+        var centers: [CLLocationCoordinate2D] = []
+        let coordinator = makePanCoordinator(onCenter: { centers.append($0) })
+        let center = CLLocationCoordinate2D(latitude: 31.2181, longitude: 121.4556)
+        coordinator.finishUserPan(center: center, distance: 2_000)
+
+        coordinator.flushPendingPanCommit(synchronously: true)
+
+        // 点按前必须已经提交，点按产生的新选点才会排在后面。
+        XCTAssertEqual(centers.count, 1)
+        waitPastPanSettle()
+        XCTAssertEqual(centers.count, 1, "提交后不能再按计时器重复提交")
+    }
+
+    func testFocusCommandDiscardsPendingPanButZoomCommitsIt() {
+        let map = MKMapView(frame: CGRect(x: 0, y: 0, width: 390, height: 600))
+        var centers: [CLLocationCoordinate2D] = []
+        let coordinator = makePanCoordinator(onCenter: { centers.append($0) })
+        let panned = CLLocationCoordinate2D(latitude: 31.2181, longitude: 121.4556)
+
+        coordinator.finishUserPan(center: panned, distance: 2_000)
+        coordinator.consume(MapCameraCommand(id: 1, kind: .focus(coordinate: initial, distanceMeters: 2_000)), on: map)
+        waitPastPanSettle()
+        // 选了收藏或搜索结果：新选点优先，旧的拖动位置不能覆盖它。
+        XCTAssertTrue(centers.isEmpty)
+
+        coordinator.finishUserPan(center: panned, distance: 2_000)
+        coordinator.consume(MapCameraCommand(id: 2, kind: .zoom(factor: 0.5)), on: map)
+        let zoomed = expectation(description: "pan committed before zoom settles")
+        DispatchQueue.main.async {
+            // 缩放只改视野：拖动位置立即提交，不等缓冲期。
+            XCTAssertEqual(centers.count, 1)
+            zoomed.fulfill()
+        }
+        wait(for: [zoomed], timeout: 1)
+    }
+
+    func testSuspendedRealtimeCatchesUpWithoutPublishingPerSample() {
         let state = MapLocationState(initialCoordinate: initial)
         state.updateRealtimeLocation(CLLocation(latitude: 30.42, longitude: 114.25))
         var publishes = 0
@@ -201,8 +307,62 @@ final class MapLocationStateTests: XCTestCase {
 
         state.setPublishesRealtime(true)
         XCTAssertEqual(state.realtimeCoordinate?.latitude ?? 0, 31.23, accuracy: 0.000001)
-        XCTAssertGreaterThanOrEqual(publishes, 1)
+        // 蓝点一直存在，只是换了位置：首页不因此重算。
+        XCTAssertEqual(publishes, 0)
         token.cancel()
+    }
+
+    func testRealtimeSamplesPublishOnlyWhenBluePointAppearsOrDisappears() {
+        let state = MapLocationState(initialCoordinate: initial)
+        var publishes = 0
+        let token = state.objectWillChange.sink { publishes += 1 }
+
+        state.updateRealtimeLocation(CLLocation(latitude: 31.2304, longitude: 121.4737))
+        XCTAssertTrue(state.hasRealtimeCoordinate)
+        XCTAssertEqual(publishes, 1)
+
+        // GPS 每秒一个样本：位置在变，但不能每秒让首页整页重算。
+        for step in 1...5 {
+            state.updateRealtimeLocation(CLLocation(
+                coordinate: .init(latitude: 31.2304 + Double(step) * 0.0001, longitude: 121.4737),
+                altitude: 0, horizontalAccuracy: 5, verticalAccuracy: -1,
+                timestamp: Date().addingTimeInterval(Double(step))
+            ))
+        }
+        XCTAssertEqual(publishes, 1)
+        XCTAssertEqual(state.realtimeCoordinate?.latitude ?? 0, 31.2309, accuracy: 0.000001)
+
+        state.clearRealtimeLocationForMapCoordinateSystemChange()
+        XCTAssertFalse(state.hasRealtimeCoordinate)
+        XCTAssertEqual(publishes, 2)
+        token.cancel()
+    }
+
+    func testWalkPuckFollowsLatestBluePointInsteadOfStaleRenderValue() throws {
+        let stale = CLLocationCoordinate2D(latitude: 31.2304, longitude: 121.4737)
+        let latest = CLLocationCoordinate2D(latitude: 31.2404, longitude: 121.4837)
+        let parent = MapViewRepresentable(
+            selection: .init(coordinate: initial, source: .initial, explicitName: nil, revision: 0),
+            initialViewportMeters: 2_000, cameraCommand: nil,
+            onRealtimeLocationChanged: { _ in }, onUserCenterChanged: { _, _ in },
+            onViewportChanged: { _ in }, onMapTap: { _ in }, onUserZoomChanged: nil,
+            walkHeading: PhysicalWalkHeadingFeed(degrees: 90),
+            walkPuckCoordinate: stale,
+            walkPuckFollowsUserLocation: true,
+            showsWalkHeading: true
+        )
+        let map = MKMapView(frame: CGRect(x: 0, y: 0, width: 390, height: 600))
+        let coordinator = parent.makeCoordinator()
+        coordinator.installWalkHeadingHud(on: map)
+        coordinator.refreshLocationPuck(on: map)
+
+        coordinator.followUserLocation(latest)
+        XCTAssertEqual(coordinator.puckCoordinate?.latitude ?? 0, latest.latitude, accuracy: 1e-9)
+
+        // 别的状态触发首页重算时，parent 里还是旧蓝点，扇形不能被拉回去。
+        coordinator.refreshLocationPuck(on: map)
+        XCTAssertEqual(coordinator.puckCoordinate?.latitude ?? 0, latest.latitude, accuracy: 1e-9)
+        coordinator.stopWalkPuckTracking()
     }
 
     func testMapCoordinateSystemChangeClearsSupersededRealtimeSampleWithoutMovingSelection() {

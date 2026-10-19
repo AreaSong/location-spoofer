@@ -372,6 +372,7 @@ struct MapHomeView: View {
                 playbackClock: route.clock,
                 walkHeading: physicalWalk.headingFeed,
                 walkPuckCoordinate: walkPuckMapCoordinate,
+                walkPuckFollowsUserLocation: spoofState != .active,
                 showsWalkHeading: walkPuckMapCoordinate != nil,
                 prefersCustomWalkHeading: physicalWalkStore.isCustomHeadingEnabled,
                 mapDisplayStyle: mapStyle.style,

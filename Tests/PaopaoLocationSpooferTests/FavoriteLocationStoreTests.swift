@@ -19,6 +19,34 @@ final class FavoriteLocationStoreTests: XCTestCase {
         XCTAssertEqual(FavoriteLocationStore(defaults: defaults).selectedFavorite?.name, "深圳湾")
     }
 
+    func testRepeatedDeselectFromMapPanDoesNotPublish() {
+        let suite = "FavoriteLocationStoreTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let store = FavoriteLocationStore(defaults: defaults)
+        let favorite = store.save(
+            name: "深圳湾",
+            mapCoordinate: .init(latitude: 22.494, longitude: 113.951),
+            mapCoordinateSystem: .gcj02,
+            accuracy: 20
+        )
+        var publishes = 0
+        let token = store.objectWillChange.sink { publishes += 1 }
+
+        store.select(nil)
+        XCTAssertEqual(publishes, 1)
+        // 之后每次拖动地图都会再 select(nil)：已经是空就不能再触发首页重算。
+        store.select(nil)
+        store.select(nil)
+        XCTAssertEqual(publishes, 1)
+        XCTAssertNil(FavoriteLocationStore(defaults: defaults).selectedFavoriteID)
+
+        store.select(favorite.id)
+        XCTAssertEqual(publishes, 2)
+        XCTAssertEqual(FavoriteLocationStore(defaults: defaults).selectedFavoriteID, favorite.id)
+        token.cancel()
+    }
+
     func testSelectingMatchingCoordinatePairRestoresFavoriteSelection() {
         let suite = "FavoriteLocationStoreTests.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!

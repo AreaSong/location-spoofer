@@ -24,6 +24,8 @@ struct MapViewRepresentable: UIViewRepresentable {
     var walkHeading: PhysicalWalkHeadingFeed? = nil
     var walkHeadingDegrees: Double? { walkHeading?.degrees }
     var walkPuckCoordinate: CLLocationCoordinate2D? = nil
+    /// 未定点时扇形画在 MapKit 蓝点上：由协调器在蓝点回调里直接移动，不经 SwiftUI。
+    var walkPuckFollowsUserLocation: Bool = false
     var showsWalkHeading: Bool = false
     var prefersCustomWalkHeading: Bool = false
     var mapDisplayStyle: MapDisplayStyle = .standard
@@ -124,12 +126,15 @@ struct MapViewRepresentable: UIViewRepresentable {
         private(set) var isAppInBackground = false
         private(set) var isSuspended = false
         private var lastForwardedRealtimeTimestamp: Date?
+        private(set) var latestUserLocationCoordinate: CLLocationCoordinate2D?
         private var lastRouteCoordinates: [CLLocationCoordinate2D] = []
         private var lastRoutePins: [RouteMapPin] = []
         private var lastFavoritePins: [FavoriteMapPin] = []
         private var progressAnnotation: RouteProgressAnnotation?
         private var boundPlaybackClock: RoutePlaybackClock?
         private var markerCancellable: AnyCancellable?
+        static let panSettleDelay: TimeInterval = 0.35
+        private var pendingPanCommit: (item: DispatchWorkItem, run: (_ deferCommit: Bool) -> Void)?
         private weak var boundWalkHeading: PhysicalWalkHeadingFeed?
         private var walkHeadingCancellable: AnyCancellable?
         private var pinAnnotations: [RoutePinAnnotation] = []
@@ -150,6 +155,8 @@ struct MapViewRepresentable: UIViewRepresentable {
         private func liftCenterPin() {
             guard let pin = centerPin, !isPinLifted else { return }
             isPinLifted = true
+            // 拖动期间预热震动引擎，落针时直接触发，不在停下那一帧临时唤醒。
+            Haptics.prepareLight()
             UIView.animate(withDuration: 0.22, delay: 0, options: [.curveEaseOut, .beginFromCurrentState]) {
                 pin.transform = CGAffineTransform(translationX: 0, y: -14)
                 pin.layer.shadowOffset = CGSize(width: 0, height: 18)
@@ -252,6 +259,16 @@ struct MapViewRepresentable: UIViewRepresentable {
         func consume(_ command: MapCameraCommand?, on map: MKMapView) {
             guard let command, command.id != lastConsumedCommandID else { return }
             lastConsumedCommandID = command.id
+            if case .focus = command.kind {
+                // 选了收藏、搜索结果：新选点优先，丢弃缓冲中的拖动位置。
+                // 镜头若不需要移动就不会再有回调，这里直接落针。
+                if pendingPanCommit != nil {
+                    cancelPendingPanCommit()
+                    dropCenterPin()
+                }
+            } else {
+                flushPendingPanCommit()
+            }
             activeCameraCommandID = command.id
             activeCommandIsZoom = command.kind.isZoom
             regionChangeWasUserDriven = false
@@ -313,6 +330,7 @@ struct MapViewRepresentable: UIViewRepresentable {
 
         func mapView(_ mapView: MKMapView, didSelect view: MKAnnotationView) {
             mapView.deselectAnnotation(view.annotation, animated: false)
+            flushPendingPanCommit(synchronously: true)
             if let favorite = view.annotation as? FavoritePinAnnotation {
                 parent.onFavoritePinTap?(favorite.pin)
                 return
@@ -323,6 +341,7 @@ struct MapViewRepresentable: UIViewRepresentable {
 
         @objc func handleTap(_ gesture: UITapGestureRecognizer) {
             guard gesture.state == .ended, let map else { return }
+            flushPendingPanCommit(synchronously: true)
             let point = gesture.location(in: map)
             parent.onMapTap(map.convert(point, toCoordinateFrom: map))
         }
@@ -380,6 +399,15 @@ struct MapViewRepresentable: UIViewRepresentable {
             refreshLocationPuck(on: map)
         }
 
+        /// 首页不再随蓝点样本重算，扇形位置在这里跟上最新蓝点。
+        func followUserLocation(_ coordinate: CLLocationCoordinate2D) {
+            latestUserLocationCoordinate = coordinate
+            guard parent.walkPuckFollowsUserLocation, routeMarkerCoordinate == nil,
+                  !isSuspended, let map else { return }
+            puckCoordinate = coordinate
+            positionWalkHeadingHud(on: map)
+        }
+
         func bindWalkHeading(_ feed: PhysicalWalkHeadingFeed?, on map: MKMapView) {
             self.map = map
             guard boundWalkHeading !== feed || (feed != nil && walkHeadingCancellable == nil) else { return }
@@ -412,7 +440,10 @@ struct MapViewRepresentable: UIViewRepresentable {
                 map.showsUserLocation = false
                 return
             }
-            puckCoordinate = parent.walkPuckCoordinate
+            // 跟随蓝点时 parent 里的坐标是上次首页重算时的旧值，用回调里收到的最新蓝点。
+            puckCoordinate = parent.walkPuckFollowsUserLocation && parent.walkPuckCoordinate != nil
+                ? latestUserLocationCoordinate ?? parent.walkPuckCoordinate
+                : parent.walkPuckCoordinate
             updateWalkHeadingHud(
                 degrees: parent.walkHeadingDegrees,
                 visible: parent.showsWalkHeading,
@@ -560,7 +591,10 @@ struct MapViewRepresentable: UIViewRepresentable {
                 activeCommandIsZoom = false
             }
             if regionChangeWasUserDriven {
+                cancelPendingPanCommit()
                 liftCenterPin()
+            } else {
+                flushPendingPanCommit()
             }
         }
 
@@ -581,7 +615,6 @@ struct MapViewRepresentable: UIViewRepresentable {
         func mapView(_ mapView: MKMapView, regionDidChangeAnimated animated: Bool) {
             guard !isSuspended else { return }
             let distance = visibleVerticalDistance(in: mapView)
-            parent.onViewportChanged(distance)
             updatePinPosition(on: mapView)
             // 同步蓝点坐标（避免 delegate 更新不及时导致 mapState.realtimeLocation 为 nil）
             if let ul = visibleUserLocationSample(mapView.userLocation),
@@ -603,20 +636,66 @@ struct MapViewRepresentable: UIViewRepresentable {
                 userZoomed = false
             }
 
-            if userZoomed {
-                parent.onUserZoomChanged?(distance)
-            } else if regionChangeWasUserDriven {
-                dropCenterPin()
-                parent.onUserCenterChanged(mapView.centerCoordinate, distance)
-            } else if isPinLifted {
-                dropCenterPin()
+            if regionChangeWasUserDriven && !userZoomed {
+                // 拖动结束时 onUserCenterChanged 会同时更新视野，不在落针这一帧单独发布。
+                finishUserPan(center: mapView.centerCoordinate, distance: distance)
+            } else {
+                parent.onViewportChanged(distance)
+                if userZoomed {
+                    parent.onUserZoomChanged?(distance)
+                } else if isPinLifted {
+                    dropCenterPin()
+                }
             }
 
             regionChangeWasUserDriven = false
         }
 
+        /// 地图停下这一帧只落针：选点、存盘、地名反查和首页重算放到下一轮主循环，
+        /// 让落针动画先提交给渲染服务，不和整页重算挤在同一帧。
+        func finishUserPan(center: CLLocationCoordinate2D, distance: CLLocationDistance) {
+            // 两手交替滑时，上一划停下到下一划开始只有零点几秒：先等一小段，
+            // 期间又开始拖动就取消，不在换手的间隙落针、反查地名和整页重算。
+            cancelPendingPanCommit()
+            let run: (_ deferCommit: Bool) -> Void = { [weak self] deferCommit in
+                guard let self else { return }
+                self.dropCenterPin()
+                guard deferCommit else {
+                    self.parent.onUserCenterChanged(center, distance)
+                    return
+                }
+                // 先让落针动画提交，下一轮主循环再改选点和首页。
+                DispatchQueue.main.async { [weak self] in
+                    // 弹层刚好盖上也照常提交：选点必须和地图停下的位置一致。
+                    self?.parent.onUserCenterChanged(center, distance)
+                }
+            }
+            let item = DispatchWorkItem { [weak self] in
+                self?.pendingPanCommit = nil
+                run(true)
+            }
+            pendingPanCommit = (item, run)
+            DispatchQueue.main.asyncAfter(deadline: .now() + Self.panSettleDelay, execute: item)
+        }
+
+        /// 新的拖动或新的选点接管时丢弃未提交的拖动结果。
+        func cancelPendingPanCommit() {
+            pendingPanCommit?.item.cancel()
+            pendingPanCommit = nil
+        }
+
+        /// 只改缩放的操作不该吞掉刚才拖动的位置：立即提交。
+        /// 点按地图或图钉前要同步提交，保证点按产生的新选点排在拖动结果之后。
+        func flushPendingPanCommit(synchronously: Bool = false) {
+            guard let pending = pendingPanCommit else { return }
+            pendingPanCommit = nil
+            pending.item.cancel()
+            pending.run(!synchronously)
+        }
+
         private func forwardRealtimeLocation(_ location: CLLocation) {
             lastForwardedRealtimeTimestamp = location.timestamp
+            followUserLocation(location.coordinate)
             parent.onRealtimeLocationChanged(location)
         }
 

@@ -124,8 +124,18 @@ struct MapPlaceDescriptor: Equatable {
 @MainActor
 final class MapLocationState: ObservableObject {
     @Published private(set) var selection: MapSelection
-    @Published private(set) var realtimeCoordinate: CLLocationCoordinate2D?
-    @Published private(set) var realtimeLocation: CLLocation?
+    /// 蓝点约每秒一个样本：样本只缓存不发布，首页不随 GPS 每秒整页重算。
+    /// 扇形跟随蓝点由地图协调器直接处理；首页只在蓝点出现或消失时刷新。
+    private(set) var realtimeCoordinate: CLLocationCoordinate2D? {
+        didSet {
+            let hasCoordinate = realtimeCoordinate != nil
+            if hasRealtimeCoordinate != hasCoordinate {
+                hasRealtimeCoordinate = hasCoordinate
+            }
+        }
+    }
+    private(set) var realtimeLocation: CLLocation?
+    @Published private(set) var hasRealtimeCoordinate = false
     @Published private(set) var cameraCommand: MapCameraCommand?
     @Published private(set) var viewportMeters: CLLocationDistance
     @Published private(set) var placeDescriptor: MapPlaceDescriptor?
@@ -259,7 +269,10 @@ final class MapLocationState: ObservableObject {
     }
 
     func updateViewport(distanceMeters: CLLocationDistance) {
-        viewportMeters = max(50, distanceMeters)
+        let next = max(50, distanceMeters)
+        // 同值赋给 @Published 也会让首页整页重算。
+        guard next != viewportMeters else { return }
+        viewportMeters = next
     }
 
     /// Updates only the map representation of the current physical selection.

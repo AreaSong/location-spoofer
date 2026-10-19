@@ -243,6 +243,8 @@ final class FavoriteLocationStore: ObservableObject {
     }
 
     func select(_ id: UUID?) {
+        // 每次拖动地图都会调用 select(nil)；没变化就不发布、不写盘。
+        guard selectedFavoriteID != id else { return }
         selectedFavoriteID = id
         defaults.set(id?.uuidString, forKey: Keys.selectedID)
     }
