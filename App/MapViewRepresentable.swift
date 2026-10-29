@@ -437,7 +437,8 @@ struct MapViewRepresentable: UIViewRepresentable {
                     on: map
                 )
                 updateRouteProgress(nil, on: map)
-                map.showsUserLocation = false
+                // 路线箭头是写入目标，蓝点是系统实际定位；两者都要显示才能看出是否被拉回。
+                map.showsUserLocation = true
                 return
             }
             // 跟随蓝点时 parent 里的坐标是上次首页重算时的旧值，用回调里收到的最新蓝点。
@@ -452,7 +453,7 @@ struct MapViewRepresentable: UIViewRepresentable {
             map.showsUserLocation = true
         }
 
-        private var routeMarkerCoordinate: CLLocationCoordinate2D? {
+        var routeMarkerCoordinate: CLLocationCoordinate2D? {
             let coordinate = boundPlaybackClock?.markerCoordinate ?? parent.playbackClock?.markerCoordinate
             guard let coordinate, CLLocationCoordinate2DIsValid(coordinate) else { return nil }
             return coordinate
@@ -544,11 +545,26 @@ struct MapViewRepresentable: UIViewRepresentable {
             for view in views where view.annotation is MKUserLocation {
                 // 取蓝点实际大小，隐藏精度圈
                 userDotDiameter = view.bounds.width
-                for sub in view.subviews where sub.bounds.width > userDotDiameter + 4 {
+                for sub in view.subviews where sub.bounds.width > userDotDiameter + 4
+                    && sub.tag != Self.systemLocationLabelTag {
                     sub.isHidden = true
                 }
-                view.isHidden = walkHeadingHud?.isHidden == false
+                installSystemLocationLabel(on: view)
+                mapView.userLocation.title = "系统定位"
+                view.isHidden = walkHudCoversUserLocation
             }
+        }
+
+        private static let systemLocationLabelTag = 0x5359_534C
+
+        /// 蓝点下方常显「系统定位」，与橙色虚拟目标区分。
+        private func installSystemLocationLabel(on view: MKAnnotationView) {
+            guard view.viewWithTag(Self.systemLocationLabelTag) == nil else { return }
+            let label = MapDotLabel(text: "系统定位", color: .systemBlue)
+            label.tag = Self.systemLocationLabelTag
+            label.center = CGPoint(x: view.bounds.midX, y: view.bounds.maxY + label.bounds.height / 2 + 2)
+            label.autoresizingMask = [.flexibleLeftMargin, .flexibleRightMargin, .flexibleBottomMargin]
+            view.addSubview(label)
         }
 
         func mapView(_ mapView: MKMapView, didUpdate userLocation: MKUserLocation) {
@@ -735,5 +751,31 @@ private extension MapDisplayStyle {
         case .satellite: return .satellite
         case .hybrid: return .hybrid
         }
+    }
+}
+
+/// 地图圆点下方的小胶囊文字：「系统定位」「虚拟目标」共用同一样式。
+final class MapDotLabel: UILabel {
+    private let insets = UIEdgeInsets(top: 2, left: 6, bottom: 2, right: 6)
+
+    convenience init(text: String, color: UIColor) {
+        self.init(frame: .zero)
+        self.text = text
+        font = .systemFont(ofSize: 11, weight: .semibold)
+        textColor = color
+        backgroundColor = UIColor.systemBackground.withAlphaComponent(0.9)
+        layer.cornerRadius = 6
+        layer.masksToBounds = true
+        isUserInteractionEnabled = false
+        sizeToFit()
+    }
+
+    override func drawText(in rect: CGRect) {
+        super.drawText(in: rect.inset(by: insets))
+    }
+
+    override func sizeThatFits(_ size: CGSize) -> CGSize {
+        let base = super.sizeThatFits(size)
+        return CGSize(width: base.width + insets.left + insets.right, height: base.height + insets.top + insets.bottom)
     }
 }

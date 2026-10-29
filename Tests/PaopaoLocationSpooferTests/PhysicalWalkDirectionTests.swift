@@ -397,6 +397,34 @@ final class PhysicalWalkDirectionTests: XCTestCase {
         coordinator.stopWalkPuckTracking()
     }
 
+    func testHudMarksVirtualTargetOnlyWhenSpoofed() throws {
+        let map = MKMapView(frame: CGRect(x: 0, y: 0, width: 390, height: 600))
+        var parent = makeMap(heading: 0)
+        let coordinator = parent.makeCoordinator()
+        coordinator.installWalkHeadingHud(on: map)
+        coordinator.updateWalkHeadingHud(degrees: 0, visible: true, on: map)
+        let hud = try XCTUnwrap(coordinator.walkHeadingHud)
+        // 模拟开启：扇形画在虚拟位置，改成橙色并标注，系统蓝点保留。
+        XCTAssertTrue(hud.representsVirtualTarget)
+        XCTAssertEqual(hud.accessibilityLabel, "虚拟目标，前进方向")
+        XCTAssertFalse(coordinator.walkHudCoversUserLocation)
+        // 与系统蓝点重合时合并为一个双色点；地图里没有系统定位样本时不合并。
+        XCTAssertFalse(hud.mergesSystemLocation)
+        hud.mergesSystemLocation = true
+        XCTAssertEqual(hud.accessibilityLabel, "系统定位与虚拟目标重合，前进方向")
+        hud.mergesSystemLocation = false
+        XCTAssertEqual(hud.accessibilityLabel, "虚拟目标，前进方向")
+
+        // 未开启：扇形跟随系统蓝点，恢复蓝色、不标注，并替代蓝点。
+        parent.walkPuckFollowsUserLocation = true
+        coordinator.parent = parent
+        coordinator.updateWalkHeadingHud(degrees: 0, visible: true, on: map)
+        XCTAssertFalse(hud.representsVirtualTarget)
+        XCTAssertEqual(hud.accessibilityLabel, "前进方向")
+        XCTAssertTrue(coordinator.walkHudCoversUserLocation)
+        coordinator.stopWalkPuckTracking()
+    }
+
     private func makeMap(heading: Double?) -> MapViewRepresentable {
         MapViewRepresentable(
             selection: .init(coordinate: .init(latitude: 0, longitude: 0), source: .mapTap, explicitName: nil, revision: 0),
