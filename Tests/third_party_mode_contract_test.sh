@@ -117,8 +117,8 @@ grep -q '打开小火箭添加环回节点' "$SETUP" \
   || fail "setup must offer a Shadowrocket add-node action"
 grep -q '打开小火箭添加环回节点' "$SETTINGS" \
   || fail "Settings must offer a Shadowrocket add-node action"
-grep -q '全局路由可继续用「代理」' "$SETUP" \
-  || fail "setup must let users keep Proxy routing after selecting the loopback node"
+grep -q '全局路由请选择「配置」' "$SETUP" \
+  || fail "setup must require configuration routing so local scripts stay local"
 grep -q 'ShadowrocketLoopbackNode.importURI' "$SETUP" \
   || fail "setup loopback copy must use the shared SOCKS5 import URI"
 grep -q 'ShadowrocketLoopbackNode.importURI' "$SETTINGS" \

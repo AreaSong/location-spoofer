@@ -36,8 +36,9 @@ location rewriting no longer needs GitHub.
 appends `skip-proxy` for localhost, and adds loopback CIDR `DIRECT` rules.
 The App serves that SOCKS5 forwarder in third-party mode. Import
 `socks5://127.0.0.1:18767#环回` into Shadowrocket’s home node list, select
-it, and keep Proxy routing; traffic stays on-device instead of a remote
-node. Keep this App open while that node is selected. The module does not
+it, and use Configuration routing so loopback script downloads use DIRECT
+rules. Global Proxy routing with a remote node can send localhost requests to
+that remote node and cause timeouts. Keep this App open while that node is selected. The module does not
 add `FINAL,DIRECT`, so an existing proxy profile keeps its own default
 policy.
 
@@ -60,6 +61,82 @@ The App's third-party save sends `lon`/`lat`/`acc`, matching the vendored
 settings script. Motion-state simulation (fields 11/12) is not implemented by
 these scripts and is unavailable in third-party mode; it remains available in
 APP mode (built-in proxy).
+
+## 独立坐标控制接口（模块 1.2.0）
+
+新版 App 的查询、保存、清除统一使用
+`https://location-spoofer.invalid/wloc-settings/save`，仍使用原有 GET 参数及
+`wloc_settings` 存储，不迁移、清除或复制用户已保存的坐标。控制脚本与 WLOC
+响应脚本继续读写同一个键。新版控制响应必须携带 `X-Wloc-Control: 1`，这是兼容性
+标识而非认证凭据；缺失或版本不匹配会要求更新模块，不能被当作清除/保存成功。
+所有响应（包括无坐标和错误）回报 `moduleVersion: 1.2.0`。
+
+请先安装新版 App，再从 App 的本机来源更新正式定位模块和两份脚本。
+小火箭全局路由选择「配置」，保持 App 运行以提供本机脚本；仅导入独立探测模块
+不能使坐标控制接口可用。开发中的未推送修改只能从本机来源获取；使用远端来源时，
+需确认仓库已有对应模块和脚本，且客户端已更新缓存。为兼容旧 App，模块仍保留旧 Apple 控制地址入口；
+新版 App 不自动回退旧地址或 HTTP，且拒绝全部重定向。旧 App 在受证书固定限制
+的设备上仍可能失败，保留兼容入口不表示已解除系统限制。
+
+各模块新增专用域名的解密、`192.0.2.1` 映射与直连规则；普通公网服务不承担坐标存储。
+2026-11-07 在 iOS 26.7.2 / Shadowrocket 2.2.93 上完成真机对照：独立探测、历史坐标
+查询、测试点保存、独立回读与清除后查询为空均通过；Apple 地图位置未跟随测试点。
+VPN 日志中的 `gs-loc-cn.apple.com` 在读取 MITM 证书后立即关闭，未看到 `/clls/wloc`
+处理记录。此前 App 对 Apple 控制域名的详细诊断明确报告证书固定校验失败 `-67880`；
+不能把这条具体错误码直接当作上述 VPN 连接关闭的已证实原因。
+后续在 WLOC 模块已停用、VPN 仍开启的状态下，观察到 Apple 地图恢复显示定位蓝点。
+因此本设备的 WLOC 实际定位未通过验收，保持模块停用；这些结果不代表其他设备全部失效。
+清除坐标不会关闭模块的 HTTPS 拦截，遇到正常定位受影响时需单独检查模块启用状态。
+Surge/Egern、Loon、Stash、Quantumult X 仅提供候选配置与模拟脚本测试，尚未真机验证。
+Quantumult X 若以 rewrite 资源方式导入，需同时将模块中的 `[dns]` 和
+`[filter_local]` 项合并进主配置，不能假定 rewrite 导入会应用 DNS/分流设置。
+映射语法参考 [Surge](https://manual.nssurge.com/dns/local-dns-mapping.html)、
+[Stash](https://stash.wiki/features/hosts)、
+[Quantumult X 官方示例](https://github.com/crossutility/Quantumult-X/blob/master/sample.conf)。
+
+验收分为：查询历史坐标 → 保存合成测试点 → 独立查询回读 → 检查实际定位请求和地图
+位置 → 清除并确认查询为空及实际位置恢复。配置响应成功不等于系统定位被改写。
+如需回滚代码，应同时使用匹配的 App/模块，存储键及值格式未改变；本次不自动回滚手机配置，
+也不自动关闭或清除已有虚拟定位。正式坐标迁移不改 `/clls/wloc` 的匹配与改写逻辑。
+
+## HTTPS 证书失败诊断
+
+连接检测报告「HTTPS 证书校验失败」不等于未开启完全信任。请求失败日志之后，
+App 会在后台追加「证书校验诊断」，通过相同的「诊断ID」关联。复制这两条日志，
+重点查看 `trust.error.*` 的系统错误域、代码和描述，以及证书链摘要与 SHA-256 指纹；
+iOS 18 及以上还会记录各证书的有效期。新增诊断不包含证书原文或私钥。
+控制传输失败日志只记录错误域和代码，避免将带坐标的 URL userInfo 写入日志。
+旧版本已保存的日志可能仍包含坐标，分享旧日志时需检查。
+
+诊断在后台评估失败请求携带的原 SecTrust，不设置信任锚点、例外或策略，
+不放行失败请求、不重试定位写入。系统可能重新评估并联网检查证书，诊断结果单独标记，
+不作为原请求时刻的结果。未携带信任对象时明确记录缺口。
+后台诊断可能稍晚于错误提示出现；若诊断时校验已通过，也不会将原请求改为成功。
+普通 TLS 握手失败保留网络错误，不再仅凭 TLS/SSL 字样断言证书失败。
+
+本地合成证书测试不能替代实际代理客户端的真机校验。安装包含本次代码的新版本后，
+保持原代理配置，点击一次「检测连接」，再复制对应日志以定位实际失败原因。
+
+## 独立 HTTPS 探测（实验，仅小火箭）
+
+运行日志 →「独立 HTTPS 探测（实验）」→ 复制模块地址，在小火箭导入并启用后回到 App 执行探测。
+该模块通过本机 `http://127.0.0.1:18766/modules/wloc-probe.module` 提供，脚本同样来自本机；
+导入或更新时须保持 App 的本机服务可用，不依赖尚未发布的 GitHub 文件。它是独立模块，
+不替换现有定位模块；退出实验可禁用该探测模块。
+
+请求固定为 `GET https://location-spoofer.invalid/probe`，没有查询参数、坐标或请求体。
+成功必须收到 HTTP 200 及精确标识 `{"protocol":"location-spoofer-probe","version":"1","mode":"no-storage"}`。
+脚本不访问持久存储或网络，拒绝非 GET、额外参数和其他路径；App 禁用缓存、拒绝重定向，
+保留系统默认 TLS 校验，不降级 HTTP，也不改变定位管理器的连接状态。
+
+模块把专用 `.invalid` 域名映射到文档保留地址 `192.0.2.1` 并设置精确 DIRECT 规则，
+目的是让代理在请求阶段本地返回响应，而不是连接真实外部服务。规则解析、DNS、MITM 与脚本
+执行顺序仍须用 Shadowrocket 真机验证；未接管时可能表现为 DNS 失败或超时，不代表证书固定校验。
+此地址设计不是其他客户端的兼容承诺。探测通过也只证明控制链路候选可用，
+不证明 `/clls/wloc` 拦截或系统定位修改成功。此探测模块不能替代下文的新版定位控制模块。
+
+本地验证：`node --test Tests/https_probe_behavior_test.cjs`，Swift 的 `IndependentHTTPSProbeTests`
+和 `ThirdPartyModuleCatalogTests`。这些检查不代表真机导入或 HTTPS 探测已通过。
 
 ## 脚本维护与行为验证
 

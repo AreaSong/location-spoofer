@@ -37,7 +37,7 @@ function settingsResponse(saved) {
   return {
     success: true, longitude, latitude, accuracy: saved.accuracy || 25,
     randomRadius: saved.randomRadius ?? 0, updatedAt: saved.updatedAt || null,
-    moduleVersion: "1.1.0", appliedOffsetMeters: saved.appliedOffsetMeters ?? null,
+    moduleVersion: "1.2.0", appliedOffsetMeters: saved.appliedOffsetMeters ?? null,
     appliedLatitude: saved.appliedLatitude ?? null, appliedLongitude: saved.appliedLongitude ?? null
   };
 }
@@ -60,7 +60,7 @@ function saveSettings(query) {
   const radius = query.get("randomRadius");
   if (radius != null && radius !== "") next.randomRadius = parseFloat(radius.replace(",", "."));
   if (!c.setItem(settingsKey, next)) throw new Error("Storage.setItem 返回 false");
-  t.info(`[wloc-settings] 已保存: ${longitude}, ${latitude}`);
+  t.info("[wloc-settings] 已保存坐标");
   // 保持保存接口已有的精度回报语义。
   return { ...settingsResponse(next), accuracy };
 }
@@ -69,6 +69,9 @@ const query = parseQuery($request.url || "");
 const action = query.get("action") || "save";
 let result;
 try {
+  const acceptedURL = /^(?:https:\/\/location-spoofer\.invalid|https?:\/\/gs-loc(?:-cn)?\.apple\.com)\/wloc-settings\/save(?:\?[^#]*)?$/.test($request.url || "");
+  if (!acceptedURL || $request.method !== "GET") throw new Error("不支持的控制地址或方法");
+  if (!["query", "clear", "save"].includes(action)) throw new Error("不支持的控制动作");
   if (action === "query") result = settingsResponse(c.getItem(settingsKey));
   else if (action === "clear") {
     // 各客户端共用 JSON null 清除约定，写失败时旧值仍有效。
@@ -82,8 +85,8 @@ try {
 }
 const response = {
   status: 200,
-  headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*",
+  headers: { "Content-Type": "application/json", "X-Wloc-Control": "1", "Cache-Control": "no-store", "Access-Control-Allow-Origin": "*",
     "Access-Control-Allow-Methods": "GET, OPTIONS" },
-  body: JSON.stringify(result)
+  body: JSON.stringify({ ...result, moduleVersion: "1.2.0" })
 };
 o(e === "Quantumult X" ? response : { response });

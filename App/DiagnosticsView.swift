@@ -28,6 +28,7 @@ struct RuntimeLogsView: View {
     @ObservedObject private var thirdPartyProxy = ThirdPartyProxyManager.shared
     @State private var entries: [RuntimeLogEntry] = []
     @State private var isTesting = false
+    @State private var showHTTPSProbe = false
     @State private var testResult = ""
     @State private var testMessage = ""
     @State private var showClearConfirm = false
@@ -108,6 +109,7 @@ struct RuntimeLogsView: View {
             }
             Button("取消", role: .cancel) {}
         }
+        .sheet(isPresented: $showHTTPSProbe) { IndependentHTTPSProbeView() }
         .task {
             while !Task.isCancelled { refresh(); try? await Task.sleep(nanoseconds: 750_000_000) }
         }
@@ -174,6 +176,10 @@ struct RuntimeLogsView: View {
             }
             .buttonStyle(PrimaryActionStyle(tint: isTesting ? .gray : .blue))
             .disabled(isTesting || actions.state.isBusy)
+            if runtimeMode.mode == .thirdParty {
+                Button("独立 HTTPS 探测（实验）") { showHTTPSProbe = true }
+                    .disabled(isTesting || actions.state.isBusy)
+            }
             Text(testDescription)
                 .font(.caption).foregroundStyle(.secondary)
             if !testMessage.isEmpty {

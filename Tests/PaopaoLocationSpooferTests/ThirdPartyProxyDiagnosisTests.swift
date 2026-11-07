@@ -4,7 +4,6 @@ import XCTest
 final class ThirdPartyProxyDiagnosisTests: XCTestCase {
     func testCertificateURLErrorsMapToUntrusted() {
         let codes: [URLError.Code] = [
-            .secureConnectionFailed,
             .serverCertificateHasBadDate,
             .serverCertificateUntrusted,
             .serverCertificateHasUnknownRoot,
@@ -19,6 +18,13 @@ final class ThirdPartyProxyDiagnosisTests: XCTestCase {
                 "URLError \(code.rawValue) should be a certificate failure"
             )
         }
+    }
+
+    func testGenericTLSFailureDoesNotClaimCertificateFailure() {
+        let error = URLError(.secureConnectionFailed)
+        XCTAssertEqual(ThirdPartyProxyDiagnosis.fromTransport(error), .network(error.localizedDescription))
+        XCTAssertEqual(ThirdPartyProxyDiagnosis.certificateUntrusted.title, "HTTPS 证书校验失败")
+        XCTAssertTrue(ThirdPartyProxyDiagnosis.certificateUntrusted.summary.contains("即使已开启完全信任"))
     }
 
     func testCertificateKeywordInLocalizedDescriptionMapsToUntrusted() {

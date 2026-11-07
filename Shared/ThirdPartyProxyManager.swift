@@ -156,6 +156,7 @@ extension URLSession: ThirdPartyProxyRequesting {}
 final class ThirdPartyProxyManager: ObservableObject {
     static let shared = ThirdPartyProxyManager()
     static let interceptionHostnames = [
+        ThirdPartyControlTransport.host,
         "gs-loc.apple.com",
         "gs-loc-cn.apple.com",
         "gsp-ssl.ls.apple.com",
@@ -163,7 +164,7 @@ final class ThirdPartyProxyManager: ObservableObject {
         "bluedot.is.autonavi.com.gds.alibabadns.com"
     ]
     static let interceptionHostnamesText = interceptionHostnames.joined(separator: ", ")
-    static let configurationEndpoint = URL(string: "https://gs-loc.apple.com/wloc-settings/save")!
+    static let configurationEndpoint = URL(string: "https://location-spoofer.invalid/wloc-settings/save")!
 
     @Published private(set) var connectionState: ThirdPartyProxyConnectionState = .unknown
     @Published private(set) var activeSettings: ThirdPartyProxySettingsResponse?
@@ -188,12 +189,7 @@ final class ThirdPartyProxyManager: ObservableObject {
         if let requester {
             self.requester = requester
         } else {
-            let configuration = URLSessionConfiguration.ephemeral
-            configuration.requestCachePolicy = .reloadIgnoringLocalAndRemoteCacheData
-            configuration.urlCache = nil
-            configuration.timeoutIntervalForRequest = 8
-            configuration.timeoutIntervalForResource = 10
-            self.requester = URLSession(configuration: configuration)
+            self.requester = ThirdPartyControlTransport.session()
         }
     }
 
@@ -370,6 +366,7 @@ final class ThirdPartyProxyManager: ObservableObject {
         request.httpMethod = "GET"
         request.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
         request.timeoutInterval = 8
+        request.setValue("no-store", forHTTPHeaderField: "Cache-Control")
 
         if case .save = action {
             // 请求超时或回读失败时，客户端仍可能已经保存；必须在发送前留下待清理记录。
@@ -380,8 +377,11 @@ final class ThirdPartyProxyManager: ObservableObject {
             // 保持串行槽直到传输返回，随后 clear 才能发出。
             let transfer = Task { try await requester.data(for: request) }
             let (data, urlResponse) = try await transfer.value
-            guard let http = urlResponse as? HTTPURLResponse, http.statusCode == 200 else {
+            guard let http = urlResponse as? HTTPURLResponse, http.statusCode == 200, http.url == url else {
                 throw ThirdPartyProxyError.moduleNotIntercepted
+            }
+            guard http.value(forHTTPHeaderField: ThirdPartyControlTransport.protocolHeader) == ThirdPartyControlTransport.protocolVersion else {
+                throw ThirdPartyProxyError.rejected("控制协议不匹配。请更新定位模块及脚本，再检测连接；独立探测模块不能替代定位模块。")
             }
             guard let response = try? JSONDecoder().decode(ThirdPartyProxySettingsResponse.self, from: data) else {
                 throw ThirdPartyProxyError.moduleNotIntercepted
@@ -401,9 +401,14 @@ final class ThirdPartyProxyManager: ObservableObject {
             guard generation == writeGeneration, !(error is CancellationError) else { throw CancellationError() }
             let mapped = ThirdPartyProxyError.fromTransport(error)
             connectionState = .failed(mapped.diagnosis.title)
-            RuntimeLogger.error("APP", "ThirdPartyProxy", "第三方代理请求失败", error: error, details: [
-                "原因": mapped.diagnosis.title
-            ])
+            let diagnosticID = UUID().uuidString
+            RuntimeLogger.error("APP", "ThirdPartyProxy", "第三方代理请求失败", details:
+                ThirdPartyControlTransport.safeErrorDetails(error).merging([
+                    "原因": mapped.diagnosis.title, "诊断ID": diagnosticID
+                ]) { _, new in new })
+            if mapped == .certificateUntrusted {
+                ThirdPartyTrustDiagnostics.record(error: error, requestID: diagnosticID)
+            }
             throw mapped
         }
     }

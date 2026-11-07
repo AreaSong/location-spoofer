@@ -13,14 +13,16 @@ struct ThirdPartyCompatibility: Identifiable, Equatable {
     var id: String { client.rawValue }
     var isDeviceVerified: Bool { deviceStatus == Self.verifiedStatus }
 
+    static let quantumultXControlSetup = "Quantumult X：仅导入重写订阅不够。请在主配置 [dns] 添加 address = /location-spoofer.invalid/192.0.2.1；在 [filter_local] 添加 host, location-spoofer.invalid, direct 和 ip-cidr, 127.0.0.0/8, direct。保留原有配置，并启用规则分流。"
+
     static let verifiedStatus = "已在真机验证"
     static let unverifiedStatus = "尚未真机验证"
-    static let ios27MITMNote = "iOS 27 beta 6 起，系统禁止对 gs-loc.apple.com 做 MITM，以上客户端都暂时不可用。请改用开发者隧道模式。"
+    static let ios27MITMNote = "部分设备的 Apple 定位域名存在证书固定校验限制，iOS 26.7.2 已观察到。独立控制接口通过不代表系统定位可改写；实际定位仍需真机验证，受限时可评估开发者隧道模式。"
 }
 
 enum ThirdPartyCompatibilityMatrix {
     static let rows: [ThirdPartyCompatibility] = [
-        row(.shadowrocket, deviceStatus: ThirdPartyCompatibility.verifiedStatus, note: "当前用于真机测试"),
+        row(.shadowrocket, note: "独立 HTTPS 探测已验证；新版坐标控制与定位效果待验证"),
         row(.surge, note: "配置已提供"),
         row(.quantumultX, note: "配置已提供"),
         row(.loon, note: "配置已提供"),

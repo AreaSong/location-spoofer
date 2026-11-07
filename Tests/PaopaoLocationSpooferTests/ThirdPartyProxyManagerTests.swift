@@ -201,7 +201,7 @@ final class ThirdPartyProxyManagerTests: XCTestCase {
             XCTFail("expected certificate failure")
         } catch {
             XCTAssertEqual(error as? ThirdPartyProxyError, .certificateUntrusted)
-            XCTAssertEqual(manager.connectionState, .failed("证书未完全信任"))
+            XCTAssertEqual(manager.connectionState, .failed("HTTPS 证书校验失败"))
             XCTAssertFalse(error.localizedDescription.contains("错误代码"))
         }
     }
@@ -222,9 +222,9 @@ final class ThirdPartyProxyManagerTests: XCTestCase {
     func testClientLinksUseVendoredModulesAndVerificationLabels() {
         XCTAssertEqual(
             ThirdPartyProxyManager.interceptionHostnamesText,
-            "gs-loc.apple.com, gs-loc-cn.apple.com, gsp-ssl.ls.apple.com, bluedot.is.autonavi.com, bluedot.is.autonavi.com.gds.alibabadns.com"
+            "location-spoofer.invalid, gs-loc.apple.com, gs-loc-cn.apple.com, gsp-ssl.ls.apple.com, bluedot.is.autonavi.com, bluedot.is.autonavi.com.gds.alibabadns.com"
         )
-        XCTAssertNil(ThirdPartyProxyClient.shadowrocket.verificationText)
+        XCTAssertNotNil(ThirdPartyProxyClient.shadowrocket.verificationText)
         XCTAssertTrue(ThirdPartyProxyClient.surge.verificationText?.contains("尚未验证") == true)
         XCTAssertEqual(
             ThirdPartyProxyClient.egern.subscriptionURL(for: .remoteMirror),
@@ -324,12 +324,16 @@ final class ThirdPartyProxyManagerTests: XCTestCase {
 final class FakeThirdPartyRequester: ThirdPartyProxyRequesting {
     private var remainingBodies: [Data]
     private let statusCode: Int
+    private var responseProtocol: String? = "1"
+    private var responseURL: URL?
     private let transportError: Error?
     private let delayNanoseconds: UInt64
     private(set) var lastURL: URL?
     private(set) var requestedURLs: [URL] = []
 
-    init(body: String, statusCode: Int = 200) {
+    init(body: String, statusCode: Int = 200, responseProtocol: String? = "1", responseURL: URL? = nil) {
+        self.responseProtocol = responseProtocol
+        self.responseURL = responseURL
         remainingBodies = [Data(body.utf8)]
         self.statusCode = statusCode
         transportError = nil
@@ -361,10 +365,10 @@ final class FakeThirdPartyRequester: ThirdPartyProxyRequesting {
         }
         let data = remainingBodies.isEmpty ? Data() : remainingBodies.removeFirst()
         let response = HTTPURLResponse(
-            url: request.url!,
+            url: responseURL ?? request.url!,
             statusCode: statusCode,
             httpVersion: "HTTP/1.1",
-            headerFields: ["Content-Type": "application/json"]
+            headerFields: ["Content-Type": "application/json"].merging(responseProtocol.map { ["X-Wloc-Control": $0] } ?? [:]) { _, new in new }
         )!
         return (data, response)
     }
@@ -406,7 +410,7 @@ actor ControlledThirdPartyRequester: ThirdPartyProxyRequesting {
         } else {
             body = "{\"success\":true,\"latitude\":\(values["lat"] ?? "1"),\"longitude\":\(values["lon"] ?? "1")}"
         }
-        return (Data(body.utf8), HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!)
+        return (Data(body.utf8), HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: ["X-Wloc-Control": "1"])!)
     }
 }
 
@@ -456,5 +460,82 @@ extension ThirdPartyProxyManagerTests {
         XCTAssertEqual(actions, ["clear"])
         XCTAssertTrue(manager.resumeWrites())
         _ = try await manager.save(favorite)
+    }
+}
+
+extension ThirdPartyProxyManagerTests {
+    func testControlMigrationUsesOnlyIndependentHTTPSForReadWriteAndClear() async throws {
+        let requester = FakeThirdPartyRequester(bodies: [
+            #"{"success":false,"error":"无已保存的坐标"}"#,
+            #"{"success":true,"latitude":10,"longitude":20,"accuracy":25}"#,
+            #"{"success":true,"latitude":10,"longitude":20,"accuracy":25}"#,
+            #"{"success":true}"#
+        ])
+        let manager = ThirdPartyProxyManager(requester: requester, defaults: testDefaults)
+        _ = try await manager.query()
+        _ = try await manager.save(FavoriteLocation(name: "合成点", latitude: 10, longitude: 20,
+                                                   accuracy: 25, mapCoordinateSystem: .wgs84))
+        let readback = try await manager.query()
+        XCTAssertEqual(readback.latitude, 10)
+        XCTAssertEqual(readback.longitude, 20)
+        try await manager.clear()
+        XCTAssertEqual(requester.requestedURLs.count, 4)
+        for url in requester.requestedURLs {
+            XCTAssertEqual(url.scheme, "https")
+            XCTAssertEqual(url.host, "location-spoofer.invalid")
+            XCTAssertEqual(url.path, "/wloc-settings/save")
+        }
+        XCTAssertFalse(manager.needsCoordinateCleanup())
+        XCTAssertEqual(manager.connectionState, .connected(active: false))
+    }
+
+    func testOldProtocolAndRedirectCannotReportClearSuccess() async {
+        for version: String? in [nil, "0", "2"] {
+            let requester = FakeThirdPartyRequester(body: #"{"success":true}"#, responseProtocol: version)
+            let manager = ThirdPartyProxyManager(requester: requester, defaults: testDefaults)
+            do { try await manager.clear(); XCTFail("旧协议必须拒绝") }
+            catch { XCTAssertTrue(error.localizedDescription.contains("更新定位模块")) }
+            XCTAssertEqual(requester.requestedURLs.count, 1, "不能自动回退旧地址或HTTP")
+            XCTAssertNotEqual(manager.connectionState, .connected(active: false))
+        }
+        let requester = FakeThirdPartyRequester(body: #"{"success":true}"#,
+            responseURL: URL(string: "http://example.com"))
+        let manager = ThirdPartyProxyManager(requester: requester, defaults: testDefaults)
+        do { try await manager.clear(); XCTFail("不能接受其他地址的成功响应") }
+        catch { XCTAssertEqual(error as? ThirdPartyProxyError, .moduleNotIntercepted) }
+    }
+
+    func testControlSessionDisablesPersistentCredentialsAndLogsNoCoordinateURL() {
+        let session = ThirdPartyControlTransport.session()
+        defer { session.invalidateAndCancel() }
+        XCTAssertNil(session.configuration.urlCache)
+        XCTAssertNil(session.configuration.httpCookieStorage)
+        XCTAssertNil(session.configuration.urlCredentialStorage)
+        let error = NSError(domain: NSURLErrorDomain, code: -1001, userInfo: [
+            NSURLErrorFailingURLErrorKey: URL(string: "https://location-spoofer.invalid/wloc-settings/save?lat=12.345&lon=67.890")!,
+            NSLocalizedDescriptionKey: "failed lat=12.345"
+        ])
+        let details = ThirdPartyControlTransport.safeErrorDetails(error)
+        XCTAssertEqual(details, ["error.domain": NSURLErrorDomain, "error.code": "-1001"])
+    }
+}
+
+extension ThirdPartyProxyManagerTests {
+    func testUnmarkedClearResponsePreservesExistingCleanupEvidence() async throws {
+        let manager = ThirdPartyProxyManager(requester: UnmarkedClearRequester(), defaults: testDefaults)
+        _ = try await manager.query()
+        XCTAssertTrue(manager.needsCoordinateCleanup())
+        do { try await manager.clear(); XCTFail("未标识响应不能核销清理义务") } catch is ThirdPartyProxyError {}
+        XCTAssertTrue(manager.needsCoordinateCleanup())
+        XCTAssertNotNil(manager.activeSettings)
+    }
+}
+
+private final class UnmarkedClearRequester: ThirdPartyProxyRequesting {
+    func data(for request: URLRequest) async throws -> (Data, URLResponse) {
+        let isQuery = request.url?.query == "action=query"
+        let body = isQuery ? #"{"success":true,"latitude":10,"longitude":20}"# : #"{"success":true}"#
+        return (Data(body.utf8), HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil,
+            headerFields: isQuery ? ["X-Wloc-Control": "1"] : [:])!)
     }
 }

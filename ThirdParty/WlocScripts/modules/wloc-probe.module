@@ -1,0 +1,15 @@
+#!name=Location Spoofer 独立 HTTPS 探测
+#!desc=实验探测，仅返回固定标识，不操作坐标；完成后可禁用或移除此模块
+#!author=AreaSong
+
+[Host]
+location-spoofer.invalid = 192.0.2.1
+
+[Rule]
+DOMAIN,location-spoofer.invalid,DIRECT
+
+[Script]
+WLOC HTTPS Probe = type=http-request,pattern=^https:\/\/location-spoofer\.invalid\/probe$,requires-body=0,max-size=0,timeout=10,script-path=http://127.0.0.1:18766/dist/v1/wloc-probe.js
+
+[MITM]
+hostname = %APPEND% location-spoofer.invalid

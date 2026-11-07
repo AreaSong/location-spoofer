@@ -84,6 +84,19 @@ final class ThirdPartyModuleCatalogTests: XCTestCase {
         XCTAssertEqual(missing.status, 400)
     }
 
+    func testProbeModuleAndScriptAreServedWithoutExposingSettings() throws {
+        let root = try repositoryScriptsRoot()
+        for path in ["/modules/wloc-probe.module", "/dist/v1/wloc-probe.js"] {
+            let response = ThirdPartyModuleHTTP.response(for: "GET \(path) HTTP/1.1\r\n\r\n", root: root)
+            XCTAssertEqual(response.status, 200)
+            let text = try XCTUnwrap(String(data: response.body, encoding: .utf8))
+            XCTAssertTrue(text.contains("location-spoofer"))
+            XCTAssertFalse(text.contains("wloc_settings"))
+        }
+        let missing = ThirdPartyModuleHTTP.response(for: "GET /probe HTTP/1.1\r\n\r\n", root: root)
+        XCTAssertEqual(missing.status, 404, "本机文件服务不能冒充代理探测响应")
+    }
+
     func testExportIncludesModuleAndScripts() throws {
         let root = try repositoryScriptsRoot()
         let urls = try ThirdPartyModuleCatalog.exportOnDeviceFiles(

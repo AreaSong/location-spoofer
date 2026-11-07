@@ -4,8 +4,16 @@ author: AreaSong
 homepage: https://github.com/AreaSong/location-spoofer
 category: Tools
 
+hosts:
+  location-spoofer.invalid: 192.0.2.1
+
+rules:
+  - DOMAIN,location-spoofer.invalid,DIRECT
+  - IP-CIDR,127.0.0.0/8,DIRECT,no-resolve
+
 http:
   mitm:
+    - "location-spoofer.invalid"
     - "gs-loc.apple.com"
     - "gs-loc-cn.apple.com"
     - "gsp-ssl.ls.apple.com"
@@ -20,7 +28,7 @@ http:
       max-size: 0
       timeout: 30
       argument: longitude=113.94114&latitude=22.544577&accuracy=25&randomRadius=0&logLevel=info
-    - match: ^https?:\/\/gs-loc(-cn)?\.apple\.com\/wloc-settings\/save
+    - match: ^(?:https:\/\/location-spoofer\.invalid|https?:\/\/gs-loc(?:-cn)?\.apple\.com)\/wloc-settings\/save(?:\?|$)
       name: WLOC.Settings
       type: request
       require-body: false

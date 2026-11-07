@@ -21,7 +21,7 @@ function storage(value = null, mode = 'ok') {
 
 function execute(name, options = {}) {
   const { client = 'Surge', store = storage(), query = '', argument,
-    bytes = fixture, field = 'body', representation = 'view', headers = {} } = options;
+    bytes = fixture, field = 'body', representation = 'view', headers = {}, requestURL, method = 'GET' } = options;
   const done = [], logs = [];
   const read = () => { if (store.readError) throw Error('mock read failure'); return store.raw; };
   const write = (value, name) => {
@@ -33,7 +33,7 @@ function execute(name, options = {}) {
   };
   const globals = {
     console: { log: (...args) => logs.push(args.join(' ')) },
-    $request: { url: `https://gs-loc.apple.com/${name === 'wloc' ? 'clls/wloc' : 'wloc-settings/save'}?${query}` },
+    $request: { method, url: requestURL || `https://${name === 'wloc' ? 'gs-loc.apple.com' : 'location-spoofer.invalid'}/${name === 'wloc' ? 'clls/wloc' : 'wloc-settings/save'}?${query}` },
     $script: { startTime: Date.now() }, $argument: argument,
     $persistentStore: { read, write },
     $done: value => done.push(value),
@@ -337,5 +337,60 @@ test('回读写失败不撤销已改写的字节，不伪造存储成功，并�
     assert.equal(store.raw, before);
     assert.equal(store.writes.length, 1);
     assert.ok(result.logs.some(line => /回读.*失败/.test(line)));
+  }
+});
+
+for (const client of clients) {
+  test(`${client}: 独立控制地址保留历史数据并完成保存、回读、清除`, () => {
+    const store = storage(initial);
+    const readback = settings('action=query', store, client);
+    assert.equal(readback.json.longitude, initial.longitude);
+    assert.equal(readback.response.headers['X-Wloc-Control'], '1');
+    assert.equal(readback.json.moduleVersion, '1.2.0');
+    assert.equal(store.writes.length, 0);
+    assert.equal(settings('lon=30&lat=40&acc=15&randomRadius=0', store, client).json.success, true);
+    assert.equal(settings('action=query', store, client).json.latitude, 40);
+    const cleared = settings('action=clear', store, client);
+    assert.equal(cleared.json.success, true);
+    assert.equal(cleared.response.headers['Cache-Control'], 'no-store');
+    assert.equal(store.raw, 'null');
+    assert.equal(settings('action=query', store, client).json.success, false);
+  });
+  test(`${client}: 旧地址仍读取同一存储，新地址拒绝HTTP、其他主机和非法动作`, () => {
+    const store = storage(initial);
+    const legacy = execute('wloc-settings', { client, store,
+      requestURL: 'https://gs-loc.apple.com/wloc-settings/save?action=query' });
+    assert.equal(legacy.json.longitude, initial.longitude);
+    const invalid = [
+      'http://location-spoofer.invalid/wloc-settings/save?action=clear',
+      'https://location-spoofer.invalid.evil.com/wloc-settings/save?action=clear',
+      'https://location-spoofer.invalid/wloc-settings/save-extra?action=clear',
+      'https://location-spoofer.invalid/wloc-settings/save?action=unknown',
+    ];
+    for (const requestURL of invalid) {
+      const result = execute('wloc-settings', { client, store, requestURL });
+      assert.equal(result.json.success, false);
+      assert.equal(store.writes.length, 0);
+      assert.deepEqual(JSON.parse(store.raw), initial);
+    }
+    assert.equal(execute('wloc-settings', { client, store, method: 'POST', query: 'action=clear' }).json.success, false);
+    assert.equal(store.writes.length, 0);
+  });
+}
+
+test('全部模块精确匹配新 HTTPS 控制接口，保留旧入口与定位响应规则', () => {
+  for (const name of ['wloc.module', 'wloc.sgmodule', 'wloc.lpx', 'wloc.conf', 'wloc.stoverride']) {
+    const source = fs.readFileSync(path.join(__dirname, '../ThirdParty/WlocScripts/modules', name), 'utf8');
+    const line = source.split('\n').find(x => x.includes('wloc-settings\\/save'));
+    assert.ok(line, name);
+    const start = line.indexOf('^(?:');
+    const end = line.indexOf('(?:\\?|$)', start) + '(?:\\?|$)'.length;
+    const pattern = new RegExp(line.slice(start, end));
+    assert.ok(pattern.test('https://location-spoofer.invalid/wloc-settings/save?action=query'), name);
+    assert.ok(pattern.test('https://gs-loc.apple.com/wloc-settings/save?action=query'), name);
+    assert.ok(!pattern.test('http://location-spoofer.invalid/wloc-settings/save?action=clear'), name);
+    assert.ok(!pattern.test('https://location-spoofer.invalid/wloc-settings/save-other'), name);
+    assert.ok(source.includes('192.0.2.1'), name);
+    assert.ok(source.includes('clls\\/wloc'), name);
   }
 });

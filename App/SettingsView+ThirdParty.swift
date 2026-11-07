@@ -15,6 +15,8 @@ struct ThirdPartyConfigurationSection: View {
     var body: some View {
         Section("第三方代理配置") {
             clientPickerRow
+            Text("控制接口已迁移：请更新定位模块和脚本后检测连接；独立探测模块不能替代定位模块。")
+                .font(.caption).foregroundStyle(.secondary)
             subscriptionAddressRow
             actionButtonsGroup
             advancedSourceGroup
@@ -134,8 +136,11 @@ struct ThirdPartyConfigurationSection: View {
     @ViewBuilder
     private var clientTipsGroup: some View {
         if thirdPartyClient.selectedClient == .shadowrocket {
-            Text("复制环回节点后打开小火箭添加到首页，选中「\(ShadowrocketLoopbackNode.name)」。全局路由可继续用「代理」。使用时请保持本 App 打开。")
+            Text("复制环回节点后打开小火箭添加到首页，选中「\(ShadowrocketLoopbackNode.name)」。全局路由请选择「配置」。使用时请保持本 App 打开；全局「代理」可能把本机脚本下载发到远端，造成超时。")
                 .font(.footnote).foregroundStyle(.secondary)
+        } else if thirdPartyClient.selectedClient == .quantumultX {
+            Text(ThirdPartyCompatibility.quantumultXControlSetup)
+                .font(.footnote).foregroundStyle(.secondary).textSelection(.enabled)
         } else if thirdPartyClient.selectedClient == .egern {
             Text("Egern 直接使用 Surge 的 .sgmodule 模块。")
                 .font(.footnote).foregroundStyle(.secondary)
@@ -144,7 +149,7 @@ struct ThirdPartyConfigurationSection: View {
                 .font(.footnote).foregroundStyle(.secondary)
         }
 
-        Text("复制模块订阅地址后，在对应代理客户端中添加模块/重写订阅，并为复制的全部域名（含 gsp-ssl.ls.apple.com、bluedot.is.autonavi.com）启用 MITM。第三方客户端保存坐标后，即使关闭本 App，坐标仍由代理客户端持久化并继续生效。")
+        Text("复制模块订阅地址后，在对应代理客户端中添加模块/重写订阅，并为复制的全部域名（含 gsp-ssl.ls.apple.com、bluedot.is.autonavi.com）启用 MITM。坐标由代理客户端持久化；实际定位效果仍取决于系统定位请求是否能被改写。")
             .font(.footnote).foregroundStyle(.secondary)
     }
 

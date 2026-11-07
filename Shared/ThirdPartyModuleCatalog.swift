@@ -58,7 +58,9 @@ enum ThirdPartyModuleCatalog {
         var paths: Set<String> = [
             "/health",
             "/dist/v1/wloc.js",
-            "/dist/v1/wloc-settings.js"
+            "/dist/v1/wloc-settings.js",
+            "/dist/v1/wloc-probe.js",
+            "/modules/wloc-probe.module"
         ]
         for name in moduleFileNames {
             paths.insert("/modules/\(name)")

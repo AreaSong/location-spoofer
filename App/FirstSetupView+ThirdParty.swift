@@ -78,10 +78,12 @@ extension FirstSetupView {
                 VStack(alignment: .leading, spacing: 12) {
                     Text("工作原理")
                         .font(.subheadline.bold())
-                    Text("App 不连接远程坐标服务器，而是向 Apple 域名发起一个约定请求。第三方客户端需要在本机拦截该请求、保存 WGS-84 坐标并返回 JSON；定位模块再读取同一份数据，修改 Apple WLOC 响应。")
+                    Text("App 不连接远程坐标服务器，而是向专用保留域名 location-spoofer.invalid 发起约定请求。第三方客户端需要在本机拦截该请求、保存 WGS-84 坐标并返回 JSON；定位模块再读取同一份数据，修改 Apple WLOC 响应。")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
 
+                    Text("控制接口已迁移，请更新定位模块及脚本。连接通过只表示配置可读写，不代表系统定位已改变。")
+                        .font(.footnote).foregroundStyle(.secondary)
                     Text("配置接口")
                         .font(.subheadline.bold())
                     Text(ThirdPartyProxyManager.configurationEndpoint.absoluteString)
@@ -98,6 +100,7 @@ extension FirstSetupView {
                     Text("返回格式")
                         .font(.subheadline.bold())
                     Text("""
+                    必需响应头：X-Wloc-Control: 1
                     成功：{"success":true,"longitude":113.0,"latitude":22.0,"accuracy":25}
                     失败：{"success":false,"error":"错误说明"}
                     """)
@@ -140,6 +143,10 @@ extension FirstSetupView {
         let client = thirdPartyClient.selectedClient
         return VStack(alignment: .leading, spacing: 16) {
             thirdPartyMITMWarning
+            if client == .quantumultX {
+                Text(ThirdPartyCompatibility.quantumultXControlSetup)
+                    .font(.footnote).foregroundStyle(.secondary).textSelection(.enabled)
+            }
             if showThirdPartyRepairReason {
                 Label(
                     "检测到第三方代理连接异常，请检查模块、MITM 和代理连接后重新检测。",
@@ -289,7 +296,7 @@ extension FirstSetupView {
             VStack(alignment: .leading, spacing: 12) {
                 instructionRow(1, "保持本 App 打开。环回是本机 SOCKS5（\(ShadowrocketLoopbackNode.host):\(ShadowrocketLoopbackNode.port)），杀掉 App 后这个节点会连不上。")
                 instructionRow(2, "复制环回节点，再打开小火箭。若弹出添加服务器，点添加；也可到首页点 + 粘贴。")
-                instructionRow(3, "首页选中「\(ShadowrocketLoopbackNode.name)」，全局路由可继续用「代理」，再打开连接。不要选机场。")
+                instructionRow(3, "首页选中「\(ShadowrocketLoopbackNode.name)」，全局路由请选择「配置」，再打开连接。本机脚本下载必须直连；使用远端节点时也不要切到全局「代理」。")
                 Text(ShadowrocketLoopbackNode.importURI)
                     .font(.caption.monospaced())
                     .textSelection(.enabled)
